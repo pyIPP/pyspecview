@@ -427,7 +427,7 @@ class SpectraViewer(object):
 
         dt = (x[-1]-x[0])/x.size
         f = np.interp(x, tvec_f, fvec)
-        corr = exp((dt*1j*2*np.pi)*np.cumsum(np.single(f)))
+        corr = np.exp((dt*1j*2*np.pi)*np.cumsum(np.single(f)))
 
         #detrend 
         y -= (y[-1]-y[0])/(x[-1]-x[0])*(x-x[0])+y[0]
@@ -459,7 +459,7 @@ class SpectraViewer(object):
         #forward pass
         for k in range(it0, tvec.size):
             try:
-                w = exp(-(fvec-F[-1])**2/(2*delta_f**2))    
+                w = np.exp(-(fvec-F[-1])**2/(2*delta_f**2))    
             except:
                 print('delta_f, f0, t0, F' , delta_f, f0, t0, F)
                 raise
@@ -469,7 +469,7 @@ class SpectraViewer(object):
             A = -(spect[:, k]*w)[ifmax]
             
             #fine tuning 
-            w = exp(-(fvec-f)**2/(2*delta_f**2))
+            w = np.exp(-(fvec-f)**2/(2*delta_f**2))
             A, f = min_fine(fvec, -spect[:, k]*w)
 
             #if it will lost the mode
@@ -482,13 +482,13 @@ class SpectraViewer(object):
 
         #backward pass
         for k in range(it0-1, -1, -1):
-            w = exp(-(fvec-F[-1])**2/(2*delta_f**2))    
+            w = np.exp(-(fvec-F[-1])**2/(2*delta_f**2))    
             ifmax = np.argmax(spect[:, k]*w)
             f = fvec[ifmax]
             A = -(spect[:, k]*w)[ifmax]
             
             #fine tuning 
-            w = exp(-(fvec-f)**2/(2*delta_f**2))    
+            w = np.exp(-(fvec-f)**2/(2*delta_f**2))    
             A, f = min_fine(fvec, -spect[:, k]*w)
                     
             #if it will lost the mode
@@ -891,8 +891,8 @@ class STFTDisplay():
  
             correction = [np.interp(fv, self.phase_correction[:, i*2], self.phase_correction[:, i*2+1])\
                         for i in range(self.phase_correction.shape[1]//2)]
-            correction = vstack(correction).T
-            A*= exp(1j*correction)
+            correction = np.vstack(correction).T
+            A*= np.exp(1j*correction)
        
         print( 'FFT done in:  %.2fs'% (time.time()-t))
          
@@ -901,7 +901,7 @@ class STFTDisplay():
             absA = np.abs(A)
             A/= absA; angA = A
 
-            Phi = exp(-1j*self.Phi)
+            Phi = np.exp(-1j*self.Phi)
             n = self.image.N_mode[0]
             
             cmplxPhi = complex64(Phi[None, :]**n[:, None])
