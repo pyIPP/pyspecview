@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import sys
 import matplotlib  
 
 try:
@@ -719,7 +720,7 @@ class STFTImage():
 
             return out
       
-        if typ == 'gamma':#standart definition of the gamma
+        if typ == 'gamma':#standard definition of gamma
             return z**self.gamma
 
         
@@ -1453,7 +1454,7 @@ class Diag2DMapping(object):
         self.remback_botton = remback_botton
         
         try:
-            gc_r, gc_z = parent.map_equ.get_gc()
+            gc_r, gc_z = get_gc()
 
             for key in gc_r:
                 self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
@@ -1856,18 +1857,18 @@ class MainGUI(QMainWindow):
         self.parent = parent
         self.MDSconn = None
         if self.tokamak == "AUG":
+            sys.path.append('/afs/ipp/aug/ads-diagd/common/python/lib')
+            from get_gc import get_gc
             from loaders_AUG import map_equ
-
             self.eqm = map_equ.equ_map()
         elif self.tokamak == "DIIID":
             from loaders_DIIID import map_equ
+            from loaders_DIIID.map_equ import get_gc
             import MDSplus as mds
             self.MDSconn = mds.Connection(self.mds_server )
             self.eqm = map_equ.equ_map(self.MDSconn)
         else:
             raise Exception("tokamak %s is not supported yet"%self.tokamak)
-
-        self.map_equ = map_equ
         
         #correction of the error in the plasma or diagnostic  position
         self.dR_corr = 0
@@ -2322,14 +2323,14 @@ class MainGUI(QMainWindow):
             print( 'Inicialize equlibrium')
             if not self.eqm.Open(self.shot, diag=self.eq_diag, exp=self.eq_exp, ed=self.eq_ed):
                 print( """Equlibrium shotfile: diag=%s, exp=%s, ed=%d do not exist!!!
-                standart  shotfile will be used"""%(self.eq_diag, self.eq_exp, self.eq_ed))
+                standard shotfile will be used"""%(self.eq_diag, self.eq_exp, self.eq_ed))
                 if self.tokamak == 'AUG':
                     if not self.eqm.Open(self.shot, diag='EQI'):
-                        print( """standart eq. do not exist!!! use real time equilibrium""")
+                        print( """standard eq. do not exist!!! use real time equilibrium""")
                         eqm_ready = False
                 if self.tokamak == 'DIIID':
                     if not self.eqm.Open(self.shot, diag='EFIT01'):
-                        print( """standart eq. do not exist!!! use real time equilibrium""")
+                        print( """standard eq. do not exist!!! use real time equilibrium""")
                         if not self.eqm.Open(self.shot, diag='EFITRT01'):
                             eqm_ready = False
             if eqm_ready:
