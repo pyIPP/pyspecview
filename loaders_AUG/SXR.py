@@ -135,7 +135,7 @@ class loader_SXR(loader):
                     wrong =  (sig < self.ADCmin) |  (sig > self.ADCrange[name]) 
 
                     if any(wrong):
-                        print(( 'correcting wrong points!', sum(wrong)))
+                        #print(( 'SXR %s currupted points'%name, sum(wrong)))
                         sig[wrong]=interp(where(wrong)[0], where(~wrong)[0],sig[~wrong])
                     #print sig.max(), name
                     output[j] = [tvec, sig]
@@ -201,8 +201,8 @@ class loader_SXR(loader):
         #downsample  to the slower DAS
         def reduce(x,y,x_out):
             r = int(round(float(len(x))/len(x_out)))
-            x = mean(x[:(len(x)/r)*r].reshape(len(x)/r, r),1)
-            y = mean(y[:(len(y)/r)*r].reshape(len(y)/r, r),1)
+            x = mean(x[:(len(x)//r)*r].reshape(len(x)//r, r),1)
+            y = mean(y[:(len(y)//r)*r].reshape(len(y)//r, r),1)
             return interp( x_out, x,y)
         
 
@@ -212,7 +212,7 @@ class loader_SXR(loader):
             else:
                 sig2,tvec2 = reduce(tvec2,sig2,tvec1),tvec1
 
-        return tvec1, vstack((sig1,sig2)).T
+        return tvec1, single(vstack((sig1,sig2)).T)
     
     
     def get_phi_tor(self,name=None):

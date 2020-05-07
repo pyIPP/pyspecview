@@ -60,8 +60,9 @@ cdict = {
 my_cmap = colors.LinearSegmentedColormap('my_colormap', cdict, 1024)
 
 #AUG
-tomo_code_path = '/afs/ipp-garching.mpg.de/home/t/todstrci/pytomo_orig/'
-tomo_local_path = '/afs/ipp-garching.mpg.de/home/t/$USER/tomography/'
+tomo_code_path = '$PYTOMO/'
+#afs/ipp-garching.mpg.de/home/t/todstrci/pytomo_orig/'
+tomo_local_path = '~/tomography/'
 
 #local
 #tomo_code_path = '/home/tomas/tomography/'
@@ -75,7 +76,7 @@ tomo_local_path = '/afs/ipp-garching.mpg.de/home/t/$USER/tomography/'
 
 tomo_code_path  = os.path.expanduser(os.path.expandvars(tomo_code_path))
 tomo_local_path = os.path.expanduser(os.path.expandvars(tomo_local_path))
-
+print('tomography path:', tomo_code_path)
 sys.path.append(tomo_code_path)
 
 #load some modules from pytomo 

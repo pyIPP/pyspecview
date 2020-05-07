@@ -17,4 +17,11 @@ export C_INCLUDE_PATH=${LD_LIBRARY_PATH}:/afs/ipp-garching.mpg.de/home/t/todstrc
 
 export PATH=${PATH}:/afs/@cell/common/soft/visualization/mencoder/svn-2012-11-15/amd64_sles11/bin
 
-python /afs/ipp/home/g/git/python/specviewer/pyspecview.py  $argv
+
+export LD_LIBRARY_PATH=${MKL_HOME}/lib/intel64_lin:/afs/ipp-garching.mpg.de/home/t/todstrci/SuiteSparse/lib/
+export PYTOMO=/afs/ipp/home/g/git/python/tomo
+#export PYSPECVIEW=/afs/ipp/home/t/todstrci/specviewer/
+export PYSPECVIEW=/afs/ipp/home/g/git/python/specviewer/
+
+
+python $PYSPECVIEW/pyspecview.py  $argv

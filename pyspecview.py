@@ -348,8 +348,8 @@ class SpectraViewer(object):
         x1, y1 = eclick.xdata, eclick.ydata
         x2, y2 = erelease.xdata, erelease.ydata
 
-        self.t_range = sort((x1, x2))
-        self.f_range = sort((y1, y2))
+        self.t_range = np.sort((x1, x2))
+        self.f_range = np.sort((y1, y2))
         
         self.RS1.to_draw.set_visible(True)
         self.RS1.canvas.draw()
@@ -423,7 +423,7 @@ class SpectraViewer(object):
         if y.ndim > 1: 
             y = y[:, 0]
             
-        y = np.single(copy(y[ind]))
+        y = np.single(np.copy(y[ind]))
 
         dt = (x[-1]-x[0])/x.size
         f = np.interp(x, tvec_f, fvec)
@@ -437,7 +437,7 @@ class SpectraViewer(object):
 
         ylow = filtfilt(b, a, y/corr)
         
-        return x, abs(ylow)
+        return x, np.abs(ylow)
 
 
     def trace_spectrogram(self, f0, t0, delta_f ):
@@ -445,7 +445,7 @@ class SpectraViewer(object):
         tvec = self.stft_disp.x
         fvec = self.stft_disp.y 
         if self.phase_analysis:
-            spect = copy(self.stft_img.z[0])
+            spect = np.copy(self.stft_img.z[0])
             it0 = tvec.searchsorted(t0)
             if0 = fvec.searchsorted(f0)
             spect[self.stft_img.z[1] != self.stft_img.z[1][if0, it0]] = 0 #select only one mode number
@@ -600,7 +600,7 @@ class SpectraViewer(object):
 
                 if self.cax == event.inaxes and event.name  == 'button_press_event':
                     n = self.stft_img.N_mode[1][int(event.ydata*len(self.stft_img.N_mode[0]))]
-                    self.orig_z = copy(self.stft_img.z[0]), copy(self.stft_img.z[1])
+                    self.orig_z = np.copy(self.stft_img.z[0]), np.copy(self.stft_img.z[1])
                     self.stft_img.z[0][self.stft_img.z[1] != n] = 0
                     self.stft_img.update_image(xstart, xend, ystart, yend, self.stft_img.z)  
         
@@ -669,8 +669,8 @@ class STFTImage():
         N_min, N_max = self.mode_range
     
         N = np.arange(N_min, N_max+1, dtype='int8')
-        random.seed(random_seed)
-        random.shuffle(N)
+        np.random.seed(random_seed)
+        np.random.shuffle(N)
         self.N_mode = np.arange(N_min, N_max+1, dtype='int8'), N[::-1]
 
     def prepare(self, xstart, xend, ystart, yend, z):
@@ -708,7 +708,7 @@ class STFTImage():
         if type(z) is tuple:
             return self.GammaTransform(z[0], typ=typ), z[1] 
         if np.iscomplexobj(z):
-            z = abs(z)
+            z = np.abs(z)
    
         if typ == 'log' and z.size > 1:
             #transformation by log
@@ -806,16 +806,17 @@ class DataPlot():
         istart, iend = self.x.searchsorted((xstart, xend))
         
         #random sampling
-        random.seed(254524545)
+        random.seed(0)
         ind = np.linspace(istart+1, iend-2, width*20)+np.random.rand(width*20)*2-1
         ind = np.int_(np.unique(np.round(ind)))
 
         try:
             x = self.x[ind]
-            y = real(self.y[ind])
-        except:#BUG??
+            y = self.y[ind].real
+        except Exception as e:
+            print('update_plot error',str(e), len(self.x), len(ind), len(self.y))
             x , y = [0, ], [0, ]
-
+            
         self.data_plot.set_data(x, y)
         self.ax.set_xlim(xstart, xend)
         self.ax.set_ylim(np.amin(y), np.amax(y))
@@ -903,8 +904,8 @@ class STFTDisplay():
 
             Phi = np.exp(-1j*self.Phi)
             n = self.image.N_mode[0]
-            
-            cmplxPhi = complex64(Phi[None, :]**n[:, None])
+
+            cmplxPhi = np.complex64(Phi[None, :]**n[:, None])
             
             ##go throught all mode numbers and find the one which gives the closest values of angles in all coils
             ang_norms = np.tensordot(angA, np.conj(cmplxPhi)/len(Phi), [2, 1])
@@ -1133,7 +1134,7 @@ class RadialViewer:
         self.qsurfs = qsurfs
         self.diag = diag
         
-        self.rho_ind = argsort(rho)
+        self.rho_ind = np.argsort(rho)
         self.rho = rho[self.rho_ind]
         
         self.data = [signal[i] for i in self.rho_ind]
@@ -1193,7 +1194,7 @@ class RadialViewer:
         if0 = fvec[1:].searchsorted(np.mean(self.f_range))
         df  = fvec[1:].searchsorted(np.diff(self.f_range))
         
-        ind_f = [slice(*(if0*(n+1)+r_[-df//2, df//2+1])) for n in range(self.n_harm_max)]
+        ind_f = [slice(*(if0*(n+1)+np.r_[-df//2, df//2+1])) for n in range(self.n_harm_max)]
         ind_f = [ind for ind in ind_f if np.size(fvec[ind])>0]
         self.n_harm = len(ind_f)
         
@@ -1220,10 +1221,10 @@ class RadialViewer:
             try:
                 normalization = 1/np.mean(win)/len(win)*np.sqrt(ind_f[0].stop-ind_f[0].start)*4/3.
             except:
-                print( 'normalization', ind_f, self.n_harm, if0, df, [slice(*(if0*(n+1)+r_[-df//2, (df+1)//2])) for n in range(self.n_harm)])
+                print( 'normalization', ind_f, self.n_harm, if0, df, [slice(*(if0*(n+1)+np.r_[-df//2, (df+1)//2])) for n in range(self.n_harm)])
                 raise
 
-            fft_signoise.append(np.median(abs(fdata))*normalization)
+            fft_signoise.append(np.median(np.abs(fdata))*normalization)
 
         #absolute value of the perturbation 
         fft_signoise = np.array(fft_signoise)
@@ -1237,14 +1238,14 @@ class RadialViewer:
                 self.amplitude.append(np.sqrt(np.maximum(0, A**2-fft_signoise**2)))
             else:
                 X = fdata0[ind_f[n]]/np.linalg.norm(fdata0[ind_f[n]])
-                A = np.array([abs(np.vdot(X, fs))/np.sum(win) for fs in fft_sig_n[n]])
+                A = np.array([np.abs(np.vdot(X, fs))/np.sum(win) for fs in fft_sig_n[n]])
                 self.amplitude.append(A)
 
         #measure a cross phase with respect to the strongest signal
         imax = np.argmax(self.amplitude[0]/(fft_signoise+np.nanmean(fft_signoise)*1e-6))      
                 
         sig_mean = np.array([np.mean(sig) for _, sig in self.data])
-        corrupted = (fft_signoise == 0)|(abs(self.rho)>=1.2)|(sig_mean<=0)
+        corrupted = (fft_signoise == 0)|(np.abs(self.rho)>=1.2)|(sig_mean<=0)
         
         #=================   use a advaced but more sensitive method. Only well coherent modes can be analyzed 
 
@@ -1276,17 +1277,17 @@ class RadialViewer:
         
         #get an envelope
         from scipy.signal import argrelmax
-        i = argrelmax( abs(cross_signal_2), mode='wrap')[0][1:-1]
+        i = argrelmax( np.abs(cross_signal_2), mode='wrap')[0][1:-1]
         try:
-            envelope = np.interp(cross_tvec, cross_tvec[i], abs(cross_signal_2)[i])
+            envelope = np.interp(cross_tvec, cross_tvec[i], np.abs(cross_signal_2)[i])
         except:
-            envelope = abs(cross_signal_2)
+            envelope = np.abs(cross_signal_2)
         
-        cross_signal= copy(cross_signal_2)
+        cross_signal= np.copy(cross_signal_2)
 
         #normalize the aplitude
         b, a = butter(3, f0/f_nq*.5, 'lowpass')
-        if not any(abs(roots(a))>=1):   envelope = filtfilt(b, a, envelope, padtype='even', padlen=padlen)
+        if not np.any(np.abs(np.roots(a))>=1):   envelope = filtfilt(b, a, envelope, padtype='even', padlen=padlen)
         cross_signal/= envelope[:len(cross_signal)]
         #change timebase
         cross_signal = np.interp(self.tvec, cross_tvec, cross_signal)
@@ -1323,7 +1324,7 @@ class RadialViewer:
             self.offset[j] = sig.mean()
             harm = np.dot(win*(sig-self.offset[j]), np.conj(complex_harm))/norm
         
-            self.amplitude2[:, j] = abs(harm)
+            self.amplitude2[:, j] = np.abs(harm)
             self.phi2[:, j] = np.angle(harm)
             #retrofit of the measured signal 
             self.retro[:, j] = np.dot(complex_harm, harm*np.sqrt(len(win))).real
@@ -1334,21 +1335,21 @@ class RadialViewer:
         theta_star0 = np.zeros_like(self.theta0)
         theta0 = np.unwrap(self.theta0, discont=1.5*np.pi)
         for i, (t0, t, ts) in enumerate(zip(theta0, self.mag_data[2], self.mag_data[3])):
-            theta_star0[i] = np.interp(t0, r_[t-2*np.pi, t, t+2*np.pi], r_[ts-2*np.pi, ts, ts+2*np.pi])*self.m #use periodicity 
+            theta_star0[i] = np.interp(t0, np.r_[t-2*np.pi, t, t+2*np.pi], np.r_[ts-2*np.pi, ts, ts+2*np.pi])*self.m #use periodicity 
         theta_star0 -= np.nanmean(theta_star0)
       
         #make a nice plot of phi, if possible  without 2pi jumps
-        ind = ~corrupted&(abs(self.rho)<1)
+        ind = ~corrupted&(np.abs(self.rho)<1)
         
         try:
-            phi = copy(self.phi2[0][ind])
+            phi = np.copy(self.phi2[0][ind])
             #keep  pi jumps sign consistent with theta_star0
             phi = np.unwrap(phi-theta_star0[ind])+theta_star0[ind]
 
             #rought shift with respect to the strongest
             phi -= np.median((phi-theta_star0[ind])[self.amplitude[0][ind]> mquantiles(self.amplitude[0][ind], .9)/2]) 
             #shift with respect to theta_star0, ignoring pi jumps 
-            weights = self.amplitude[0][ind]*(1-abs(self.rho[ind]))
+            weights = self.amplitude[0][ind]*(1-np.abs(self.rho[ind]))
             phi-= np.average((phi-theta_star0[ind]+np.pi/2)%np.pi - np.pi/2, weights=weights)
             #shift it by k*pi with respect to the strongest channels
             phi -= np.pi*round(np.average((phi-theta_star0[ind]), weights=weights)/np.pi)
@@ -1357,7 +1358,7 @@ class RadialViewer:
 
         self.phi2[0][ind] = phi 
         self.amplitude2[:, corrupted] = np.nan
-        theta_star0[abs(self.rho)>=1.2] = np.nan
+        theta_star0[np.abs(self.rho)>=1.2] = np.nan
         self.offset[corrupted] = np.nan
         self.phi2[0][corrupted] = np.nan 
 
@@ -1396,7 +1397,7 @@ class RadialViewer:
         w = self.amplitude2[n]/np.nanmax(self.amplitude2[n])
         w[np.isnan(w)] = 0
         self.plot2_s[n].set_facecolor((c.T*w+1-w).T)
-        self.plot2_s[n].set_offsets(c_[self.rho, self.phi2[n]])
+        self.plot2_s[n].set_offsets(np.c_[self.rho, self.phi2[n]])
 
         ymax = 0
         for n in range(self.n_harm):
@@ -1500,19 +1501,19 @@ class Diag2DMapping(object):
         self.phase_locked = phase_locked
         #BUG use just LFS measurements, troubles with mapping of the others from the HFS !!!
         
-        ind = argsort(abs(rho))
+        ind = np.argsort(np.abs(rho))
    
-        nlfs = np.sum((abs(rho)<=1)&(rho>=0)&np.isfinite(radial_view.amplitude2[0]))
-        nhfs = np.sum((abs(rho)<=1)&(rho<=0)&np.isfinite(radial_view.amplitude2[0]))
+        nlfs = np.sum((np.abs(rho)<=1)&(rho>=0)&np.isfinite(radial_view.amplitude2[0]))
+        nhfs = np.sum((np.abs(rho)<=1)&(rho<=0)&np.isfinite(radial_view.amplitude2[0]))
         
         rho_sign= 1 if nhfs <= nlfs else -1
         
-        ind = (abs(rho)<=1)&(rho_sign*rho>=0)&np.isfinite(radial_view.amplitude2[0])
+        ind = (np.abs(rho)<=1)&(rho_sign*rho>=0)&np.isfinite(radial_view.amplitude2[0])
         
         self.plot_ece_active.set_data( self.R[ind] , self.Z[ind] )
         self.plot_ece_ignored.set_data(self.R[~ind], self.Z[~ind])
 
-        sind = argsort(abs(rho))
+        sind = np.argsort(np.abs(rho))
         ind = sind[ind[sind]]
         
         assert len(ind) > 2, 'Not enought signals inside of seperatrix to make the mapping!'  
@@ -1547,8 +1548,8 @@ class Diag2DMapping(object):
 
         n_theta = Rmag_ece.shape[1]
         
-        self.Rmag_ece = c_[Rmag_ece[0].mean()*np.ones(n_theta), Rmag_ece.T].T
-        self.Zmag_ece = c_[Zmag_ece[0].mean()*np.ones(n_theta), Zmag_ece.T].T
+        self.Rmag_ece = np.c_[Rmag_ece[0].mean()*np.ones(n_theta), Rmag_ece.T].T
+        self.Zmag_ece = np.c_[Zmag_ece[0].mean()*np.ones(n_theta), Zmag_ece.T].T
      
         self.retro_cross_sig = radial_view.retro_cross_sig
 
@@ -1588,7 +1589,7 @@ class Diag2DMapping(object):
         if self.substract:
             self.cmap = 'seismic'
         else:
-            self.cmap =  cm.get_cmap('nipy_spectral')
+            self.cmap =  plt.cm.get_cmap('nipy_spectral')
             self.cmap._init()
             self.cmap.set_under('w')
 
@@ -1601,14 +1602,14 @@ class Diag2DMapping(object):
         i_end = ind_tend.start+np.argmin(np.sum((self.retro[ind_tend]-r0[None, :])**2, 1))
         
         #second pass to get a m-th minimum more accurately
-        dT = (self.tvec[i_end]-self.t_start)*abs(self.m)
-        dT = dT*np.array((1-0.5/abs(self.m), 1+0.5/abs(self.m)))
+        dT = (self.tvec[i_end]-self.t_start)*np.abs(self.m)
+        dT = dT*np.array((1-0.5/np.abs(self.m), 1+0.5/np.abs(self.m)))
         ind_tend = slice(*self.tvec.searchsorted(self.t_start+dT))
         i_end = ind_tend.start+np.argmin(np.sum((self.retro[ind_tend]-r0[None, :])**2, 1))
         ind_t = slice(i_start, i_end+1)
 
         self.mode_Te = self.retro[ind_t]
-        self.f0 = 1/(self.tvec[ind_t][-1]-self.tvec[ind_t][0])*abs(self.m)
+        self.f0 = 1/(self.tvec[ind_t][-1]-self.tvec[ind_t][0])*np.abs(self.m)
 
         #position of the measurements in the theta star coordinates
         self.thetaStar0 = [np.interp(t0, t, ts) for t0, t, ts in zip(self.theta0, self.theta, self.theta_star)]
@@ -1622,21 +1623,21 @@ class Diag2DMapping(object):
 
             #compensate the phase shift of the Te profile in a different timepoints
             if hasattr(self, 'rmax'):
-                imax = np.argmin(abs(self.rho-self.rmax))  #preselected position
+                imax = np.argmin(bp.abs(self.rho-self.rmax))  #preselected position
             else:
                 imax = np.argmax(np.std(self.mode_Te, 0))
 
             m  = np.mean(self.mode_Te[:, imax])
             Ac = np.sum((self.mode_Te[:, imax]-m)*np.cos(self.phi*self.m))
             As = np.sum((self.mode_Te[:, imax]-m)*np.sin(self.phi*self.m))
-            self.phi0 = np.arctan2(As, Ac)/abs(self.m)
+            self.phi0 = np.arctan2(As, Ac)/np.abs(self.m)
             print(' ECE phase shifted by %ddeg'%np.rad2deg(self.phi0 ))
 
 
     def shift_phase(self, shift_phi):
 
         self.shift_phi = shift_phi%(2*np.pi)#periodicity -         
-        self.time = self.t_start + self.shift_phi/(2*np.pi*self.f0)*abs(self.m)
+        self.time = self.t_start + self.shift_phi/(2*np.pi*self.f0)*np.abs(self.m)
 
         description = '#%d  at %.6fs, $\phi_0$ = %d, f$_0$ = %.4fkHz and m=%d'%(self.shot, \
                 self.time, np.rad2deg(np.median(self.Phi0)), self.f0/1e3, self.m)
@@ -1653,7 +1654,7 @@ class Diag2DMapping(object):
         
         #iterate over radial positions of the measurements
         for i, (t0, te, t) in enumerate(zip(self.thetaStar0, self.mode_Te.T, self.theta_star)):
-            mode_Te[i+1] = np.interp((sign(self.m)*(t-t0)+shift_phi)%(2*np.pi), self.phi, te)
+            mode_Te[i+1] = np.interp((np.sign(self.m)*(t-t0)+shift_phi)%(2*np.pi), self.phi, te)
 
         if self.substract: 
             mode_Te -= mode_Te.mean(1)[:, None]
@@ -1713,16 +1714,16 @@ class Diag2DMapping(object):
         collections = (self.plot_description, )
         if self.sxr_emiss is not None and filled_contours:
             R, Z = np.meshgrid(self.sxr_r+self.dR, self.sxr_z+self.dZ)  #BUG!!!
-            n = (0, 1, 1, 2, 3, 3)[abs(self.m)]  #BUG just guess of the most common mode!! 
+            n = (0, 1, 1, 2, 3, 3)[np.abs(self.m)]  #BUG just guess of the most common mode!! 
             if self.parent.tokamak == "AUG":
                 dT = (-40.5/360.)/self.f0*n/self.m  #BUG  toroidal shift between SXR and ECE
             if self.parent.tokamak == "DIIID":
                 dT = (69/360.)/self.f0*n/self.m  #BUG  toroidal shift between SXR and ECE
 
-            it = np.argmin(abs(self.sxr_tvec+dT-self.time))
+            it = np.argmin(np.abs(self.sxr_tvec+dT-self.time))
             E = np.maximum(self.sxr_emiss[:, :, it], 0)
   
-            i1, i2 = self.sxr_tvec.searchsorted(self.t_start + r_[0, 1]/self.f0*abs(self.m))
+            i1, i2 = self.sxr_tvec.searchsorted(self.t_start + np.r_[0, 1]/self.f0*np.abs(self.m))
             
             vmin_sxr = 0
             vmax_sxr = mquantiles(self.sxr_emiss[:, :, i1:i2].max((0, 1)), 0.95)[0]
@@ -1940,7 +1941,8 @@ class MainGUI(QMainWindow):
     
     def __del__(self, event=None):
         if hasattr(self, 'roto_tomo'):
-            self.roto_tomo.__del__(event)
+            del self.roto_tomo
+            #self.roto_tomo.__del__(event)
  
     def updatePanels(self, panel_ind):
         new_panel = self.tables_names[panel_ind]
@@ -2155,7 +2157,7 @@ class MainGUI(QMainWindow):
             raise Exception('animation not supported')
 
         import matplotlib.animation as animation
-        theta = np.linspace(0, 2*np.pi/obj.m, 100//abs(obj.m), endpoint=False)
+        theta = np.linspace(0, 2*np.pi/obj.m, 100//np.abs(obj.m), endpoint=False)
         
         def animate(t):
             sys.stdout.write("\r Writing movie: %2.0f%%" %(t/(2*np.pi/obj.m)*100))
@@ -2404,6 +2406,7 @@ class MainGUI(QMainWindow):
             self.data_loader = self.diag_loaders[self.diag][0](self.shot, 
                         eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)
         except Exception as e:
+            print('error in loading')
             print( traceback.format_exc())
             QMessageBox.warning(self, "Loading problem", e, QMessageBox.Ok)
             return       
@@ -2608,9 +2611,9 @@ class MainGUI(QMainWindow):
             rho_, theta_tg_, R_, Z_ = self.data_loader.get_rho(group, names, 
                         (tmin+tmax)/2, dR=self.dR_corr, dZ=self.dZ_corr)
 
-            rho = append(rho, rho_)
-            theta_tg = append(theta_tg, theta_tg_)
-            R, Z = append(R, R_), append(Z, Z_) 
+            rho = np.append(rho, rho_)
+            theta_tg = np.append(theta_tg, theta_tg_)
+            R, Z = np.append(R, R_), np.append(Z, Z_) 
             try:
                 Phi = self.data_loader.get_phi_tor()
             except:
@@ -2635,12 +2638,12 @@ class MainGUI(QMainWindow):
             dt = np.gradient(theta_star)[1]/np.gradient(theta)[None]
             J = dt*dr  #jacobian of the transformation
             
-            rho_interp = minimum(np.maximum(rho_grid[0], abs(rho)), rho_grid[-1])
+            rho_interp = np.minimum(np.maximum(rho_grid[0], np.abs(rho)), rho_grid[-1])
                 
             magr_ece = interp1d(rho_grid, magr , axis=0, assume_sorted=True)(rho_interp)
             magz_ece = interp1d(rho_grid, magz , axis=0, assume_sorted=True)(rho_interp)
             J        = interp1d(rho_grid, J    , axis=0, assume_sorted=True)(rho_interp)
-            theta    = tile(theta, (len(rho_interp), 1))
+            theta    = np.tile(theta, (len(rho_interp), 1))
             theta_star_ = interp1d(rho_grid, theta_star, axis=0, assume_sorted=True)(rho_interp)
             mag_data = magr_ece, magz_ece, theta, theta_star_, J
 
@@ -3609,12 +3612,11 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    print(args) 
-    
+  
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("plastique"))
     #set window icon
-    
+     
     app.setWindowIcon(QIcon(path+'/icon.png'))
     
     form = MainGUI(args.shot, args.diag, args.group, args.sig, args.diag_phase, args.signal_phase, args.tmin, args.tmax, args.fmin, args.fmax )
