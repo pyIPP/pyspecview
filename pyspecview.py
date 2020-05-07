@@ -253,7 +253,7 @@ class SpectraViewer(object):
         self.window = window
         self.description = description
         self.nt = data['tvec'].size
-        self.dt = (data['tvec'][-1]-data['tvec'][0])/self.nt  #BUG not valid for not equally spaced time vectors!
+        self.dt = (data['tvec'][-1]-data['tvec'][0])/(self.nt-1)  #BUG not valid for not equally spaced time vectors!
 
         self.nfft0 = self.get_nfft(self.tau0)
         gamma = self.sgamma.value()/self.sdpi
