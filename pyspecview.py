@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import sys
+sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
 import matplotlib  
 
 try:
@@ -1452,10 +1453,16 @@ class Diag2DMapping(object):
         
         self.n_contour = n_contour
         self.remback_botton = remback_botton
-        
-        try:
-            gc_r, gc_z = get_gc()
 
+        if self.parent.tokamak == "AUG":
+            sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
+            import get_gc
+            gc_r, gc_z = get_gc.get_gc()
+        elif self.parent.tokamak == "DIIID":
+            from loaders_DIIID import map_equ
+            gc_r, gc_y = map_equ.get_gc()
+
+        try:
             for key in gc_r:
                 self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
         except:
@@ -1857,13 +1864,10 @@ class MainGUI(QMainWindow):
         self.parent = parent
         self.MDSconn = None
         if self.tokamak == "AUG":
-            sys.path.append('/afs/ipp/aug/ads-diagd/common/python/lib')
-            from get_gc import get_gc
-            from loaders_AUG import map_equ
+            import map_equ_20200306 as map_equ
             self.eqm = map_equ.equ_map()
         elif self.tokamak == "DIIID":
             from loaders_DIIID import map_equ
-            from loaders_DIIID.map_equ import get_gc
             import MDSplus as mds
             self.MDSconn = mds.Connection(self.mds_server )
             self.eqm = map_equ.equ_map(self.MDSconn)
@@ -2082,14 +2086,14 @@ class MainGUI(QMainWindow):
 
         canvas = None
         if not (self.SpecWin.initialized or self.SpecWin_phase.initialized ):
-            print('spectrum or cross-spectrum is not inicialize')
+            print('spectrum or cross-spectrum is not initialised')
             return
         
         fine_resolution = False
         if self.curr_tab == 0:
             #increase the resolution before saving
-            self.SpecWin.stft_disp.ax_update(self.SpecWin.stft_disp.im_ax, 
-                                             fine_resolution=fine_resolution, force_update=True)
+            self.SpecWin.stft_disp.ax_update(self.SpecWin.stft_disp.im_ax, \
+                            fine_resolution=fine_resolution, force_update=True)
  
             canvas = self.canvas
             canvas.draw_idle()
@@ -2320,7 +2324,7 @@ class MainGUI(QMainWindow):
             
         def init_equlibrium():
             eqm_ready = True
-            print( 'Inicialize equlibrium')
+            print( 'Initialise equlibrium')
             if not self.eqm.Open(self.shot, diag=self.eq_diag, exp=self.eq_exp, ed=self.eq_ed):
                 print( """Equlibrium shotfile: diag=%s, exp=%s, ed=%d do not exist!!!
                 standard shotfile will be used"""%(self.eq_diag, self.eq_exp, self.eq_ed))
@@ -2335,10 +2339,8 @@ class MainGUI(QMainWindow):
                             eqm_ready = False
             if eqm_ready:
 
-                self.eqm.read_ssq()
-                self.eqm._read_scalars()
-                self.eqm._read_profiles()
-                self.eqm._read_pfm()              
+                self.eqm.read_scalars()
+                self.eqm.read_pfm()              
                 self.eqm_ready = True
 
         self.statusBar().showMessage('Loading equilibrium ...', 5000 )
@@ -3546,7 +3548,8 @@ class MainGUI(QMainWindow):
             #backward compatibility 
             self.mds_server = None
             self.tokamak = 'AUG'
-        
+        print('TOKAMAK = %s' %self.tokamak)
+ 
         self.spect_cmap = config.get('spectrogram', 'spect_cmap')
         self.win_fun = config.get('spectrogram', 'win_fun')
         self.show_plasma_freq = config.get('spectrogram', 'show_plasma_freq').strip() == 'True'

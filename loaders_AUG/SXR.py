@@ -4,22 +4,19 @@ import os
 from functools import reduce
 
 
-
 def check(shot):
     #fastest check if the shotfile exist
     status = False
 
     path = shot_path+'/%d/SX/SXA/%d'
     status |= os.path.isfile(path%(shot/10,shot))
-
     
     return status
 
 
-
-
 #not implemented for the old SXR system 
 class loader_SXR(loader):
+
     tor_mode_num = True
     pol_mode_num = False  #not implemented yet!! 
 
@@ -28,16 +25,16 @@ class loader_SXR(loader):
     units = 'W/m$^2$'
 
     def __init__(self,*args, **kargs):
+
         super(loader_SXR,self).__init__(*args, **kargs)
 
-        self.calib_shot = self.dd.cShotNr('AUGD', 'CSX',self.shot)
-        
+        self.calib_shot = dd.PreviousShot('CSX', self.shot, experiment='AUGD')
+
         self.dd.Open( 'CSX', self.calib_shot)
         names = self.dd.GetNames()  
 
-        
         signals = [b[1:] for b in names if b[0]== 'C']
-        
+
         shotfiles    = [  self.dd.GetParameter('C'+s, 'SX_DIAG' ).tostring().decode('utf-8') for s in signals]
         self.Phi     = {s:self.dd.GetParameter('C'+s, 'Tor_Pos' )+45 for s in signals}
         #BUG missing phi_end for T camera!!
@@ -61,7 +58,6 @@ class loader_SXR(loader):
             self.SHIFTB[s] = [self.dd.GetParameter('C'+s,'SHIFTB%.2d'%i) for i in range(n)]
             if self.SHIFTB[s][-1] == 0 or different_det[s]:  #corrupted signal
                 shotfiles[k] = 'OOO'
-        
 
         self.SXR_diods = {}
 
@@ -73,7 +69,6 @@ class loader_SXR(loader):
             
         try:
             self.SXR_diods.pop('OOO')  #null detector
-            #self.SXR_diods.pop('SXO')  #null detector
         except:
             pass
         
@@ -82,32 +77,23 @@ class loader_SXR(loader):
             self.all_signals.extend(signals)
         self.groups = unique([i[0] for i in self.all_signals])
         self.openshotfile = ''
-        
-        #print(self.all_signals)
-        #print(self.groups )
-        #import IPython
-        #IPython.embed()
-    
+
     def get_names(self,group):
         names = [s for s in self.all_signals if s[0] == group]
         names.sort()
         return  names
-
-        
-        
 
             
     def get_signal(self,group, name,calib=False,tmin=None,tmax=None):
         
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
-            
         
         if isinstance(name,str):
             names = (name, )
         else:  names = name
         
-        output = empty(len(names),dtype=object)
+        output = np.empty(len(names), dtype=object)
         for shotfile,signals in self.SXR_diods.items():
             
             for j, name in enumerate(names):
@@ -121,13 +107,11 @@ class loader_SXR(loader):
                     
                     info = self.dd.GetInfo('Time')
                     tlen = info.tlen
-                    tbeg = self.dd.GetTimebase('Time',1,1)[0]
-                    tend = self.dd.GetTimebase('Time',tlen,tlen)[0]
+                    tbeg = self.dd.GetTimebase('Time', cal=True, nbeg=1, nend=1)[0]
+                    tend = self.dd.GetTimebase('Time', cal=True, nbeg=tlen, nend=tlen)[0]
                     #BUG assume equally spaced time vector
-                    #print(tmin,tmax,tbeg,tlen)
-                    nbeg,nend = int_((r_[tmin,tmax]-tbeg)/(tend-tbeg)*tlen)
-                    #tvec = self.dd.GetTimebase('Time',nbeg+1,nend)
-                    tvec = linspace(tmin,tmax, nend-nbeg)
+                    nbeg,nend = np.int_((np.r_[tmin,tmax]-tbeg)/(tend-tbeg)*tlen)
+                    tvec = np.linspace(tmin,tmax, nend-nbeg)
     
                     sig = self.dd.GetSignal(name, nbeg= nbeg+1,nend = nend)
                     
@@ -135,51 +119,28 @@ class loader_SXR(loader):
                     wrong =  (sig < self.ADCmin) |  (sig > self.ADCrange[name]) 
 
                     if any(wrong):
-                        #print(( 'SXR %s currupted points'%name, sum(wrong)))
-                        sig[wrong]=interp(where(wrong)[0], where(~wrong)[0],sig[~wrong])
-                    #print sig.max(), name
+                        sig[wrong]=np.interp(np.where(wrong)[0], np.where(~wrong)[0],sig[~wrong])
                     output[j] = [tvec, sig]
-                        
-                    #if name == 'I_060':
-                        #import IPython
-                        #IPython.embed()
-                        
-                        #from matplotlib.pylab import *
-                        #self.ADCrange[name]
-                        #plot(tvec, sig)
-                        #axhline(self.ADCrange[name])
-                        #show()
-                        
-                    
-    
-        
+
         #the calibration could be done also by method dd.GetSignalCalibrated, 
         #but in this case a corrupted points could not be identified
         if calib:
             for j, name in enumerate(names):
-                sig = single(output[j][1])
+                sig = np.single(output[j][1])
                 M = self.MULTIA[name]
                 S = self.SHIFTB[name]
 
-                sig*= prod(M)
+                sig*= np.prod(M)
                 sig+= ((S[0]*M[1]+S[1])*M[2]+S[2])*M[3]+S[3]
                 output[j][1] = sig
  
-        
         if len(names) == 1: return  output[0]
-        
-        #print 'done',name
-        #from matplotlib.pylab import *
-        #for x,y in output:
-            #title(group)
-            #plot(x,y)
-        #show()
 
         return output 
-        
-        
-        
+
+
     def get_names_phase(self):
+
         Fsig = self.get_names('F')
         Gsig = self.get_names('G')
         
@@ -201,10 +162,9 @@ class loader_SXR(loader):
         #downsample  to the slower DAS
         def reduce(x,y,x_out):
             r = int(round(float(len(x))/len(x_out)))
-            x = mean(x[:(len(x)//r)*r].reshape(len(x)//r, r),1)
-            y = mean(y[:(len(y)//r)*r].reshape(len(y)//r, r),1)
-            return interp( x_out, x,y)
-        
+            x = np.mean(x[:(len(x)//r)*r].reshape(len(x)//r, r),1)
+            y = np.mean(y[:(len(y)//r)*r].reshape(len(y)//r, r),1)
+            return np.interp( x_out, x, y)
 
         if len(sig1)!= len(sig2):
             if len(sig1) > len(sig2):
@@ -212,7 +172,7 @@ class loader_SXR(loader):
             else:
                 sig2,tvec2 = reduce(tvec2,sig2,tvec1),tvec1
 
-        return tvec1, single(vstack((sig1,sig2)).T)
+        return tvec1, np.single(np.vstack((sig1,sig2)).T)
     
     
     def get_phi_tor(self,name=None):
@@ -221,33 +181,31 @@ class loader_SXR(loader):
             phi1 = self.Phi['F'+name[2:]]
             phi2 = self.Phi['G'+name[2:]]
             
-            return deg2rad( r_[phi1,phi2])
+            return np.deg2rad( np.r_[phi1,phi2])
         elif name in self.Phi:
-            return deg2rad(self.Phi[name])
+            return np.deg2rad(self.Phi[name])
         
         else: 
             try:
-                return deg2rad(median([v for k,v in self.Phi.items()]))
+                return np.deg2rad(np.median([v for k,v in self.Phi.items()]))
             except:
                 print(self.Phi.values())
                 raise
             
-            
-
-
     
     def get_rho(self,group,names,time,dR=0,dZ=0):
 
         #BUG not working for a tangential camera!!!
-        R_start = array([self.R_start[name] for name in names])
-        z_start = array([self.z_start[name] for name in names])
-        R_end = array([self.R_end[name] for name in names])
-        z_end = array([self.z_end[name] for name in names])
-        Phi = array([self.Phi[name] for name in names])
+        R_start = np.array([self.R_start[name] for name in names])
+        z_start = np.array([self.z_start[name] for name in names])
+        R_end = np.array([self.R_end[name] for name in names])
+        z_end = np.array([self.z_end[name] for name in names])
+        Phi = np.array([self.Phi[name] for name in names])
         rho_tg,theta_tg,R,Z = super(loader_SXR,self).get_rho(time,R_start,
                                     z_start,Phi,R_end,z_end,Phi,dR=dR, dZ=dZ)
 
         return rho_tg, theta_tg,R,Z
+
     
     def signal_info(self,group,name,time):
         
@@ -265,65 +223,5 @@ class loader_SXR(loader):
             phi = self.Phi[name]
 
             info = str(name)+' Phi: %d deg, rho_tg: %.2f'%(phi,rho_tg)
-            
-            
-            
-            
+
         return info
-    
-    
- 
-
- 
-
-def main():
-    import os
-    import os,sys
-    sys.path.append('/afs/ipp/home/t/todstrci/TRANSP/')
-    from . import dd   
-    #from matplotlib.pylab import *
-    from . import map_equ
-
-    shot = 33871
-
-
-    eqm = map_equ.equ_map(debug=True)
-    eqm.Open(shot, diag='EQI')
-    eqm.read_ssq()
-    sxr =  loader_SXR(shot,eqm= eqm,rho_lbl='rho_tor')
-    ##sxr =  loader_SXR(33871)
-    #G = sxr.get_signal_groups()
-    #S = sxr.get_names('I')
-    
-    t,x = sxr.get_signal_phase('FG_020')
-    
-    import IPython
-    IPython.embed()
-    
-    
-    #dd = dd.shotfile()
-
-    #dd.Open('SXG',33871 )
-    
-    #sig2 = dd.GetSignalCalibrated('I_045')
-    
-    #tvec, sig = sxr.get_signal('J','I_045',calib=True)
-    
-    #plot(sig2,'-')
-    #plot(sig,'-')
-
-    #show()
-
-    
-    
-    
-    
-    
-    #dd = dd.shotfile()
-
-    
-            
- 
-
-if __name__ == "__main__":
-    main()

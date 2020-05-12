@@ -1,23 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-
-#TODO zkusit toroidálně sloučené mody třeba 34054 7.7s ? co se tm děje? jak nastavovat sílu rotačí tomografie? 
-#vstup - geometrie, magnetika, komplexní harminické a jejich errorbary, thetastar, eho_pol,  
-#BUG poloidaální asymetrie tomu pořád dělají problémy!!! :( změnit dtheta? 
-#zkusit to s druhou derivací? nějak silnější podmínku na fázi? 
-#menit sílu rotační tomogrefie pomocí dtehta? 
-#nultou řešit úplně zvlášť 
-#toroidally coupled modes? 4/3, 3/3 naráz? mají stejnou frekvenci?  
-#přefituje to když tam ten mod není - dát tam něco robustnějšího? svázet s první harminockou? 
-#jak vyřešit ten aktefakt uvnitř modu? proč nejde perturbace v centru k nule? iteraticně maximalizovat sparsitu? 
-#TODO prozkoumat tu bázi v předchozí verzi, nějaký problém s niquistovým teorémem? shlazovací maticí?  nad určitý bázový vektor to dává nesmysly a vlastní čísla padají pomaleji 
-#TODO započíst errobarry!!
-#načíst vadné detektory a kalibrace z tomografie!!!
-#načíst data komplet s tomogrefie? 
-
-#TODO udlěta to grafické rozhraní - zdokonalit a vylepšit ty grafy 
-
 import os,sys
 from numpy import *
 from scipy import sparse
@@ -955,7 +938,12 @@ class Roto_tomo:
         self.plot_mag_theta = self.ax.plot(X,X,'--',c='0.5',lw=.5, visible=self.show_flux.isChecked())
 
         #tokamak chamber
-        gc_r, gc_z = self.map_equ.get_gc()
+        try:
+            sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
+            from get_gc import get_gc  # AUG
+        except:
+            from self.map_equ import get_gc # DIII-D
+        gc_r, gc_z = get_gc()
         for key in gc_r.keys():
             self.ax.plot(gc_r[key], gc_z[key],c='0.5',lw=.5)
         
@@ -1022,8 +1010,14 @@ class Roto_tomo:
         self.ax.axis([self.magr[:,ir].min(),self.magr[:,ir].max(),self.magz[:,ir].min(),self.magz[:,ir].max()])
 
 
-        self.q_prof = eqm.getQuantity(self.rhop,'Qpsi', t_in=t0)
-
+# GIT       self.q_prof = eqm.getQuantity(self.rhop,'Qpsi', t_in=t0)
+        jtq = argmin(abs(eqm.t_eq - t0))
+        nrho = max(self.eqm.lpfp) + 1
+        psi = eqm.get_profile('PFL')[jtq, :nrho]
+        q   = eqm.get_profile('Qpsi')[jtq, :nrho]
+        rhop_q = self.eqm.rho2rho(psi, t_in=t0, coord_in='Psi', coord_out='rho_pol')[0]
+        self.q_prof = interp(self.rhop, rhop_q, q)
+ 
         #Prepare tokamak object from original tomography code
         input_parameters = read_config(tomo_code_path+"tomography.cfg")
         input_parameters['shot'] = shot
@@ -1196,7 +1190,7 @@ class Roto_tomo:
       
         self.dets = dets[all(isfinite(error_sig),1)[dets]]
         
-        #inicialize it only once 
+        #initialise it only once 
         dets_index = self.tok.dets_index[:-1]  
         dF = (self.fmax-self.fmin)/2
         self.SVDF = SVDFilter(self.tvec, self.signals,nanmean(self.error_sig ,0),dets_index,

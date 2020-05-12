@@ -12,11 +12,7 @@ def check(shot):
         path = shot_path+'/%d/XX/%s/%d'
         status |= os.path.isfile(path%(shot//10,s,shot))
     
-    
     return status
-
-
-
 
 
 class loader_FILD(loader):
@@ -24,7 +20,6 @@ class loader_FILD(loader):
     def __init__(self,*args, **kargs):
         
         super(loader_FILD,self).__init__(*args, **kargs)
-
 
         self.names = {}
         for shotfile in shotfiles:
@@ -40,7 +35,6 @@ class loader_FILD(loader):
         return self.names[group]
     
     def get_signal(self,group, name,calib=False,tmin=None,tmax=None):
-        
 
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
@@ -51,14 +45,9 @@ class loader_FILD(loader):
         nbeg, nend = tvec.searchsorted((tmin,tmax))
 
         sig = self.dd.GetSignal(name,cal=calib, nbeg= nbeg,nend = nend)
-        #self.dd.Close()
 
         return tvec[nbeg:nend+1],sig
-
-            
 
     def signal_info(self,group,name,time):
         info = group+': '+name
         return info
-    
- 

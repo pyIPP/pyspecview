@@ -20,8 +20,8 @@ export PATH=${PATH}:/afs/@cell/common/soft/visualization/mencoder/svn-2012-11-15
 
 export LD_LIBRARY_PATH=${MKL_HOME}/lib/intel64_lin:/afs/ipp-garching.mpg.de/home/t/todstrci/SuiteSparse/lib/
 export PYTOMO=/afs/ipp/home/g/git/python/tomo
-#export PYSPECVIEW=/afs/ipp/home/t/todstrci/specviewer/
-export PYSPECVIEW=/afs/ipp/home/g/git/python/specviewer/
+rootdir=`dirname $0`                       # may be relative path
+export PYSPECVIEW=`cd $rootdir && pwd`  # ensure absolute path
 
 
 python $PYSPECVIEW/pyspecview.py  $argv
