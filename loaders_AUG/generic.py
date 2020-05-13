@@ -77,8 +77,8 @@ class loader_gen(loader):
         if tvec is None:
             raise Exception('No timebase has been found!!')
         
-        dt = diff(tvec)
-        if std(dt) > mean(dt)/5:
+        dt = np.diff(tvec)
+        if np.std(dt) > np.mean(dt)/5:
             print('NWarning: non equally spaced timebase!!')
 
         nbeg, nend = tvec.searchsorted((tmin,tmax))
@@ -102,22 +102,3 @@ class loader_gen(loader):
         return info
     
  
-
-def main():
-
-    from . import map_equ
-    shot = 33000
-
-    eqm = map_equ.equ_map(debug=True)
-    eqm.Open(shot, diag='EQI')
-    eqm.read_ssq()
-    ece =  loader_gen(shot,eqm= eqm,rho_lbl='rho_tor')
-    
-    ece.groups
-
-    names = ece.get_names('NIB')
-
-    ece.get_signal('NIB', 'BU:1')
-
-if __name__ == "__main__":
-    main()

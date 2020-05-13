@@ -1,7 +1,7 @@
 #!/bin/bash -f
 
-echo 12/11/2019 was done an upgrade to Python3.7, Qt5 and Matplolib 3. Despite a detailed testing there can be still remaining bugs. Let me know if you find any.
-echo Tomas Odstrcil
+echo 12/11/2019 was done an upgrade to Python3.7, Qt5 and Matplolib 3. 
+
 echo 
 echo In case of any problem, please contact: tomas.odstrcil@gmail.com or git@ipp.mpg.de for local issues
 
@@ -24,4 +24,4 @@ rootdir=`dirname $0`                       # may be relative path
 export PYSPECVIEW=`cd $rootdir && pwd`  # ensure absolute path
 
 
-python $PYSPECVIEW/pyspecview.py  $argv
+python $PYSPECVIEW/pyspecview.py  $@

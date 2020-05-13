@@ -1460,7 +1460,7 @@ class Diag2DMapping(object):
             gc_r, gc_z = get_gc.get_gc()
         elif self.parent.tokamak == "DIIID":
             from loaders_DIIID import map_equ
-            gc_r, gc_y = map_equ.get_gc()
+            gc_r, gc_z = map_equ.get_gc()
 
         try:
             for key in gc_r:
@@ -2406,12 +2406,14 @@ class MainGUI(QMainWindow):
         if hasattr(self, 'data_loader'):
             del self.data_loader  #free memory of the previous data_loader
         try:
+            if self.diag not in self.diag_loaders:
+                raise Exception('Loader for diagnostic %s was not found'%self.diag)
             self.data_loader = self.diag_loaders[self.diag][0](self.shot, 
                         eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)
         except Exception as e:
             print('error in loading')
             print( traceback.format_exc())
-            QMessageBox.warning(self, "Loading problem", e, QMessageBox.Ok)
+            QMessageBox.warning(self, "Loading problem", str(e), QMessageBox.Ok)
             return       
         
         QApplication.restoreOverrideCursor()
@@ -2438,7 +2440,7 @@ class MainGUI(QMainWindow):
                         ed=0, eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)
         except Exception as e:
             print( traceback.format_exc())
-            QMessageBox.warning(self, "Loading problem", e, QMessageBox.Ok)
+            c.warning(self, "Loading problem", str(e), QMessageBox.Ok)
             return 
             
         self.diag_groups_radial = self.data_loader_radial.get_signal_groups()
@@ -2467,7 +2469,7 @@ class MainGUI(QMainWindow):
                         ed=0, eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)
         except:
             print( traceback.format_exc())
-            QMessageBox.warning(self, "Loading problem", e, QMessageBox.Ok)
+            QMessageBox.warning(self, "Loading problem", str(e), QMessageBox.Ok)
             return 
         self.sig_names_phase = self.data_loader_phase.get_names_phase()
         #print('change diag phase', self.sig_names_phase)
@@ -2534,6 +2536,8 @@ class MainGUI(QMainWindow):
         T = time.time()
         try:
             tvec, sig = self.data_loader.get_signal(self.diag_group, self.signal)
+            if np.size(tvec) < 2:
+                raise Exception('Too short time vector len(time) = %d'%np.size(tvec))
         except Exception as e:
             print( traceback.format_exc())
 
@@ -2551,9 +2555,14 @@ class MainGUI(QMainWindow):
         print(  'data loaded in %.2fs'%(time.time()-T), self.diag_group, self.signal)
 
         if self.show_plasma_freq and self.data_loader.radial_profile and self.eqm_ready:
-            rho = self.data_loader.get_rho(self.diag_group, (self.signal, ), 
-                                np.mean(xlims), dR=self.dR_corr, dZ=self.dZ_corr)[0]
-            data['freq_tvec'], data['freq'] = self.data_loader.get_plasma_freq(rho)
+            try:
+                rho = self.data_loader.get_rho(self.diag_group, (self.signal, ), 
+                                    np.mean(xlims), dR=self.dR_corr, dZ=self.dZ_corr)[0]
+                data['freq_tvec'], data['freq'] = self.data_loader.get_plasma_freq(rho)
+            except Exception as e:
+                print( traceback.format_exc())
+                data['freq_tvec'] = data['freq'] = np.nan
+                return                 
 
         if  self.SpecWin.initialized:
             self.SpecWin.init_plot(data, tmin=xlims[0], tmax=xlims[1], fmin0=ylims[0], 
@@ -3616,7 +3625,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-  
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("plastique"))
     #set window icon

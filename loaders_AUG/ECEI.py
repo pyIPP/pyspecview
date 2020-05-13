@@ -74,7 +74,6 @@ class loader_ECEI(loader):
                 self.ECI_time = self.dd.GetTimebase("time")
                 data = self.dd.GetSignal(LOS)
                 setattr(self, 'ECI_'+LOS, data)
-                #self.dd.Close()
 
             imin,imax = self.ECI_time.searchsorted([tmin,tmax])
             sig = getattr(self, 'ECI_'+LOS)[imin:imax+1,ind-1]
@@ -94,7 +93,6 @@ class loader_ECEI(loader):
                 self.TDI_time =  self.dd.GetTimebase("Sig1")
                 data = self.dd.GetSignal("Sig%d"%sig)
                 setattr(self, 'TDI_%d'%sig, data)
-                #self.dd.Close()
 
             imin,imax = self.TDI_time.searchsorted([tmin,tmax])
             sig = getattr(self, 'TDI_%d'%sig)[imin:imax+1,ind]
@@ -131,7 +129,7 @@ class loader_ECEI(loader):
             print( 'Warning: shotfile with resonance  positions was not found ')
             return np.nan,np.nan,np.nan,np.nan
             
-        time = max(min(time,RZtime[-1] ), RZtime[0] )
+        time = np.clip(time, *RZtime[[0,-1]])
         
         i,j =  np.int_(names[0].split(':'))-1
         R = interp1d(RZtime, R[:,i,j],axis=0)(time)
@@ -145,11 +143,10 @@ class loader_ECEI(loader):
         
 
     def signal_info(self,group,name,time):
-        name = int(name)
 
         rho, theta, R,z = self.get_rho(group,(name,),time)
 
-        info+=  'ch: '+str(name)+'  R: %.3fm  z: %.3fm rho_p: %.2f'%(R,z,rho)
+        info =  'ch: '+str(name)+'  R: %.3fm  z: %.3fm rho_p: %.2f'%(R,z,rho)
   
         return info
     

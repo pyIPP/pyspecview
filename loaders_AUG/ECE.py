@@ -1,7 +1,7 @@
 import numpy as np
 from .loader import * 
-from scipy.interpolate import interp1d
 import os, sys
+from scipy.interpolate import interp1d
 sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
 import dd_20200507 as dd
 
@@ -36,8 +36,7 @@ class loader_ECE(loader):
         self.corrupted_calibration=False
         self.names = []
         new_rmd_shotfile = False
-        #import IPython
-        #IPython.embed()
+   
         if self.dd.Open('RMC',self.shot ,experiment=self.exp, edition=self.ed):
             #new diagnostic
     
@@ -58,7 +57,7 @@ class loader_ECE(loader):
                     
             calib_shot = dd.PreviousShot('RMD', self.shot, experiment=self.exp)
             if self.dd.Open('RMD',calib_shot,experiment=self.exp, edition=self.ed):
-                prefix = '' if any(np.in1d(self.dd.GetNames(),'CAL-A1')) else 'e'
+                prefix = '' if np.any(np.in1d(self.dd.GetNames(),'CAL-A1')) else 'e'
                         
                 self.CALA1_M2 = self.dd.GetParameter(prefix+'CAL-A1', 'MULTIA00')
                 self.CALA1_S2 = self.dd.GetParameter(prefix+'CAL-A1', 'SHIFTB00')
@@ -71,16 +70,11 @@ class loader_ECE(loader):
             
             else:
                 print( 'calibratin shotfile was not found!')
-
-                #self.dd.Open('CEC',self.shot)
-                #calfact = self.dd.GetParameter('parms-A', 'calfact')
                 self.CALA1_M2 = np.ones_like(self.CALA1_M0)
                 self.CALA1_S2 = np.zeros_like(self.CALA1_M0)
                 self.CALA2_M2 = np.ones_like(self.CALA1_M0)
                 self.CALA2_S2 = np.zeros_like(self.CALA1_M0)
-                #calib_shot = None
-            #import IPython
-            #IPython.embed()
+         
             
         elif self.dd.Open('RMA',self.shot ,experiment=self.exp, edition=self.ed):
             #old diagnostic
@@ -89,7 +83,6 @@ class loader_ECE(loader):
             self.CALA1_S0 = self.dd.GetParameter('CALIB', 'SHIFTB00')
 
             self.dd.Open('RMB',self.shot ,experiment=self.exp, edition=self.ed)
-           
             self.CALA2_M0 = self.dd.GetParameter('CALIB', 'MULTIA00')
             self.CALA2_S0 = self.dd.GetParameter('CALIB', 'SHIFTB00')
             
@@ -193,7 +186,7 @@ class loader_ECE(loader):
                     self.tvecA1 = self.dd.GetTimebase('SI-MI-A', cal=True)
                     imax = self.tvecA1.searchsorted(self.tmax)+1
                     self.TradA1 = self.dd.GetSignal('SI-MI-A',nend=imax)
-                    self.TradA1 = hstack((self.TradA1, self.dd.GetSignal('SI-MI-B',nend=imax)))
+                    self.TradA1 = np.hstack((self.TradA1, self.dd.GetSignal('SI-MI-B',nend=imax)))
         
                 self.dd.Close()
                 self.tvecA1 = self.tvecA1[:imax+1]
@@ -254,7 +247,6 @@ class loader_ECE(loader):
                     n-= 30
                     
                     offset*=  self.CALA2_M0[n]*self.CALA2_M1[n]*self.CALA2_M2[n]
-                    #print(( self.CALA2_M0[n],self.CALA2_M1[n],self.CALA2_M2[n]))
                     offset+= (self.CALA2_S0[n]*self.CALA2_M1[n]+self.CALA2_S1[n])*self.CALA2_M2[n]+self.CALA2_S2[n]
                     
                     sig*= self.CALA2_M0[n]*self.CALA2_M1[n]*self.CALA2_M2[n]
@@ -323,16 +315,16 @@ class loader_ECE(loader):
 
         ind = np.argsort(rho)
         ind = ind[np.abs(rho[ind])<1&(Te[ind]>0)]
-        x = r_[rho[ind],1]
-        y = log(r_[medfilt(Te[ind],5),min(Te[ind].min(),100)])
+        x = np.r_[rho[ind],1]
+        y = np.log(np.r_[medfilt(Te[ind],5),min(Te[ind].min(),100)])
         ind_ = np.argsort(r_[-x,x])
         
         try:
-            S   = LSQUnivariateSpline(r_[-x,x][ind_], r_[y,y][ind_],linspace(-0.999,0.999,21),ext=3, bbox=[-1,1],k=2)
+            S   = LSQUnivariateSpline(np.r_[-x,x][ind_],np.r_[y,y][ind_],np.linspace(-0.999,0.999,21),ext=3, bbox=[-1,1],k=2)
             c = (S(x)-y)/S(x) < 0.005
             x,y = x[c], y[c]
             ind_ = np.argsort(r_[-x,x])
-            S   = LSQUnivariateSpline(r_[-x,x][ind_], r_[y,y][ind_],linspace(-0.999,0.999,21),ext=3, bbox=[-1,1],k=2)
+            S   = LSQUnivariateSpline(np.r_[-x,x][ind_], np.r_[y,y][ind_],np.linspace(-0.999,0.999,21),ext=3, bbox=[-1,1],k=2)
             Te_ = np.exp(S(rho))
             #if 
             if not all(np.isfinite(Te_)):
@@ -340,7 +332,7 @@ class loader_ECE(loader):
 
         except Exception as e:
             print(( 'spline fit has failured: ', e))
-            Te_ = np.exp(np.interp(rho, r_[-x,x][ind_], r_[y,y][ind_]))
+            Te_ = np.exp(np.interp(rho, np.r_[-x,x][ind_], np.r_[y,y][ind_]))
         
         return   rho, Te_
 
@@ -360,32 +352,22 @@ class loader_ECE(loader):
             err = np.ones(len(names))*np.nan
             return err,err,err
 
-        time = max(min(time,self.RZtime[-1] ), self.RZtime[0] )
+        time = np.clip(time,*self.RZtime[[0,-1]])
         ch_ind = np.in1d(self.names, np.int_(names))
-              
-        try:
-            #severin's file!
-            assert not cold
-            from scipy.io import loadmat 
-            ECFM = loadmat('ECFM_%d_ed 2.mat'%self.shot)
-            R = ECFM['R_warm'][0,ch_ind]
-            z = ECFM['z_warm'][0,ch_ind]
-            
-            print(( 'warm R,z used!!! at %.3fs'%ECFM['time']))
-        except:
-            R = interp1d(self.RZtime, self.R[:,np.array(names)-1],axis=0)(time)
-            z = interp1d(self.RZtime, self.z[:,np.array(names)-1],axis=0)(time)
-            
+        
+        R = interp1d(self.RZtime, self.R[:,array(names)-1],axis=0)(time)
+        z = interp1d(self.RZtime, self.z[:,array(names)-1],axis=0)(time)
+
         r0 = np.interp(time, self.eqm.t_eq, self.eqm.ssq['Rmag'])+dR
         z0 = np.interp(time, self.eqm.t_eq, self.eqm.ssq['Zmag'])+dZ
    
-        return R,z, np.arctan2(z-z0, R-r0)#,R_, z_
+        return R,z, np.arctan2(z-z0, R-r0)
         
     
     def get_rho(self,group,names,time,dR=0,dZ=0):
 
         if hasattr(self,'RZtime'):
-            time = max(min(time, self.tmax), self.tmin)
+            time = np.clip(time, self.tmin,self.tmax)
             R,z,theta = self.get_RZ_theta(time,names,dR=dR,dZ=dZ)
             
             rho = super(loader_ECE,self).get_rho(time,R,z,dR=dR,dZ=dZ)

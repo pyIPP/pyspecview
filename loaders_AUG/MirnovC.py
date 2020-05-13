@@ -104,7 +104,7 @@ class loader_MirnovCoils(loader):
         phase_signals = self.names['C09']
         
         sigs = []
-        length = infty
+        length = np.infty
         self.shotfile = None
         for sf, sig_p in phase_signals:
             if self.old_shotfile  and sf == 'MHA': continue
@@ -130,7 +130,7 @@ class loader_MirnovCoils(loader):
             
             for n1,n2 in zip(nbeg,nend):
                 n1,n2 = max(1,n1), min(n2, len(tvec)-2)
-                data[n1:n2] =  (np.linspace(0,1,n2-n1)[:,None]*(np.float_(data[n2+1])-data[n1-1])+data[n1-1])
+                data[n1:n2] = np.linspace(0,1,n2-n1)[:,None]*(np.float_(data[n2+1])-data[n1-1])+data[n1-1]
    
         print( 'done')
         return tvec,data

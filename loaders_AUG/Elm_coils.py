@@ -39,14 +39,10 @@ class loader_BalooningCoils(loader):
         names = self.dd.GetNames()  
             
         self.dd.Close()
-        
-        'MH_DIAG'
-        
-        #print name
-        
+       
         names =  [n[1:] for n in names if n[:2] == 'CB' and n[-3] == '-']
 
-        self.groups = unique([n[:3] for n in names])
+        self.groups = np.unique([n[:3] for n in names])
         self.names = {g:[] for g in self.groups  }
 
         for shotfile in shotfiles:
@@ -102,15 +98,10 @@ class loader_BalooningCoils(loader):
         
     
     def get_signal_phase(self,name,calib=False,tmin=None,tmax=None):
-        #print  self.groups 
-        
-        #import IPython
-        #IPython.embed()
+   
         
         shotfiles = [sf for sf,n in self.names['B31']]
         
-        #shotfile = [sf for sf,n in self.names[group]]
-
         if 'MHI' in shotfiles:
             self.shotfile = 'MHI'
         else:
@@ -127,16 +118,16 @@ class loader_BalooningCoils(loader):
 
 
         if name in  ['BCoils',]:
-            sigs = [self.dd.GetSignal('B31-%.2d'%c,cal=calib,nbeg= nbeg,nend=nend) for c in self.phase_balooning_coils]
+            sigs = [self.dd.GetSignal('B31-%.2d'%c,cal=calib,nbeg=nbeg,nend=nend) for c in self.phase_balooning_coils]
             
         self.dd.Close()
 
-        return tvec[nbeg:nend+1],vstack(sigs).T
+        return tvec[nbeg:nend+1],np.vstack(sigs).T
     
     def get_phi_tor(self,name):
         #works only for balooning coils yet
 
-        return squeeze(self.phi)
+        return np.squeeze(self.phi)
             
             
 
@@ -144,8 +135,7 @@ class loader_BalooningCoils(loader):
     def get_phase_corrections(self,name):
         path = os.path.abspath(__file__)
         path = path[:path.rfind('/')]
-        #path = path[:path.rfind('/')]
-        return loadtxt(path+'/balooning_coils_correction.txt')
+        return np.loadtxt(path+'/balooning_coils_correction.txt')
 
 
     def signal_info(self,group,name,time):
@@ -154,7 +144,7 @@ class loader_BalooningCoils(loader):
         if name == 'BCoils': return ' '
         
         if self.shot > 19101:
-            calib_shot = self.dd.cShotNr('AUGD', 'CMH',self.shot)
+            calib_shot = dd.PreviousShot('CMH',self.shot, experiment='AUGD')
             self.dd.Open('CMH',calib_shot)
         else:
             self.dd.Open('MHA',self.shot)
@@ -164,7 +154,7 @@ class loader_BalooningCoils(loader):
 
         self.dd.Close()
         try:
-            info = str(name)+' theta: %.2fdeg, phi: %.2fdeg'%(rad2deg(theta),rad2deg(phi))
+            info = str(name)+' theta: %.2fdeg, phi: %.2fdeg'%(np.rad2deg(theta),np.rad2deg(phi))
         except:
             
             print(( theta,phi,name))
@@ -174,33 +164,3 @@ class loader_BalooningCoils(loader):
  
 
  
-def main():
-    
-    import os,sys
-    sys.path.append('/afs/ipp-garching.mpg.de/home/t/todstrci/pyspecviewer/')
-    from . import dd   
-    dd = dd.shotfile()
-    sys.path.append('/afs/ipp/home/t/todstrci/TRANSP/')
-
-
-    from . import map_equ
-
-    shot = 29022
-
-
-    eqm = map_equ.equ_map(debug=True)
-    eqm.Open(shot, diag='EQI')
-    eqm.read_ssq()
-    mirnov =  loader_BalooningCoils(shot,eqm= eqm,rho_lbl='rho_tor')
-    t,s = mirnov.get_signal_phase('Bcoils')
-    
-    #n = [n for x,n in mirnov.names['C09']]
-    #n.sort()
-    
-    #mirnov.names
-    import IPython
-    IPython.embed()
-        
-
-if __name__ == "__main__":
-    main()

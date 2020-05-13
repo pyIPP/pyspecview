@@ -2,12 +2,13 @@
 # -*- coding: utf-8 -*-
 
 import os,sys
-from numpy import *
 from scipy import sparse
-from matplotlib.pyplot import *
+import matplotlib.pylab as plt
+import numpy as np
 import time 
 from scipy.ndimage.interpolation import map_coordinates
-from  scipy.linalg import eigh
+from scipy.interpolate import interp1d
+from scipy.linalg import eigh
 from scipy.stats.mstats import mquantiles
 from multiprocessing import Process,Queue
 from copy import deepcopy
@@ -134,7 +135,7 @@ class DataSettingWindow(QMainWindow):
         self.horizontalLayout_data = QHBoxLayout()
 
 
-        self.fig_data = Figure((7.0, 5.0), dpi=self.dpi)
+        self.fig_data = plt.Figure((7.0, 5.0), dpi=self.dpi)
         self.tab_widget_data.setToolTip('Use left/right moise button to remove/return point')
 
         self.canvas_data = FigureCanvas(self.fig_data)
@@ -214,7 +215,7 @@ class DataSettingWindow(QMainWindow):
         self.ax_data.xaxis.set_major_locator(MaxNLocator(12))
 
 
-        xlabels = [median(ind) for ind in self.tomo.tok.dets_index]
+        xlabels = [np.median(ind) for ind in self.tomo.tok.dets_index]
         labels = list(self.tomo.tok.detectors_dict.keys())
         ax2 = self.ax_data.twiny()
         ax2.set_xticks(xlabels)
@@ -237,9 +238,9 @@ class DataSettingWindow(QMainWindow):
     def RefreshEvent(self):   
         tvec = self.tomo.tvec
         data = np.copy(self.tomo.signals)
-        if nanmax(data) > 2e5:
+        if np.nanmax(data) > 2e5:
             fact,pre = 1e6, 'MW'
-        elif nanmax(data) > 2e2:
+        elif np.nanmax(data) > 2e2:
             fact,pre = 1e3, 'kW'
         else:
             fact,pre = 1e0, 'W'
@@ -339,7 +340,7 @@ class DataSettingWindow(QMainWindow):
         self.verticalLayout_svd.addLayout(self.horizontalLayout_svd)
  
 
-        self.fig_svd = Figure((6.0, 5.0), dpi=self.dpi)
+        self.fig_svd = plt.Figure((6.0, 5.0), dpi=self.dpi)
         self.canvas_svd = FigureCanvas(self.fig_svd)
         self.canvas_svd.setParent(self.cWidget)
           
@@ -514,8 +515,8 @@ class tokamak:
     use_pfm = False
     smooth_boundary = True
     def __init__(self, rhop,magr, magz,xgrid,ygrid):
-        self.dx = mean(diff(xgrid))
-        self.dy = mean(diff(ygrid))
+        self.dx = np.mean(np.diff(xgrid))
+        self.dy = np.mean(np.diff(ygrid))
         self.xgrid = xgrid
         self.ygrid = ygrid
         self.nx = len(xgrid)
@@ -556,13 +557,13 @@ def flux_mean(G, Tok,magr,magz):
 
     n_mag = size(magr,1)
     
-    scaling = array([Tok.dx,Tok.dy])
-    offset = array([Tok.xmin,Tok.ymin])    
-    coords = c_[magr.ravel(),magz.ravel()].T
+    scaling = np.array([Tok.dx,Tok.dy])
+    offset = np.array([Tok.xmin,Tok.ymin])    
+    coords = np.c_[magr.ravel(),magz.ravel()].T
     idx = (coords-offset[:,None])/ scaling[:,None]
     map_prof = map_coordinates(G.T,idx,order=1)
     map_prof = map_prof.reshape(magz.shape)
-    return mean(map_prof,0)
+    return np.mean(map_prof,0)
 
 
 
@@ -570,37 +571,37 @@ def build_reg_mat_time(rho_mat,theta_star_rz,theta_star,rhop,magr,magz,xgrid,ygr
     #prepare regularization matrix for the solid body rotation
     
     BdMat = (BdMat| (theta_star_rz == 0)).flatten('F')
-    theta_star_grid = linspace(0,2*pi, len(theta_star))
-    magr = [interp(theta_star_grid, t,r) for r,t in zip(magr.T,theta_star.T)]
-    magz = [interp(theta_star_grid, t,z) for z,t in zip(magz.T,theta_star.T)]
+    theta_star_grid = np.linspace(0,2*np.pi, len(theta_star))
+    magr = [np.interp(theta_star_grid, t,r) for r,t in zip(magr.T,theta_star.T)]
+    magz = [np.interp(theta_star_grid, t,z) for z,t in zip(magz.T,theta_star.T)]
 
     RHO = rho_mat.flatten('F')[~BdMat]
     RHO = minimum(RHO, rhop[-1])
     THETA = theta_star_rz.flatten('F')[~BdMat]
 
-    i_theta_r = ((THETA-dtheta)/(2*pi))%1*(len(theta_star_grid)-1)
+    i_theta_r = ((THETA-dtheta)/(2*np.pi))%1*(len(theta_star_grid)-1)
     i_rho = RHO/rhop[-1]*(len(rhop)-1)
 
     xi_new_r = map_coordinates(magr,(i_rho, i_theta_r),order=3)
     yi_new_r = map_coordinates(magz,(i_rho, i_theta_r),order=3)
 
     ny,nx = rho_mat.shape
-    dx = mean(diff(xgrid))
-    dy = mean(diff(ygrid))
+    dx = np.mean(np.diff(xgrid))
+    dy = np.mean(np.diff(ygrid))
     npix = nx*ny
     xgrid+= dx/nx*2 #BUG??
-    npoints = sum(~BdMat)
+    npoints = np.sum(~BdMat)
 
     x_int_r = (xi_new_r-xgrid[0])/dx
     y_int_r = (yi_new_r-ygrid[0])/dy
 
-    x_int_c,y_int_c =  meshgrid(arange(nx),arange(ny))
+    x_int_c,y_int_c = np.meshgrid(arange(nx),arange(ny))
     x_int_c = x_int_c.flatten('F')[~BdMat]
     y_int_c = y_int_c.flatten('F')[~BdMat]
 
-    xcoords = zeros((5,npoints),dtype=int)
-    ycoords = zeros((5,npoints),dtype=int)
-    weights = zeros((5,npoints))
+    xcoords = np.zeros((5,npoints),dtype=int)
+    ycoords = np.zeros((5,npoints),dtype=int)
+    weights = np.zeros((5,npoints))
 
 
     #forward
@@ -626,14 +627,14 @@ def build_reg_mat_time(rho_mat,theta_star_rz,theta_star,rhop,magr,magz,xgrid,ygr
     weights[4] = 1
 
     col_coords = ycoords+ny*xcoords  
-    row_coord = tile(arange(npix)[~BdMat],(9,1))
+    row_coord = np.tile(np.arange(npix)[~BdMat],(9,1))
 
     #make it sparser
     weights[weights<0.1] = 0
-    weights[:4]/= sum(weights[:4],0)
+    weights[:4]/= np.sum(weights[:4],0)
 
     #higher harmonics should vanish exactly in the core!!
-    weights[4] += pow(maximum(0.05,1-RHO),30)
+    weights[4] += np.pow(np.maximum(0.05,1-RHO),30)
     
     
     #left position
@@ -652,22 +653,22 @@ def build_reg_mat_time(rho_mat,theta_star_rz,theta_star,rhop,magr,magz,xgrid,ygr
 
 
 def w_i(g,D):
-    w = 1./(1.+exp(g)/D**2)
-    w[~isfinite(w)] = 0
+    w = 1./(1.+np.exp(g)/D**2)
+    w[~np.isfinite(w)] = 0
     return w
 
 
 def GCV(g, prod,D,U,resid=0):
     #generalized crossvalidation
     w = w_i(g,D)
-    return (sum(abs(((w-1)*prod))**2)+resid)/len(w)/(1-mean(w))**2
+    return (np.sum(np.abs(((w-1)*prod))**2)+resid)/len(w)/(1-np.mean(w))**2
     
 def Press(g, prod,D,U,resid=0):
     w = w_i(g,D)
-    u = array(U,copy=False)
-    ind = einsum('ij,ij->i',u,conj(u)).real < single(u.shape[1]*.1/u.shape[0])  #  diag(U*U.H) - smaller are wrong, linearly dependent? 
+    u = np.array(U,copy=False)
+    ind = np.einsum('ij,ij->i',u,np.conj(u)).real < np.single(u.shape[1]*.1/u.shape[0])  #  diag(U*U.H) - smaller are wrong, linearly dependent? 
     if ind.any(): u = u[~ind]
-    return sum(abs(dot(u, (1-w)*prod)/einsum('ij,ij,j->i', u,conj(u), 1-w))**2)/len(prod)
+    return np.sum(np.abs(np.dot(u, (1-w)*prod)/np.einsum('ij,ij,j->i', u,np.conj(u), 1-w))**2)/len(prod)
 
 
 
@@ -719,8 +720,8 @@ class HarmSolver(Process):
 
 
     def guess_lam(self,U,S,d):
-        g0 = 2*log(median(S))
-        prod = asarray(dot(U.T,self.b[~d]))
+        g0 = 2*np.log(np.median(S))
+        prod = np.asarray(dot(U.T,self.b[~d]))
         g, f = FindMin(Press,g0,1,prod,0,S,U)
         return g
    
@@ -732,12 +733,12 @@ class HarmSolver(Process):
             H = H + self.Ht.H*self.Ht#TODO set ration between them?
             H = self.W*H*self.W.T  
 
-        wrong_dets = squeeze(array(self.T.sum(1)==0))
-        K = self.T[where(~wrong_dets)[0]]  
+        wrong_dets = np.squeeze(array(self.T.sum(1)==0))
+        K = self.T[np.where(~wrong_dets)[0]]  
 
         npix = K.shape[1]
 
-        ind = where(~self.BdMat)[0] 
+        ind = np.where(~self.BdMat)[0] 
         B = H[:,ind][ind,:]
         K = K[:,ind]
 
@@ -755,19 +756,19 @@ class HarmSolver(Process):
 
         LPK = F.solve_L(F.apply_P(deepcopy(K.H.real)))
         if self.n > 0:#add complex parts
-            LPK += 1j*F.solve_L(F.apply_P(deepcopy(K.H.imag)))
+            LPK = LPK+1j*F.solve_L(F.apply_P(deepcopy(K.H.imag)))
 
 
         LPK = LPK.toarray().T
-        sqrtD = sqrt(F.D().real)
+        sqrtD = np.sqrt(F.D().real)
         LPK/= sqrtD
 
-        LL = dot(LPK, conj(LPK).T)  #Gram matrix
+        LL = np.dot(LPK, np.conj(LPK).T)  #Gram matrix
         s,u = eigh(LL,overwrite_a=True, check_finite=False,lower=True)  
-        s,u = sqrt(maximum(s,0))[::-1], u[:,::-1] 
+        s,u = np.sqrt(np.maximum(s,0))[::-1], u[:,::-1] 
 
         try:
-            rank = where(cumprod((diff(log(s[s!=0]))>-5)|(s[s!=0][1:]>median(s))))[0][-1]+2
+            rank = np.where(np.cumprod((np.diff(np.log(s[s!=0]))>-5)|(s[s!=0][1:]>np.median(s))))[0][-1]+2
         except:
             print('rank s', s)
         rank_ = min(self.rank,rank)
@@ -789,23 +790,23 @@ class HarmSolver(Process):
  
             #evaluate solution
             w = w_i(g,S)
-            prod = dot(U.T,self.b[~wrong_dets])
+            prod = np.dot(U.T,self.b[~wrong_dets])
             f = prod*(w/S)
-            vt_ = dot(dot(f,conj(U.T/S[:,None])), LPK)
+            vt_ = np.dot(np.dot(f,np.conj(U.T/S[:,None])), LPK)
             vt_ /= sqrtD
             
             #final inversion
-            G = zeros(npix,dtype=LPK.dtype)
+            G = np.zeros(npix,dtype=LPK.dtype)
             if self.n > 0:
                 G[~self.BdMat] = En*(F.apply_Pt(F.solve_Lt(vt_.real))+1j*F.apply_Pt(F.solve_Lt(vt_.imag)))
             else:
                 G[~self.BdMat] = F.apply_Pt(F.solve_Lt(vt_))
 
-            retro = zeros_like(self.b)
-            retro[~wrong_dets] = dot(conj(U),f*S)
-            chi2 = (linalg.norm(((w-1)*prod))**2)/sum(~wrong_dets)
+            retro = np.zeros_like(self.b)
+            retro[~wrong_dets] = np.dot(conj(U),f*S)
+            chi2 = (linalg.norm(((w-1)*prod))**2)/np.sum(~wrong_dets)
 
-            lam = interp(g, 2*log(S)[::-1], linspace(0,1,len(S)))
+            lam = np.interp(g, 2*log(S)[::-1], np.linspace(0,1,len(S)))
 
             self.qout.put((G,retro,lam,chi2 ))
 
@@ -816,28 +817,28 @@ def OptimizeF0( tvec, sig, f0,df0 = 200,n_steps=400):
     from matplotlib.mlab import detrend_linear
     sig = detrend_linear(sig  )
     #sig = sig-sig.mean(0)
-    difference = ones(n_steps)*infty
+    difference = np.ones(n_steps)*np.infty
     
-    test_fun = exp(1j*2*pi*(f0-df0)*tvec)
-    test_fun/= linalg.norm(test_fun)
-    dtest_fun = exp(1j*2*pi*(2*df0/float(n_steps))*tvec)
+    test_fun = np.exp(1j*2*np.pi*(f0-df0)*tvec)
+    test_fun/= np.linalg.norm(test_fun)
+    dtest_fun = np.exp(1j*2*np.pi*(2*df0/float(n_steps))*tvec)
     
-    for i in arange(n_steps):
+    for i in range(n_steps):
         
-        retro = outer(test_fun, dot(conj(test_fun), sig))[:,0]*2
-        difference[i] = linalg.norm(retro.real-sig)
+        retro = np.outer(test_fun, np.dot(conj(test_fun), sig))[:,0]*2
+        difference[i] = np.linalg.norm(retro.real-sig)
         test_fun*= dtest_fun
 
-    return f0+(argmin(difference)*2.-n_steps+1)/(n_steps)*df0
+    return f0+(np.argmin(difference)*2.-n_steps+1)/(n_steps)*df0
 
 
 def find_f0(t,x):
-    dt = mean(diff(t))
-    f = linspace(0,1,(len(t)+1)//2)/2/dt
-    if0 = argmax(abs(np.fft.rfft(x))[1:])+1
-    F = linspace(f[if0-1], f[if0+1] ,100)
-    N = [abs(sum((x-mean(x))*conj(exp(1j*2*pi*f*t)))) for f in F]
-    f0 = F[argmax(N)]
+    dt = np.mean(np.diff(t))
+    f = np.linspace(0,1,(len(t)+1)//2)/2/dt
+    if0 = np.argmax(np.abs(np.fft.rfft(x))[1:])+1
+    F = np.linspace(f[if0-1], f[if0+1] ,100)
+    N = [np.abs(np.sum((x-mean(x))*np.conj(np.exp(1j*2*np.pi*f*t)))) for f in F]
+    f0 = F[np.argmax(N)]
     return f0
 
 
@@ -848,10 +849,10 @@ def create_derivation_matrix(g, Bmat, danis,rgmin=1e-8):
     Prepare matrix of derivation according to choosed regularization method
     """
  
-    g_tmp = mean(asarray(g),1)
+    g_tmp = np.mean(np.asarray(g),1)
     
     npix = len(g_tmp)
-    max_g = nanmax(abs(g_tmp))
+    max_g = np.nanmax(abs(g_tmp))
 
     g_tmp /= max_g
     
@@ -909,7 +910,7 @@ class Roto_tomo:
         self.tau = 2
         self.nr = 100
         self.ntheta = 120
-        self.dtheta =  2*pi/30
+        self.dtheta =  2*np.pi/30
         self.rgmin = 1e-8
         self.nfisher = 3
         self.plot_lim = self.slider_lim.value()/100.
@@ -922,19 +923,17 @@ class Roto_tomo:
         self.n_theta_plot = 16
         self.n_contour = 20
         self.font_size = 10
-        #self.phi_sxr = 0  #BUG position of sxr
-        #self.phi_ece = 0  #BUG position of ece
         self.hsolvers = []
-        self.t0 = nan
+        self.t0 = np.nan
         self.showTe = False
 
         
-        self.tomo_img = self.ax.imshow(zeros((self.nx,self.ny)), animated=True,origin='lower'
+        self.tomo_img = self.ax.imshow(np.zeros((self.nx,self.ny)), animated=True,origin='lower'
                                        ,vmin = 0,vmax=1,cmap=my_cmap, interpolation='quadric')
         #magnetic flux surfaces
-        X = zeros((1,self.n_rho_plot))
+        X = np.zeros((1,self.n_rho_plot))
         self.plot_mag_rho   = self.ax.plot(X,X,'--',c='0.5',lw=.5, visible=self.show_flux.isChecked())
-        X = zeros((1,self.n_theta_plot))
+        X = np.zeros((1,self.n_theta_plot))
         self.plot_mag_theta = self.ax.plot(X,X,'--',c='0.5',lw=.5, visible=self.show_flux.isChecked())
 
         #tokamak chamber
@@ -952,8 +951,8 @@ class Roto_tomo:
             label.set_fontsize(self.font_size) # Size here overrides font_prop
 
         self.cbar_ax = self.fig.add_axes([0.85, 0.1, 0.04, 0.85])
-        self.cbar_ax.xaxis.set_major_formatter(NullFormatter())
-        self.cbar_ax.yaxis.set_major_formatter(NullFormatter())
+        self.cbar_ax.xaxis.set_major_formatter(plt.NullFormatter())
+        self.cbar_ax.yaxis.set_major_formatter(plt.NullFormatter())
         self.cbar_ax.tick_params(labelsize= self.font_size) 
         
         cbar = self.fig.colorbar(self.tomo_img, cax=self.cbar_ax)
@@ -988,7 +987,7 @@ class Roto_tomo:
         self.tmax = tmax
         t0 = (tmin+tmax)/2
 
-        if t0 is nan:
+        if t0 is np.nan:
             print( 'Select valid time range')
             return 
 
@@ -997,8 +996,8 @@ class Roto_tomo:
         self.eqm  = eqm
         self.fmin = fmin
         self.fmax = fmax
-        self.rhop = linspace(0,1,self.nr)
-        theta_in  = linspace(0,2*pi,self.ntheta)
+        self.rhop = np.linspace(0,1,self.nr)
+        theta_in  = np.linspace(0,2*np.pi,self.ntheta)
 
         magr,magz= eqm.rhoTheta2rz(self.rhop,theta_in,t0,coord_in=self.rho_lbl)
         self.magr = magr[0]
@@ -1006,17 +1005,17 @@ class Roto_tomo:
         self.rho = eqm.rho2rho(self.rhop,t0,coord_in='rho_pol',coord_out=self.rho_lbl)[0]
         
         #set view to contain rho = 0.7 contour 
-        ir = argmin(abs(self.rhop-.5))
+        ir = np.argmin(np.abs(self.rhop-.5))
         self.ax.axis([self.magr[:,ir].min(),self.magr[:,ir].max(),self.magz[:,ir].min(),self.magz[:,ir].max()])
 
 
 # GIT       self.q_prof = eqm.getQuantity(self.rhop,'Qpsi', t_in=t0)
-        jtq = argmin(abs(eqm.t_eq - t0))
-        nrho = max(self.eqm.lpfp) + 1
+        jtq = np.argmin(abs(eqm.t_eq - t0))
+        nrho = np.max(self.eqm.lpfp) + 1
         psi = eqm.get_profile('PFL')[jtq, :nrho]
         q   = eqm.get_profile('Qpsi')[jtq, :nrho]
         rhop_q = self.eqm.rho2rho(psi, t_in=t0, coord_in='Psi', coord_out='rho_pol')[0]
-        self.q_prof = interp(self.rhop, rhop_q, q)
+        self.q_prof = np.interp(self.rhop, rhop_q, q)
  
         #Prepare tokamak object from original tomography code
         input_parameters = read_config(tomo_code_path+"tomography.cfg")
@@ -1080,22 +1079,22 @@ class Roto_tomo:
         
         #Load diagnostic infomation
         n_harm_max = 10
-        self.A   = ones((self.nl,n_harm_max-1)) #assume n_harm_max harmonic at most!
-        self.phi = zeros((self.nl,n_harm_max-1))
-        self.Phi = asarray(self.tok.Phi)  #BUG co ten posuv o 45 stupnu? 
-        self.Phi0 = median(self.Phi) #toroidal position of SXR cameras
+        self.A   = np.ones((self.nl,n_harm_max-1)) #assume n_harm_max harmonic at most!
+        self.phi = np.zeros((self.nl,n_harm_max-1))
+        self.Phi = np.asarray(self.tok.Phi)  #BUG co ten posuv o 45 stupnu? 
+        self.Phi0 = np.median(self.Phi) #toroidal position of SXR cameras
 
         #add correction for finite DAS IIR
         if Tok == 'AUG':
-            slow_das = loadtxt('slow_sxr_diag.txt')
-            fast_das = loadtxt('fast_sxr_das.txt')
+            slow_das = np.loadtxt('slow_sxr_diag.txt')
+            fast_das = np.loadtxt('fast_sxr_das.txt')
             SampFreq =  self.tok.SampFreq#[dets]
             #amplitude reduction of DAS IIR
-            self.A[  SampFreq == 5e5] = interp(self.F0*arange(1,n_harm_max),slow_das[:,0],slow_das[:,1])
-            self.A[  SampFreq == 2e6] = interp(self.F0*arange(1,n_harm_max),fast_das[:,0],fast_das[:,1])
+            self.A[  SampFreq == 5e5] = np.interp(self.F0*np.arange(1,n_harm_max),slow_das[:,0],slow_das[:,1])
+            self.A[  SampFreq == 2e6] = np.interp(self.F0*np.arange(1,n_harm_max),fast_das[:,0],fast_das[:,1])
             #phase shift of DAS IIR
-            self.phi[SampFreq == 5e5] = interp(self.F0*arange(1,n_harm_max),slow_das[:,0],slow_das[:,2])
-            self.phi[SampFreq == 2e6] = interp(self.F0*arange(1,n_harm_max),fast_das[:,0],fast_das[:,2])
+            self.phi[SampFreq == 5e5] = np.interp(self.F0*np.arange(1,n_harm_max),slow_das[:,0],slow_das[:,2])
+            self.phi[SampFreq == 2e6] = np.interp(self.F0*np.arange(1,n_harm_max),fast_das[:,0],fast_das[:,2])
 
 
         #calculate equilibrium related properties
@@ -1115,13 +1114,12 @@ class Roto_tomo:
 
         
         #contours of constant theta star
-        t = linspace(0,2*pi,self.n_theta_plot,endpoint=False)
-        self.isotheta_R = array([interp(t,ts,r) for ts,r in zip(theta_star.T,self.magr.T)]).T
-        self.isotheta_Z = array([interp(t,ts,z) for ts,z in zip(theta_star.T,self.magz.T)]).T
+        t = np.linspace(0,2*np.pi,self.n_theta_plot,endpoint=False)
+        self.isotheta_R = np.array([np.interp(t,ts,r) for ts,r in zip(theta_star.T,self.magr.T)]).T
+        self.isotheta_Z = np.array([np.interp(t,ts,z) for ts,z in zip(theta_star.T,self.magz.T)]).T
 
         #contours of constant coordinate rho_lbl
-        r = linspace(0,self.rho[-1],self.n_rho_plot)
-        from scipy.interpolate import interp1d
+        r = np.linspace(0,self.rho[-1],self.n_rho_plot)
         self.isoflux_R = interp1d(self.rho,self.magr)(r).T
         self.isoflux_Z = interp1d(self.rho,self.magz)(r).T
         
@@ -1193,9 +1191,9 @@ class Roto_tomo:
         #initialise it only once 
         dets_index = self.tok.dets_index[:-1]  
         dF = (self.fmax-self.fmin)/2
-        self.SVDF = SVDFilter(self.tvec, self.signals,nanmean(self.error_sig ,0),dets_index,
+        self.SVDF = SVDFilter(self.tvec, self.signals,np.nanmean(self.error_sig ,0),dets_index,
                             self.F0, dF, self.n_harm,self.n_svd)
-        invalid = ~in1d(arange(self.signals.shape[1]), self.dets)
+        invalid = ~np.in1d(np.arange(self.signals.shape[1]), self.dets)
         self.SVDF.set_corrupted_ch(invalid)       
        
         QApplication.restoreOverrideCursor()
@@ -1215,11 +1213,11 @@ class Roto_tomo:
         self.t0 = self.SVDF.t0
         self.bb = list(self.SVDF.harm)
         self.bb[0] = self.bb[0].real
-        self.bb_err = [copy(self.SVDF.harm_err) for h in self.bb]
+        self.bb_err = [np.copy(self.SVDF.harm_err) for h in self.bb]
         
         #NOTE errorbars found this ways are too small for zeroth and first harmonics
         self.bb_err[0] += self.SVDF.err[~self.SVDF.invalid]
-        self.bb_err[0] += abs(self.bb[0])*0.01+0.005*abs(self.bb[0]).mean()#add at least 1% noise
+        self.bb_err[0] += np.abs(self.bb[0])*0.01+0.005*np.abs(self.bb[0]).mean()#add at least 1% noise
         QApplication.restoreOverrideCursor()
 
     def precalc_tomo(self):
@@ -1227,7 +1225,7 @@ class Roto_tomo:
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
         #initial guess of the SXR profile
-        P = (self.rhop**2+4**-2)**(-2)*tanh((1-self.rhop)*10)
+        P = (self.rhop**2+4**-2)**(-2)*np.tanh((1-self.rhop)*10)
         P = exp(-((self.rhop)/0.7)**2)
         G0 = interp(self.rho_mat, self.rhop, P/P[0])
         G0[self.BdMat] = 0
@@ -1258,9 +1256,9 @@ class Roto_tomo:
         G0 = G0.reshape(self.ny,self.nx,order='F')
         #use asymmetry of . 0. harmonic in the regularization operator
         lim = G0.max()/50
-        G0 = hypot(G0, lim)
+        G0 = np.hypot(G0, lim)
         fm = flux_mean(G0, self.aux_tok,self.magr,self.magz)
-        G0/= interp(self.rho_mat,self.rhop, hypot(fm, lim))
+        G0/= np.interp(self.rho_mat,self.rhop, np.hypot(fm, lim))
     
         #weight matrix compensating poloidal asymmetry 
         npix = self.nx*self.ny
@@ -1377,11 +1375,11 @@ class Roto_tomo:
             det_ind.append(det_ind[-1]+len(i))
         
         fig_exists = False
-        if fignum_exists('Retrofit'):
+        if plt.fignum_exists('Retrofit'):
             fig_exists = True
-            figure('Retrofit').clf()
+            plt.figure('Retrofit').clf()
             
-        f,axes = subplots(max((self.n_harm+1)//2,1),2,sharex=True,num='Retrofit',figsize=(9,8))
+        f,axes = plt.subplots(max((self.n_harm+1)//2,1),2,sharex=True,num='Retrofit',figsize=(9,8))
         f.suptitle('t=%.3f'%self.t0)
         for ax in atleast_2d(axes)[:,0]:
             ax.set_ylabel('SXR [kW/m$^2$]')
@@ -1393,30 +1391,30 @@ class Roto_tomo:
         for n,ax in enumerate(axes):
             if n >= len(self.bb):continue 
         
-            phase_data = angle(self.bb[n])
-            aplitude_data = abs( self.bb[n])
-            phase_retro = angle(self.retro[n])
-            aplitude_retro = abs(self.retro[n])
+            phase_data = np.angle(self.bb[n])
+            aplitude_data = np.abs( self.bb[n])
+            phase_retro = np.angle(self.retro[n])
+            aplitude_retro = np.abs(self.retro[n])
             aplitude_err =  self.bb_err[n]
 
             for i in range(len(det_ind)-1):
                 ind = (self.dets>= det_ind[i])&(self.dets <  det_ind[i+1])
-                if sum(ind) < 3:  continue
-                phase_retro[ind] = unwrap(phase_retro[ind],discont=1.5*pi)
-                phase_retro[ind] -= round(average(phase_retro[ind], weights=aplitude_retro[ind])/(2*pi))*2*pi
-                phase_data[ind] = unwrap(phase_data[ind]-phase_retro[ind])+phase_retro[ind]
-                phase_data[ind] -=  round(average(phase_data[ind]-phase_retro[ind], weights=aplitude_data[ind])/(2*pi))*2*pi
+                if np.sum(ind) < 3:  continue
+                phase_retro[ind] = np.unwrap(phase_retro[ind],discont=1.5*np.pi)
+                phase_retro[ind] -= np.round(average(phase_retro[ind], weights=aplitude_retro[ind])/(2*np.pi))*2*np.pi
+                phase_data[ind] = np.unwrap(phase_data[ind]-phase_retro[ind])+phase_retro[ind]
+                phase_data[ind] -=  np.round(average(phase_data[ind]-phase_retro[ind], weights=aplitude_data[ind])/(2*np.pi))*2*np.pi
 
-            phase_shift =  average(phase_retro, weights=aplitude_retro )
+            phase_shift =  np.average(phase_retro, weights=aplitude_retro )
             phase_data  -= phase_shift
             phase_retro -= phase_shift
             
-            weak = aplitude_data < nanmax(aplitude_data)*0.05
-            phase_data[weak] = nan
-            phase_retro[weak] = nan
+            weak = aplitude_data < np.nanmax(aplitude_data)*0.05
+            phase_data[weak] = np.nan
+            phase_retro[weak] = np.nan
 
 
-            norm = amax(aplitude_retro)/6./1e3
+            norm = np.amax(aplitude_retro)/6./1e3
             ax.plot(self.dets, aplitude_retro/1e3, 'b',label='retro')
             ax.errorbar(self.dets,aplitude_data/1e3, aplitude_err/1e3,c='r',label='data')
             ymax = max(aplitude_data.max(),aplitude_retro.max())/1e3
@@ -1425,17 +1423,18 @@ class Roto_tomo:
             else:
                 ax.set_ylim(-ymax,ymax)
 
-            w = aplitude_data/nanmax(aplitude_data)
+            w = aplitude_data/np.nanmax(aplitude_data)
             w[weak] = 0
             if any(~isreal(self.bb[n])):
-                ax.scatter(self.dets, phase_data*norm,facecolor=(outer((1,0,0), w)+1-w).T,edgecolors=(1,0,0),s=50,linewidths=.5)
+                ax.scatter(self.dets, phase_data*norm,facecolor=(outer((1,0,0), w)+1-w).T,      
+                           edgecolors=(1,0,0),s=50,linewidths=.5)
                 ax.plot( self.dets,  phase_retro*norm ,'.--b')
             ax.set_xlim(self.dets[0], self.dets[-1]+1)
             ax.legend()
             [ax.axvline(i-0.5,c='k') for i in det_ind]
             ax.axhline(y=0,c='k')
             ax.set_title('%d. harmonic: $\gamma$ = %.2f  $\chi^2$=%.2f'%(n,self.gamma[n],self.chi2[n]))
-        tight_layout()
+        plt.tight_layout()
 
         self.AxZoom = fconf.AxZoom()
         self.zoom_cid = f.canvas.mpl_connect('button_press_event', self.AxZoom.on_click)
@@ -1465,10 +1464,10 @@ class Roto_tomo:
         #build complex contribution matrix 
         orientation = np.sign(self.q_prof.mean())
         #phase and amplitude correction for different toroidal positions and response of detectors 
-        cmplxA = A*exp(-1j*(phi+(Phi[:,None]-self.Phi0)*self.n*orientation*arange(1,self.n_harm)))
+        cmplxA = A*np.exp(-1j*(phi+(Phi[:,None]-self.Phi0)*self.n*orientation*np.arange(1,self.n_harm)))
         #complex geometry matrix
         cmplxT = [self.T,]+[sparse.spdiags(cmplxA[:,i],0,ndet,ndet)*self.T for i in range(self.n_harm-1)]
-        E = sparse.spdiags(exp(1j*self.theta_star_rz.flatten('F')*self.m),0, npix, npix)
+        E = sparse.spdiags(np.exp(1j*self.theta_star_rz.flatten('F')*self.m),0, npix, npix)
         
         #close threats from previous calculation
         for h in self.hsolvers:
@@ -1511,72 +1510,46 @@ class Roto_tomo:
         self.gamma = [o[2] for o in out]
         self.chi2  = [o[3] for o in out]
         
-        cmplx_phase = exp(2*pi*self.F1*1j*(self.tvec-self.t0))
+        cmplx_phase = np.exp(2*np.pi*self.F1*1j*(self.tvec-self.t0))
          
-        self.retro_t    = sum([outer(r,cmplx_phase**i).real for i,r in enumerate(self.retro)],0).T
-        self.filtered_t = sum([outer(r,cmplx_phase**i).real for i,r in enumerate(self.bb)],0).T
+        self.retro_t    = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.retro)],0).T
+        self.filtered_t = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.bb)],0).T
 
-        G_t = [abs(g) for g in self.G]
-        self.vmax = sum(G_t,0).max()
-        self.vmax_bcg = sum(G_t[1:],0).max()
+        G_t = [np.abs(g) for g in self.G]
+        self.vmax = np.sum(G_t,0).max()
+        self.vmax_bcg = np.sum(G_t[1:],0).max()
 
 
     def shift_phase(self,shift_phi):
-        #print('shift',shift_phi )
-        self.shift_phi %= 2*pi #periodicity
-        self.time = self.t0 + self.shift_phi/(2*pi*self.F1)*abs(self.m)
+        self.shift_phi %= 2*np.npi #periodicity
+        self.time = self.t0 + self.shift_phi/(2*np.pi*self.F1)*np.abs(self.m)
         description = '#%d  at %.6fs,  f$_0$ = %.4fkHz and m/n=%d/%d'%(self.shot, self.time, self.F1/1e3, self.m,self.n)
         self.plot_description.set_text(description)
 
-        
-        
-        #sxr_time = self.t0 + shift_phi/(2*pi*self.F1)*abs(self.m) 
-        
-        #sxr_time+dtheta/(self.f0*2*pi)*n/self.m = ece_time
-        
-        #ece_time = self.t_start + shift_phi/(2*pi*self.f0)*abs(self.m)
-        
-        
-        
-        
- 
-        #print(self.time,self.t0,shift_phi,self.F1,abs(self.m))
-
 
     def update(self,update_mag=True,animate=False,update_cax=False,):
-        #print('update SXR')
-        w = 2*pi*self.F1
-        G_t = [real(g*exp(1j*w*(self.time-self.t0)*i)) for i,g in enumerate(self.G)]
 
-        G_t = sum(G_t[1:] if self.substract else G_t,0)
+        w = 2*np.pi*self.F1
+        G_t = [np.real(g*np.exp(1j*w*(self.time-self.t0)*i)) for i,g in enumerate(self.G)]
+
+        G_t = np.sum(G_t[1:] if self.substract else G_t,0)
         self.tomo_img.set_array(G_t/1e3)
         
-    
-        #ax.Te_contourf = ax.contourf(self.Rmag_ece,self.Zmag_ece,mode_Te/fact,extend='both', 
-                                #vmin=vmin/fact,vmax=vmax/fact,levels=levels/fact,cmap=self.cmap)
-        #collections += (ax.Te_contourf.collections,)
-        #if not self.substract:
-            #ax.Te_contour = ax.contour(ax.Te_contourf,colors='k',linewidths=0.3 )
-            #collections += (ax.Te_contour.collections,)
-
-        
-   
+     
         if self.substract:
             self.tomo_img.set_clim(-self.plot_lim*self.vmax_bcg/1e3, self.vmax_bcg*self.plot_lim/1e3)
         else:
             self.tomo_img.set_clim((1-self.plot_lim)*self.vmax/1e3, self.vmax/1e3)
        
-        anim_obj = (self.tomo_img,)#self.plot_description)
+        anim_obj = (self.tomo_img,)
         if self.showTe:
             #relative shift in the mode phase between SXR and ECE
             Phi_ece = self.Te2Dmap.Phi0
             self.Te2Dmap.f0 = self.F1
             
-            dPhi = self.n*(Phi_ece-self.Phi0)/self.m#+(self.Te2Dmap.t_start-self.t0)*(2*pi*self.F1)/abs(self.m)
-            #print('dPhi', rad2deg(self.dPhi),rad2deg(dPhi), self.n, rad2deg(Phi_ece),rad2deg(self.Phi0) )#69
+            dPhi = self.n*(Phi_ece-self.Phi0)/self.m
 
-            self.Te2Dmap.shift_phi = self.shift_phi +dPhi+self.dPhi/self.n#-deg2rad(-20)#dPhi
-            #print(rad2deg(Phi_ece-self.Phi0), rad2deg(self.dPhi),rad2deg(self.Phi0), rad2deg(Phi_ece) )
+            self.Te2Dmap.shift_phi = self.shift_phi +dPhi+self.dPhi/self.n
             anim_obj += self.Te2Dmap.update(update_cax=False,update_mag=False,animate=animate,
                                 ax = self.ax, filled_contours=False)
             
@@ -1590,12 +1563,10 @@ class Roto_tomo:
         if event.inaxes == self.ax:
             
             if self.keyCtrl:
-                self.dPhi += event.step*2*pi/360 
-                #print('dPhi', rad2deg(self.dPhi))
-            
+                self.dPhi += event.step*2*np.pi/360             
             else:
                 steps = 360 if self.keyCtrl else 36
-                self.shift_phi +=  event.step*2*pi/steps
+                self.shift_phi +=  event.step*2*np.pi/steps
              
             self.shift_phase(self.shift_phi)
             self.update( update_mag=False)
@@ -1608,12 +1579,12 @@ class Roto_tomo:
             self.keyShift=True
         
         if 'left' == event.key:
-            self.shift_phase(self.shift_phi-2*pi/36)
+            self.shift_phase(self.shift_phi-2*np.pi/36)
             self.update( update_mag=False)
 
             
         if 'right' == event.key:
-            self.shift_phase(self.shift_phi+2*pi/36)
+            self.shift_phase(self.shift_phi+2*np.pi/36)
             self.update( update_mag=False)
             
 
@@ -1633,8 +1604,8 @@ class Roto_tomo:
                 del h  #release memory 
             self.hsolvers = []
             self.initialized = False
-            if fignum_exists('Retrofit'):
-                close(figure('Retrofit'))
+            if plt.fignum_exists('Retrofit'):
+                plt.close(figure('Retrofit'))
             
             import gc
             gc.collect()

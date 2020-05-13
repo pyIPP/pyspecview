@@ -1,4 +1,4 @@
-from numpy import *
+#from numpy import *
 import numpy as np
 import sys, os, random
 import traceback
@@ -130,7 +130,7 @@ class loader(object):
         #BUG phi coordinate is ignored!!! it will not work for toroidal LOS! 
 
         n_points = np.size(R_start)
-        time = max(min(time, self.tmax), self.tmin)
+        time = np.clip(time, self.tmin, self.tmax)
 
         if R_end is None or z_end is None:
             return self.eqm.rz2rho(R_start-dR,z_start-dZ,time, coord_out=self.rho_lbl)[0]
@@ -147,16 +147,14 @@ class loader(object):
         t = np.linspace(0,1,200)
         X,Y,Z = (End-Start)[:,:,None]*t[None,None,:]+Start[:,:,None]
         R = np.hypot(X,Y)
-
         rho = self.eqm.rz2rho(R[None]-dR,Z[None]-dZ,time,coord_out=self.rho_lbl)[0]
-
+        
         rho_tg = np.zeros(n_points)
         xlim = np.zeros((3,n_points))
         ylim = np.zeros((3,n_points))
         zlim = np.zeros((3,n_points))
 
         for i in range(n_points):
-            #print( t.shape,rho[i].shape)
             rho_tg[i],tmin = min_fine(t,rho[i])  #not very accurate close to the core :(
 
             if (len(t[t>tmin]) > 1)&(len(t[t<tmin]) > 1): 

@@ -1,15 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from numpy import *
+import numpy as np
 import time
 from scipy.stats.mstats import mquantiles
 from scipy.signal import firwin
 from scipy.fftpack import ifft,fft,fftfreq
 from matplotlib.widgets import MultiCursor
-from matplotlib.pyplot import *
 from . import  fconf
-#import  fconf
 
 
 try:
@@ -27,7 +25,7 @@ def shift_array(x,shift):
     if shift < 0:
         raise Exception('not implemented yet')
 
-    tmp = copy(x[-shift:])
+    tmp = np.copy(x[-shift:])
     x[shift:] = x[:-shift]
     x[:shift] = tmp
     return x
@@ -37,7 +35,7 @@ def colorize(z):
     r = np.abs(z)
     arg = np.angle(z) 
 
-    h = (arg + pi)  / (2 * pi) + 0.5
+    h = (arg + np.pi)  / (2 * np.pi) + 0.5
     l = 1.0 - 1.0/(1.0 + r**0.3)
     s = 0.8
 
@@ -51,19 +49,9 @@ class SVDFilter():
 
     def __init__(self,tvec, data,err,dets_index,F0,dF,n_harm = 4, n_svd = 3, tau = 3):
         #savez('SVDFilter',tvec, data,err,dets_index,F0,dF,n_harm, n_svd, tau)
-        self.data = copy(data)
-        self.err = copy(err)
+        self.data = np.copy(data)
+        self.err = np.copy(err)
         self.tvec = tvec
-        #print(data.shape, err.shape)
-        #n_svd = 2
-        #self.data = random.randn(len(tvec),len(err))*self.err
-        #self.tvec = arange(self.data.shape[0])*1e-6
-        #tau = 2
-
-        #self.err = ones(self.data.shape[1] )
-        
-        #print(self.data.shape, self.err.shape)
-
         
         self.ndets = data.shape[1]
         self.dets_index = dets_index
@@ -103,41 +91,39 @@ class SVDFilter():
         f0 = nmax/dt/nt  
         fnq = 1/dt/2
         ntap_max = len(self.tvec)
-        ntap_min = maximum(1/(f0)/dt*2,6) #at least 3 mode periodes
-        ntap = logspace(log10(ntap_min),log10(ntap_max),10 )[self.tau]
+        ntap_min = np.maximum(1/(f0)/dt*2,6) #at least 3 mode periodes
+        ntap = np.logspace(np.log10(ntap_min),np.log10(ntap_max),10)[self.tau]
         ntap = (int(ntap)//2)*2
-        print(ntap,1/(f0)/dt/2 , self.tau, len(self.tvec))
-        #print('SVDfilter', len(self.tvec), 2**(self.tau),ntap, self.df/self.f0*len(self.tvec))
-        #print(self.tau)
+ 
         b = firwin(ntap, [(1e-3)*f0,(2e-3)*f0], pass_zero=False,nyq=1/dt/2, window = 'hanning')
       
         pad = len(b)//2
 
-        cmpl_exp = zeros(2**int(ceil(log2(nt))),dtype='single')
+        cmpl_exp = np.zeros(2**int(np.ceil(np.log2(nt))),dtype='single')
         cmpl_exp[(nmax*len(cmpl_exp))//nt] = 1
         cmpl_exp = ifft(cmpl_exp)[:nt]*len(cmpl_exp)
         
-        data = copy(self.data)
-        err = copy(self.err)
-        err[self.invalid] = inf
+        data = np.copy(self.data)
+        err = np.copy(self.err)
+        err[self.invalid] = np.inf
 
  
-        offset = mean(data,axis=0)
+        offset = np.mean(data,axis=0)
         data -= offset[None,:] 
 
 
         n_fft = next_fast_len(nt+len(b)-1)
-        cmpl_exp = zeros(n_fft,dtype='single')
+        cmpl_exp = np.zeros(n_fft,dtype='single')
         cmpl_exp[(nmax*n_fft)//nt] = 1
         cmpl_exp = ifft(cmpl_exp)[:nt]*len(cmpl_exp)
 
         fsig = fft(data,axis=0,n=n_fft)#použít RFFT? 
-        fb   = fft(single(b),axis=0,n=n_fft)
+        fb   = fft(np.single(b),axis=0,n=n_fft)
 
-        self.retrofit = zeros((nt-pad, self.ndets),dtype=single)
-        weight = 1/single(err/(offset+mean(offset)/100))  #weight
+        self.retrofit = np.zeros((nt-pad, self.ndets),dtype=single)
+        weight = 1/np.single(err/(offset+np.mean(offset)/100))  #weight
        
-        downsample = int(ceil(1/dt/(f0*2*self.n_harm))) *2
+        downsample = int(np.ceil(1/dt/(f0*2*self.n_harm))) *2
         downsample = max(downsample, nt//100)
     
         if self.fig_svd is not None and update_plots:
@@ -168,8 +154,8 @@ class SVDFilter():
                 #split detector arrays 
                 for ax in [ax1, ax2]:
                     for ind in self.dets_index:
-                        ax.axvline(x=1+amax(ind), linestyle='-' ,color='k')
-                        ax.axvline(x=1+amax(ind), linestyle='--',color='w')
+                        ax.axvline(x=1+np.amax(ind), linestyle='-' ,color='k')
+                        ax.axvline(x=1+np.amax(ind), linestyle='--',color='w')
     
 
             for label in ax1.get_xticklabels()+ax2.get_xticklabels():
@@ -179,7 +165,7 @@ class SVDFilter():
             ax1.xaxis.offsetText.set_visible(True)
             ax2.xaxis.offsetText.set_visible(True)
         
-            axes = array(axes)
+            axes = np.array(axes)
             extent=(0,self.ndets,self.tvec[0],self.tvec[-pad])
             axes[0,0].set_title('Raw signal',fontsize=10)
             axes[0,0].set_ylim(self.tvec[0],self.tvec[-pad])
@@ -194,10 +180,10 @@ class SVDFilter():
         len_red = max(1,pad//downsample)
         
 
-        cmpl_exp_i = ones_like(cmpl_exp)
-        phi = ones(1)
-        mid_harm = zeros(( self.n_harm, self.ndets), dtype=complex) 
-        svd_err = zeros(self.n_harm)
+        cmpl_exp_i = np.ones_like(cmpl_exp)
+        phi = np.ones(1)
+        mid_harm = np.zeros(( self.n_harm, self.ndets), dtype=complex) 
+        svd_err = np.zeros(self.n_harm)
         for i_harm in range(self.n_harm):
         
             #filter out the choosen harmonics
@@ -207,27 +193,26 @@ class SVDFilter():
 
 
             #complex SVD filtration of the harmonics
-            filtered_harmonic_low = copy(filtered_harmonic[:-len_red:downsample,:])
+            filtered_harmonic_low = np.copy(filtered_harmonic[:-len_red:downsample,:])
             filtered_harmonic_low*= weight[None,:]  #weight channels according their error
 
-            U,s,V = linalg.svd(filtered_harmonic_low/phi[:,None]**i_harm,full_matrices=False)
-            #print(sum(s[:self.n_svd]**2 )/sum(s**2 ))
-            svd_err[i_harm] = sum(s[:self.n_svd]**2 )/sum(s**2 )
+            U,s,V = np.linalg.svd(filtered_harmonic_low/phi[:,None]**i_harm,full_matrices=False)
+            svd_err[i_harm] = np.sum(s[:self.n_svd]**2)/np.sum(s**2)
             fact = 1 if i_harm == 0 else 2
-            svd_filtered_harm = dot(dot(conj(V[:max(1,self.n_svd-i_harm)]*weight[None,:]),
+            svd_filtered_harm = np.dot(np.dot(np.conj(V[:max(1,self.n_svd-i_harm)]*weight[None,:]),
                                         filtered_harmonic.T).T, V[:max(1,self.n_svd-i_harm)]/((weight+1e-6)[None,:]/fact))
             
             #find strongest channel
             if self.ch0 is None and i_harm == 1:
-                self.ch0 = argmax(abs(svd_filtered_harm*weight[None,:]).mean(0))
+                self.ch0 = np.argmax(np.abs(svd_filtered_harm*weight[None,:]).mean(0))
                 
 
             #plotting
             if self.fig_svd is not None and update_plots:
                 fun = colorize
                 if i_harm == 1:  #global phase of the mode
-                    phi =  U[:,0]/abs(U[:,0])
-                vmax = mquantiles(abs(svd_filtered_harm[:-len_red:downsample,:]),0.95)[0]
+                    phi =  U[:,0]/np.abs(U[:,0])
+                vmax = mquantiles(np.abs(svd_filtered_harm[:-len_red:downsample,:]),0.95)[0]
 
                 axes[i_harm,0].imshow(fun(filtered_harmonic[:-len_red:downsample,:]/phi[:,None]**i_harm/vmax*(~self.invalid)[None,:]),
                                         origin='lower',aspect='auto',interpolation='nearest',
@@ -239,11 +224,11 @@ class SVDFilter():
                 axes[i_harm,0].axis('tight')
                 axes[i_harm,1].axis('tight')
 
-            mid_harm[i_harm] = conj(svd_filtered_harm[-nt//2])*cmpl_exp_i[-nt//2]  #value in the middle of signal length
+            mid_harm[i_harm] = np.conj(svd_filtered_harm[-nt//2])*cmpl_exp_i[-nt//2]  #value in the middle of signal length
 
             #calculate a retrofit of the original real signal 
-            self.retrofit+= einsum('ij,i->ij',svd_filtered_harm.real,cmpl_exp_i.real[pad:])
-            self.retrofit+= einsum('ij,i->ij',svd_filtered_harm.imag,cmpl_exp_i.imag[pad:])
+            self.retrofit+= np.einsum('ij,i->ij',svd_filtered_harm.real,cmpl_exp_i.real[pad:])
+            self.retrofit+= np.einsum('ij,i->ij',svd_filtered_harm.imag,cmpl_exp_i.imag[pad:])
             
             #shift array to the next harmonics
             fsig = shift_array(fsig,int((nmax*n_fft//nt)))
@@ -254,8 +239,8 @@ class SVDFilter():
 
 
         self.actual = True
-        self.TSS = linalg.norm(data[pad:-pad])**2
-        self.RSS = linalg.norm(data[pad:-pad]-self.retrofit[:-pad])**2
+        self.TSS = np.linalg.norm(data[pad:-pad])**2
+        self.RSS = np.linalg.norm(data[pad:-pad]-self.retrofit[:-pad])**2
         #data-retrofit
 
         data += offset[None,:]
@@ -265,54 +250,17 @@ class SVDFilter():
 
         #correctly estimated errorbars for gaussian noise!!
         #errors = std(data[pad:-pad]-self.retrofit[:-pad],0)*linalg.norm(self.b_comb) 
-        #errors = hypot(errors, data.mean()*0.005)
         resid = data[pad:-pad]-self.retrofit[:-pad]
-        
-        #errors = 1.26*median(abs(resid-median(resid)[None]),0)/linalg.norm(b)
-        #errors = std(self.retrofit,0)/linalg.norm(b)
-        #errors = std(data,0)/linalg.norm(b)
-        #print(nt, len(b), linalg.norm(b))
-        #errors = std(resid,0)/linalg.norm(b)/len(b)*svd_err[0]*2
-        errors = 1.26*median(abs(resid-median(resid)[None]),0)/linalg.norm(b)/len(b)*svd_err[0]*2
 
-        
-        
-        #print(mean(errors),std(mid_harm[0]),sum(abs(mid_harm[1])**2)**.5/sqrt(len(mid_harm[1])),sum(abs(mid_harm[2])**2)**.5/sqrt(len(mid_harm[2])) )
-        #print(mean(errors)/std(mid_harm[0]))
+        errors = 1.26*np.median(np.abs(resid-median(resid)[None]),0)/np.linalg.norm(b)/len(b)*svd_err[0]*2
 
-        
-        #print(sqrt(sum((mid_harm[0].real)**2))/sqrt(len(mid_harm[0])), std(mid_harm[0]))
 
         #errors = median(abs(resid-median(resid)[None]),0)*nt*linalg.norm(b)/len(b) 
-        fz = sum(diff(resid>0,axis=0),0)/float(len(resid))/2.
-        lam = cos(2.*pi*fz)
+        fz = np.sum(np.diff(resid>0,axis=0),0)/float(len(resid))/2.
+        lam = np.cos(2.*np.pi*fz)
         lam[lam == 1] = 0
-        errors/= sqrt((1-lam)/(1+lam))
-        #print( sqrt((1-lam)/(1+lam)))
-        
-        #f = random.randn(nt)
-        #from scipy.signal import fftconvolve
-
-        #nt = 1000
-        #f = random.randn(nt)
-        #print(std(fftconvolve(f,b))/linalg.norm(b))
-
-                
-        
-        #import IPython
-        #IPython.embed()
-        
-        
-        #errorbar(arange(len(mid_harm.T)),abs(mid_harm[2]),errors)
-        #errorbar(arange(len(mid_harm.T)),abs(mid_harm[1]),errors)
-        #errorbar(arange(len(mid_harm.T)),abs(mid_harm[2]),errors)
-
-        #show()
-        #number of effective samples
-   
-        #errorbar(arange(self.ndets), abs(mid_harm[0]), errors);show()
-        
-        
+        errors/= np.sqrt((1-lam)/(1+lam))
+  
     
         self.harm = mid_harm[:,~self.invalid]
         self.harm_err = errors[~self.invalid]#/100
@@ -324,7 +272,7 @@ class SVDFilter():
             
             import matplotlib.gridspec as gridspec
             
-            gs0 = gridspec.GridSpec(2, 1,   height_ratios=[1,5] )
+            gs0  = gridspec.GridSpec(2, 1,   height_ratios=[1,5] )
             gs00 = gridspec.GridSpecFromSubplotSpec(1, 1, subplot_spec=gs0[0])
             gs01 = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=gs0[1])
 
@@ -408,7 +356,7 @@ class SVDFilter():
                 
                 self.plt_data.set_data( self.tvec[iimin:iimax],data[iimin:iimax,N])
                 self.plt_retro.set_data(self.tvec[max(0,iimin-pad)+pad:iimax],self.retrofit[ max(0,iimin-pad):iimax-pad,N])
-                filtered_t = sum([outer(r,exp(2*pi*self.f0*1j*(self.tvec-self.t0)*i)).real for i,r in enumerate(mid_harm[:,N])],0).T
+                filtered_t = np.sum([np.outer(r,np.exp(2*np.pi*self.f0*1j*(self.tvec-self.t0)*i)).real for i,r in enumerate(mid_harm[:,N])],0).T
 
                 
 

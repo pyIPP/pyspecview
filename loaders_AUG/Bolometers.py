@@ -48,7 +48,9 @@ class loader_diod_bolometers(loader):
         self.R_end   = {s:self.dd.GetParameter(s, 'R_end' )[active_los[s]] for s in activ_cam}
         self.z_end   = {s:self.dd.GetParameter(s, 'z_end' )[active_los[s]] for s in activ_cam}
         self.Phi_end = {s:self.dd.GetParameter(s, 'P_end' )[active_los[s]] for s in activ_cam}
-      
+        
+
+
         self.theta   = {s: np.arctan2(self.z_end[s]-self.z_start[s],self.R_end[s]-self.R_start[s])  for s in activ_cam}
         self.delta   = {s:self.dd.GetParameter(s, 'delta' )[active_los[s]] for s in activ_cam}
         
@@ -66,7 +68,7 @@ class loader_diod_bolometers(loader):
 
         sig_dict = {s:np.array([c.decode('utf-8') for c in self.dd.GetParameter(s, 'RAW' )]) for s in activ_cam}
         
-        self.subcam_ind = {c:[self.delta[c]+self.R_start[c] == r for r in unique(self.delta[c]+self.R_start[c])] for c in activ_cam}
+        self.subcam_ind = {c:[self.delta[c]+self.R_start[c] == r for r in np.unique(self.delta[c]+self.R_start[c])] for c in activ_cam}
         
 
         #geometric corrections  estimated by hand!
@@ -88,10 +90,10 @@ class loader_diod_bolometers(loader):
             bolo_los[bs] = []
             self.dd.Open(bs, self.shot)
             names = self.dd.GetNames()
-            #print( bs, names)
             xv_names.append([n.strip() for n in names])
-            #self.dd.Close()
            
+           
+        print(xv_names)
         self.signals = {}
         for c in activ_cam:
             sig = sig_dict[c]
@@ -101,14 +103,14 @@ class loader_diod_bolometers(loader):
                        
             for s in sig[activ]:
                 s = s.strip()
+                print(s)
                 if s in xv_names[0]:
                     sf.append(bolo_shotfiles[0])
                 elif s in xv_names[1]:
                     sf.append(bolo_shotfiles[1])
                 else:
                     print('missing signal %s'%s)
-                    #raise Exception('missing camera %s'%s)
-            #print(c, sig[activ],ch[activ],array(sf))
+
             if len(sf) == 0:
                 print('Missing data for camera '+c)
                 self.groups.pop(self.groups.index(c))
@@ -138,7 +140,7 @@ class loader_diod_bolometers(loader):
             if sf_open!= sf:
                 self.dd.Open(sf,self.shot, experiment=self.exp, edition=self.ed)
                 sf_open = sf
-                tvec = self.dd.GetTimebase('Dio-Time')
+                tvec = self.dd.GetTimebase('Dio-Time',cal=True)
                 offset_start = tvec.searchsorted(-.1)
                 offset_end = tvec.searchsorted(0)
                 ind = slice(tvec.searchsorted(tmin), tvec.searchsorted(tmax))
@@ -150,10 +152,10 @@ class loader_diod_bolometers(loader):
             
             #the calibration was not sometimes avalible, backup option:
             if  calib:
-                signal = float_(signal)
+                signal = np.float_(signal)
 
                 multi, shift = self.calibration[sig.strip()]
-                signal*= prod(multi)
+                signal*= np.prod(multi)
                 offset = shift[0]
                 for m,s in zip(multi[1:],shift[1:]):
                     offset = offset*m+s

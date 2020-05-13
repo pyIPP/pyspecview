@@ -1,0 +1,27 @@
+svd filtr trochu mrsil okrajove jevy? 
+
+krwslit 2dte take jako conturs? 
+
+30812 4.987s hezky videt displaced core and hot mode!!
+
+
+
+cross_signal = interp(self.tvec,cross_tvec, cross_signal)
+  File "/mpcdf/soft/SLE_15/packages/x86_64/anaconda/3/2019.03/lib/python3.7/site-packages/numpy/lib/function_base.py", line 1412, in interp
+    return interp_func(x, xp, fp, left, right)
+ValueError: fp and xp are not of the same length.
+
+
+
+pri loudnuti dat kvuli ECE se musi zemanit combobox s diagnostikama na ECE 
+
+
+
+neaktualaizujee se Te pri prepnuti panelu na SXR 
+lepsi odhad errorbaru 
+sxr retrofit v jednotkach??s
+1.43 1.44s 30516,  krasne jsou tam videt 2 mody i v SXR i v CEC
+
+
+
+zkontrolovat to video 

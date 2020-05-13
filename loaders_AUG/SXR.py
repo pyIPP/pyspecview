@@ -1,7 +1,6 @@
 from .loader import * 
 from scipy.interpolate import interp1d
 import os
-from functools import reduce
 
 
 def check(shot):
@@ -36,17 +35,18 @@ class loader_SXR(loader):
         signals = [b[1:] for b in names if b[0]== 'C']
 
         shotfiles    = [  self.dd.GetParameter('C'+s, 'SX_DIAG' ).tostring().decode('utf-8') for s in signals]
-        self.Phi     = {s:self.dd.GetParameter('C'+s, 'Tor_Pos' )+45 for s in signals}
+        self.Phi     = {s:self.dd.GetParameter('C'+s, 'Tor_Pos' )[0]+45 for s in signals}
         #BUG missing phi_end for T camera!!
-        self.R_start = {s:self.dd.GetParameter('C'+s, 'RPINHOLE') for s in signals}
-        self.z_start = {s:self.dd.GetParameter('C'+s, 'ZPINHOLE') for s in signals}
-        self.R_end   = {s:self.dd.GetParameter('C'+s, 'REND'    ) for s in signals}
-        self.z_end   = {s:self.dd.GetParameter('C'+s, 'ZEND'    ) for s in signals}
+        self.R_start = {s:self.dd.GetParameter('C'+s, 'RPINHOLE')[0] for s in signals}
+        self.z_start = {s:self.dd.GetParameter('C'+s, 'ZPINHOLE')[0] for s in signals}
+        self.R_end   = {s:self.dd.GetParameter('C'+s, 'REND'    )[0] for s in signals}
+        self.z_end   = {s:self.dd.GetParameter('C'+s, 'ZEND'    )[0] for s in signals}
         self.status  = {s:self.dd.GetParameter('C'+s, 'ADDRESS' )!=256 for s in signals}
         thickness    = {s:self.dd.GetParameter('C'+s, 'THICKNES') for s in signals}
         filt_mat     = {s:self.dd.GetParameter('C'+s, 'FILT-MAT').item().decode('utf-8') for s in signals}
         different_det= {s:(abs(thickness[s]-75e-6)>1e-5) | (filt_mat[s]!= 'Be') for s in signals}
         self.ADCrange  = {s:self.dd.GetParameter('C'+s, 'ADCrange') for s in signals}
+        
         self.ADCmin = 0
 
         self.MULTIA   = {}
@@ -61,7 +61,7 @@ class loader_SXR(loader):
 
         self.SXR_diods = {}
 
-        for sf in unique(shotfiles):
+        for sf in np.unique(shotfiles):
             self.SXR_diods[sf] = []
             
         for d,s in zip(shotfiles,signals):    
@@ -75,7 +75,7 @@ class loader_SXR(loader):
         self.all_signals = []
         for signals in list(self.SXR_diods.values()):
             self.all_signals.extend(signals)
-        self.groups = unique([i[0] for i in self.all_signals])
+        self.groups = np.unique([i[0] for i in self.all_signals])
         self.openshotfile = ''
 
     def get_names(self,group):
@@ -100,9 +100,8 @@ class loader_SXR(loader):
                 if name in signals :
                     if self.openshotfile != shotfile:
                         self.dd.Open(shotfile,self.shot, experiment=self.exp, edition=self.ed)
-                        #self.tvec  = self.dd.GetTimebase(name)
                     
-                    self.ed = self.dd.edition
+                    self.ed = self.dd.ed
                     self.openshotfile = shotfile
                     
                     info = self.dd.GetInfo('Time')
