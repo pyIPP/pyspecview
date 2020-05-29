@@ -2579,6 +2579,8 @@ class MainGUI(QMainWindow):
             self.SpecWin.init_plot(data, tmin=xlims[0], tmax=xlims[1], fmin0=ylims[0], 
                             fmax0=ylims[1], description=description)
         else:
+            print(data['tvec'])
+            
             self.SpecWin.init_plot(data, window=self.win_fun, description=description)
         self.canvas.draw_idle()
 
