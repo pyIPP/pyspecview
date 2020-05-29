@@ -8,7 +8,8 @@ from scipy.signal import firwin
 from scipy.fftpack import ifft,fft,fftfreq
 from matplotlib.widgets import MultiCursor
 from . import  fconf
-
+from matplotlib.ticker import NullFormatter
+import matplotlib.pylab as plt
 
 try:
     from scipy.signal.signaltools import _next_regular as next_fast_len
@@ -65,8 +66,8 @@ class SVDFilter():
         self.n_svd = n_svd
         self.n_harm = n_harm
         self.tau = tau
-        self.TSS = nan
-        self.RSS = nan
+        self.TSS = np.nan
+        self.RSS = np.nan
         self.fig_retro = None
         self.fig_svd = None
 
@@ -120,7 +121,7 @@ class SVDFilter():
         fsig = fft(data,axis=0,n=n_fft)#použít RFFT? 
         fb   = fft(np.single(b),axis=0,n=n_fft)
 
-        self.retrofit = np.zeros((nt-pad, self.ndets),dtype=single)
+        self.retrofit = np.zeros((nt-pad, self.ndets),dtype='single')
         weight = 1/np.single(err/(offset+np.mean(offset)/100))  #weight
        
         downsample = int(np.ceil(1/dt/(f0*2*self.n_harm))) *2
@@ -252,7 +253,7 @@ class SVDFilter():
         #errors = std(data[pad:-pad]-self.retrofit[:-pad],0)*linalg.norm(self.b_comb) 
         resid = data[pad:-pad]-self.retrofit[:-pad]
 
-        errors = 1.26*np.median(np.abs(resid-median(resid)[None]),0)/np.linalg.norm(b)/len(b)*svd_err[0]*2
+        errors = 1.26*np.median(np.abs(resid-np.median(resid)[None]),0)/np.linalg.norm(b)/len(b)*svd_err[0]*2
 
 
         #errors = median(abs(resid-median(resid)[None]),0)*nt*linalg.norm(b)/len(b) 
@@ -279,7 +280,7 @@ class SVDFilter():
 
             nplots = 3
             axarr = np.empty(nplots, dtype=object)
-            ax1 = Subplot(self.fig_retro, gs01[0])
+            ax1 = plt.Subplot(self.fig_retro, gs01[0])
             self.fig_retro.add_subplot(ax1)
 
             
@@ -287,7 +288,7 @@ class SVDFilter():
             axarr[0] = ax1
 
             for i in range(1, nplots):
-                axarr[i] = Subplot(self.fig_retro, gs01[i],sharex=ax1,sharey=ax1)
+                axarr[i] = plt.Subplot(self.fig_retro, gs01[i],sharex=ax1,sharey=ax1)
                 self.fig_retro.add_subplot(axarr[i])
 
             for ax in axarr[..., 1:].flat:
@@ -295,7 +296,7 @@ class SVDFilter():
                     label.set_visible(False)
                 ax.yaxis.offsetText.set_visible(False)
 
-            ax0 = Subplot( self.fig_retro, gs00[0])
+            ax0 = plt.Subplot( self.fig_retro, gs00[0])
             self.fig_retro.add_subplot(ax0)
             ax0.xaxis.set_ticks_position('top')
             ax0.yaxis.offsetText.set_visible(False)
@@ -323,23 +324,23 @@ class SVDFilter():
 
             ax2.set_title('filtered',fontsize=10)
             extent=(0,self.ndets,self.tvec[0],self.tvec[-1])
-            im1 = ax2.imshow(-(self.retrofit-data.mean(0))/sqrt(self.retrofit.std(0)+1),aspect='auto'
+            im1 = ax2.imshow(-(self.retrofit-data.mean(0))/np.sqrt(self.retrofit.std(0)+1),aspect='auto'
                             ,vmin=-vmax,vmax=vmax,cmap='seismic',extent=extent,
                             interpolation='nearest',origin='lower');
             ax1.set_title('original',fontsize=10)
-            im2 = ax1.imshow(-(data[pad:,:]-data.mean(0))/sqrt(self.retrofit.std(0)+1),
+            im2 = ax1.imshow(-(data[pad:,:]-data.mean(0))/np.sqrt(self.retrofit.std(0)+1),
                             aspect='auto',vmin=-vmax,vmax=vmax,cmap='seismic',
                             extent=extent,interpolation='nearest',origin='lower') ;
             ax3.set_title('original-filtered',fontsize=10)
-            im3 = ax3.imshow(-(data[pad:,:]-self.retrofit)/sqrt(self.retrofit.std(0)+1),
+            im3 = ax3.imshow(-(data[pad:,:]-self.retrofit)/np.sqrt(self.retrofit.std(0)+1),
                             aspect='auto',vmin=-vmax,vmax=vmax,cmap='seismic',
                             extent=extent,interpolation='nearest',origin='lower');
 
             #split detector arrays 
             for ax in [ax1, ax2, ax3]:
                 for ind in self.dets_index:
-                    ax.axvline(x=1+amax(ind), linestyle='-' ,color='k')
-                    ax.axvline(x=1+amax(ind), linestyle='--',color='w')
+                    ax.axvline(x=1+np.amax(ind), linestyle='-' ,color='k')
+                    ax.axvline(x=1+np.amax(ind), linestyle='--',color='w')
 
 
                     
@@ -350,7 +351,7 @@ class SVDFilter():
                 iimin = self.tvec.searchsorted(tmin)
                 iimax = self.tvec.searchsorted(tmax)+1
                 ind2 = slice(max(iimin,pad),iimax)
-                if not all(isfinite(data[iimin:iimax,N])):
+                if not np.all(np.isfinite(data[iimin:iimax,N])):
                     return
                     
                 
@@ -404,7 +405,7 @@ class SVDFilter():
                     update_single_plot(tmin,tmax,ax0._N)
             
                 self.fig_retro.canvas.draw()
-            update_single_plot(0,infty, self.ch0)
+            update_single_plot(0,np.infty, self.ch0)
 
 
         

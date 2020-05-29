@@ -91,7 +91,6 @@ class loader_MirnovCoils(loader):
         nbeg, nend = tvec.searchsorted((tmin,tmax))
 
         sig = self.dd.GetSignal(name,cal=calib, nbeg= nbeg,nend = nend)
-
         return tvec[nbeg:nend+1],sig
         
     def get_names_phase(self):

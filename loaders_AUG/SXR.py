@@ -34,7 +34,7 @@ class loader_SXR(loader):
 
         signals = [b[1:] for b in names if b[0]== 'C']
 
-        shotfiles    = [  self.dd.GetParameter('C'+s, 'SX_DIAG' ).tostring().decode('utf-8') for s in signals]
+        shotfiles    = [  ''.join(self.dd.GetParameter('C'+s, 'SX_DIAG' )) for s in signals]
         self.Phi     = {s:self.dd.GetParameter('C'+s, 'Tor_Pos' )[0]+45 for s in signals}
         #BUG missing phi_end for T camera!!
         self.R_start = {s:self.dd.GetParameter('C'+s, 'RPINHOLE')[0] for s in signals}
@@ -43,7 +43,7 @@ class loader_SXR(loader):
         self.z_end   = {s:self.dd.GetParameter('C'+s, 'ZEND'    )[0] for s in signals}
         self.status  = {s:self.dd.GetParameter('C'+s, 'ADDRESS' )!=256 for s in signals}
         thickness    = {s:self.dd.GetParameter('C'+s, 'THICKNES') for s in signals}
-        filt_mat     = {s:self.dd.GetParameter('C'+s, 'FILT-MAT').item().decode('utf-8') for s in signals}
+        filt_mat     = {s:self.dd.GetParameter('C'+s, 'FILT-MAT').item() for s in signals}
         different_det= {s:(abs(thickness[s]-75e-6)>1e-5) | (filt_mat[s]!= 'Be') for s in signals}
         self.ADCrange  = {s:self.dd.GetParameter('C'+s, 'ADCrange') for s in signals}
         
@@ -60,11 +60,10 @@ class loader_SXR(loader):
                 shotfiles[k] = 'OOO'
 
         self.SXR_diods = {}
-
         for sf in np.unique(shotfiles):
             self.SXR_diods[sf] = []
             
-        for d,s in zip(shotfiles,signals):    
+        for d,s in zip(shotfiles,signals):
             self.SXR_diods[d].append(s)
             
         try:
@@ -105,7 +104,7 @@ class loader_SXR(loader):
                     self.openshotfile = shotfile
                     
                     info = self.dd.GetInfo('Time')
-                    tlen = info.tlen
+                    tlen = info.ind_len
                     tbeg = self.dd.GetTimebase('Time', cal=True, nbeg=1, nend=1)[0]
                     tend = self.dd.GetTimebase('Time', cal=True, nbeg=tlen, nend=tlen)[0]
                     #BUG assume equally spaced time vector

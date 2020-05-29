@@ -355,8 +355,8 @@ class loader_ECE(loader):
         time = np.clip(time,*self.RZtime[[0,-1]])
         ch_ind = np.in1d(self.names, np.int_(names))
         
-        R = interp1d(self.RZtime, self.R[:,array(names)-1],axis=0)(time)
-        z = interp1d(self.RZtime, self.z[:,array(names)-1],axis=0)(time)
+        R = interp1d(self.RZtime, self.R[:,np.array(names)-1],axis=0)(time)
+        z = interp1d(self.RZtime, self.z[:,np.array(names)-1],axis=0)(time)
 
         r0 = np.interp(time, self.eqm.t_eq, self.eqm.ssq['Rmag'])+dR
         z0 = np.interp(time, self.eqm.t_eq, self.eqm.ssq['Zmag'])+dZ

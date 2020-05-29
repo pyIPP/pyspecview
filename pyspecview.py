@@ -2065,7 +2065,16 @@ class MainGUI(QMainWindow):
                 elif self.shot is not None:
   
                     #update also tomography
-                    self.roto_tomo.prepare_tomo(self.tokamak, self.shot, tmin, tmax, fmin, fmax, self.eqm, tvec0, sig0)
+                    try:
+                        self.roto_tomo.prepare_tomo(self.tokamak, self.shot, tmin, tmax, fmin, fmax, self.eqm, tvec0, sig0)
+                    except:
+                        print('rotation tomography failed')
+                        print( traceback.format_exc())
+
+                        QMessageBox.warning(self, "rotation tomography ", traceback.format_exc(), QMessageBox.Ok)
+                        return 
+
+
                     
                     if self.roto_tomo.showTe:
                         print('prepare ECE')
@@ -2279,7 +2288,7 @@ class MainGUI(QMainWindow):
             print( 'save_data3:', e)
             info = ''
       
-        savez_compressed(path, description=description, info=info, **out)
+        np.savez_compressed(path, description=description, info=info, **out)
         self.statusBar().showMessage('Saved to %s' % path, 2000)
      
          
@@ -2538,6 +2547,8 @@ class MainGUI(QMainWindow):
             tvec, sig = self.data_loader.get_signal(self.diag_group, self.signal)
             if np.size(tvec) < 2:
                 raise Exception('Too short time vector len(time) = %d'%np.size(tvec))
+            if sig is None: raise
+
         except Exception as e:
             print( traceback.format_exc())
 
@@ -2709,6 +2720,7 @@ class MainGUI(QMainWindow):
 
         try:
             tvec, sig = self.data_loader_phase.get_signal_phase(self.signal_phase)
+            if sig is None: raise
         except Exception as e:
             print( traceback.format_exc())
 

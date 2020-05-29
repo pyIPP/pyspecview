@@ -38,11 +38,11 @@ class loader_DCN(loader):
         if self.dd.GetParameter('DCNgeo','H5LFSphi') is None:
             raise Exception('DCN geometry is not avalible')
         
-        self.Phi     = {s:self.dd.GetParameter('DCNgeo','H%sLFSphi'%s[2]) for s in self.signals}
-        self.R_start = {s:self.dd.GetParameter('DCNgeo','H%sLFS_R'%s[2])/1e3 for s in self.signals}
-        self.z_start = {s:self.dd.GetParameter('DCNgeo','H%sLFS_z'%s[2])/1e3 for s in self.signals}
-        self.R_end   = {s:self.dd.GetParameter('DCNgeo','H%sHFS_R'%s[2])/1e3 for s in self.signals}
-        self.z_end   = {s:self.dd.GetParameter('DCNgeo','H%sHFS_z'%s[2])/1e3 for s in self.signals}
+        self.Phi     = {s:self.dd.GetParameter('DCNgeo','H%sLFSphi'%s[2])[0] for s in self.signals}
+        self.R_start = {s:self.dd.GetParameter('DCNgeo','H%sLFS_R'%s[2])[0]/1e3 for s in self.signals}
+        self.z_start = {s:self.dd.GetParameter('DCNgeo','H%sLFS_z'%s[2])[0]/1e3 for s in self.signals}
+        self.R_end   = {s:self.dd.GetParameter('DCNgeo','H%sHFS_R'%s[2])[0]/1e3 for s in self.signals}
+        self.z_end   = {s:self.dd.GetParameter('DCNgeo','H%sHFS_z'%s[2])[0]/1e3 for s in self.signals}
         self.dd.Close()
         
         #values from diaggeom
@@ -93,16 +93,16 @@ class loader_DCN(loader):
             #find local maxima (much fastter than argrelmin)
             imax = np.argmax(sig[:len(sig)//(2*N)*(2*N)].reshape(-1,2*N),axis=1)
             ind = ~((imax==0)|(imax==2*N-1))
-            ind |= (imax==0) & (r_[0,imax[:-1]]==2*N-1)
+            ind |= (imax==0) & (np.r_[0,imax[:-1]]==2*N-1)
             imax = imax[ind]+np.arange(len(ind))[ind]*2*N
     
             iimaxL =  ( np.r_[np.diff(imax)] < N )  
             iimaxR =  ( np.r_[N,np.diff(imax)[:-1]] < N )  
-            comp_ind = sig[imax][iimaxL]<sig[imax][iimaxR]
+            comp_ind = sig[imax][:-1][iimaxL]<sig[imax][:-1][iimaxR]
             iimaxL[iimaxL] &= comp_ind
             iimaxR[iimaxR] &= ~comp_ind
             iimax = iimaxL|iimaxR
-            imax = imax[~iimax]
+            imax = imax[:-1][~iimax]
             return imax
         
         pos = loc_max(sig,N)
@@ -177,7 +177,7 @@ class loader_DCN(loader):
 
         dn = (ref-sig-retrofit)*density_constant
 
-        return dn
+        return np.single(dn)
 
     def get_signal(self,group, name,calib=False,tmin=None,tmax=None):
         
@@ -194,13 +194,11 @@ class loader_DCN(loader):
             nbeg, nend = tvec.searchsorted((tmin,tmax))
 
             sig = self.dd.GetSignal('DCN_'+name, nbeg= nbeg, nend = nend-1 )
- 
+
             tvec = tvec[nbeg:nend]
             
             if group == 'unwrap':  #it will also increase noise and small modes can be lost
                 ref = self.dd.GetSignal('DCN_ref', nbeg= nbeg, nend = nend-1)
-                print(tvec.shape, nbeg, nend,tmin,tmax,sig.shape,ref.shape )
-                print(tvec)
                 sig = self.unwrap_ne(tvec, sig,ref)
 
         elif name[0] == 'V':  #CO2 lasers
@@ -234,6 +232,7 @@ class loader_DCN(loader):
         R_end = np.array([self.R_end[name] for name in names])
         z_end = np.array([self.z_end[name] for name in names])
         Phi = np.array([self.Phi[name] for name in names])
+        
 
         rho_tg,theta_tg, R,Z = super(loader_DCN,self).get_rho(time,R_start,z_start, \
                                         Phi,R_end,z_end,Phi,dR=dR,dZ=dZ)

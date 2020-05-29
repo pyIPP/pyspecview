@@ -56,6 +56,7 @@ class loader_diod_bolometers(loader):
         
         self.all_names = [n for n in self.dd.GetNames() if n[:2] == 'CS']
         self.calibration= {}
+        #print(self.all_names )
 
         for name in self.all_names:
             ncalib = int(self.dd.GetParameter(name, 'NCALSTEP' ))
@@ -66,7 +67,7 @@ class loader_diod_bolometers(loader):
                 shift.append(self.dd.GetParameter(name, 'SHIFTB%.2d'%i))
             self.calibration[name[1:]] = multi,shift
 
-        sig_dict = {s:np.array([c.decode('utf-8') for c in self.dd.GetParameter(s, 'RAW' )]) for s in activ_cam}
+        sig_dict = {s:np.array([c for c in self.dd.GetParameter(s, 'RAW' )]) for s in activ_cam}
         
         self.subcam_ind = {c:[self.delta[c]+self.R_start[c] == r for r in np.unique(self.delta[c]+self.R_start[c])] for c in activ_cam}
         
@@ -93,7 +94,6 @@ class loader_diod_bolometers(loader):
             xv_names.append([n.strip() for n in names])
            
            
-        print(xv_names)
         self.signals = {}
         for c in activ_cam:
             sig = sig_dict[c]
@@ -103,7 +103,8 @@ class loader_diod_bolometers(loader):
                        
             for s in sig[activ]:
                 s = s.strip()
-                print(s)
+               # print(s)
+                if s == '': continue
                 if s in xv_names[0]:
                     sf.append(bolo_shotfiles[0])
                 elif s in xv_names[1]:
@@ -243,9 +244,12 @@ class loader_diod_bolometers(loader):
     
     def signal_info(self,group,name,time):
 
-        name = int(name)
         rho_tg = self.get_rho(group,[name,],time)[0]
-        
-        phi = self.Phi_start[group][int(name)] 
+                
+        all_names = self.get_names(group)
+       
+        ind = all_names.index(name)
+
+        phi = self.Phi_start[group][ind] 
         info = group+' '+str(name)+' Phi: %d deg, rho_tg: %.3f'%(phi,rho_tg)
         return info

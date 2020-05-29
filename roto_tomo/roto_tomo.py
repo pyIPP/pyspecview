@@ -176,8 +176,8 @@ class DataSettingWindow(QMainWindow):
         self.nch = data.shape[1]
         
  
-        rcParams['xtick.direction'] = 'out'
-        rcParams['ytick.direction'] = 'out'
+        plt.rcParams['xtick.direction'] = 'out'
+        plt.rcParams['ytick.direction'] = 'out'
         self.fig_data.clf()
         self.fig_data.subplots_adjust(left=.15-.05,top=.95,right=.95+.05,bottom=.12)
 
@@ -188,7 +188,7 @@ class DataSettingWindow(QMainWindow):
 
         self.ax_data.point_label = self.ax_data.text(0,0,'', fontsize=8 ,zorder=99)
         extent = (0.5, self.nch+.5,tvec[0],tvec[-1])
-        self.data_im = self.ax_data.imshow(ones((2,2)),cmap = 'jet',extent=extent
+        self.data_im = self.ax_data.imshow(np.ones((2,2)),cmap = 'jet',extent=extent
                     ,interpolation='nearest', origin='lower', picker=1)
         self.ax_data.axis('tight')
         self.ax_data.set_ylabel('Time [s]',fontsize=self.font_size)
@@ -206,8 +206,8 @@ class DataSettingWindow(QMainWindow):
  
             
         for ind in self.tomo.tok.dets_index[:-1]:
-            self.ax_data.axvline(x=1.5+amax(ind), linestyle='-' ,color='k')
-            self.ax_data.axvline(x=1.5+amax(ind), linestyle='--',color='w')
+            self.ax_data.axvline(x=1.5+np.amax(ind), linestyle='-' ,color='k')
+            self.ax_data.axvline(x=1.5+np.amax(ind), linestyle='--',color='w')
 
         for label in (self.ax_data.get_xticklabels() + self.ax_data.get_yticklabels()):
             label.set_fontsize(self.font_size) # Size here overrides font_prop
@@ -297,20 +297,20 @@ class DataSettingWindow(QMainWindow):
             
             try:
                 dets_list = eval('r_['+str(wrong_dets_str)+']')
-                wrong_dets_pref = array(int_(dets_list)-1, ndmin=1)
+                wrong_dets_pref = np.array(np.int_(dets_list)-1, ndmin=1)
             except:
                 QMessageBox.warning(self,"Input problem",
                     "Wrong detectors are in bad format, use ...,10,11,13:15,...",QMessageBox.Ok)
                 raise
         elif init:     # do not remove on init
-            wrong_dets_pref = int_(config.wrong_dets_pref)
+            wrong_dets_pref = np.int_(config.wrong_dets_pref)
      
         wrong = self.tomo.tok.dets[~self.tomo.tok.get_correct_dets(include_pref=False)]
         config.wrong_dets_pref  = np.unique(np.setdiff1d( wrong_dets_pref,wrong))
         return  wrong_dets_pref
     
     def SetWrongDets(self, wrong):
-        wrong = unique(wrong)
+        wrong = np.unique(wrong)
 
         wrong_dets_str = ''
         i = 0
@@ -451,7 +451,7 @@ class DataSettingWindow(QMainWindow):
 
         self.verticalLayout_res.addLayout(self.horizontalLayout_res)
 
-        self.fig_res = Figure((6.0, 5.0), dpi=self.dpi)
+        self.fig_res = plt.Figure((6.0, 5.0), dpi=self.dpi)
         self.canvas_res = FigureCanvas(self.fig_res)
         self.canvas_res.setParent(self.cWidget)
                 
@@ -544,7 +544,7 @@ class tokamak:
         
         
 
-        return array((R,Z)).T
+        return np.array((R,Z)).T
     
     def mag_equilibrium(self, tvec, return_mean):
         if return_mean:
@@ -555,7 +555,7 @@ class tokamak:
 def flux_mean(G, Tok,magr,magz):
     #flux surface averadge G profile
 
-    n_mag = size(magr,1)
+    n_mag = np.size(magr,1)
     
     scaling = np.array([Tok.dx,Tok.dy])
     offset = np.array([Tok.xmin,Tok.ymin])    
@@ -576,7 +576,7 @@ def build_reg_mat_time(rho_mat,theta_star_rz,theta_star,rhop,magr,magz,xgrid,ygr
     magz = [np.interp(theta_star_grid, t,z) for z,t in zip(magz.T,theta_star.T)]
 
     RHO = rho_mat.flatten('F')[~BdMat]
-    RHO = minimum(RHO, rhop[-1])
+    RHO = np.minimum(RHO, rhop[-1])
     THETA = theta_star_rz.flatten('F')[~BdMat]
 
     i_theta_r = ((THETA-dtheta)/(2*np.pi))%1*(len(theta_star_grid)-1)
@@ -595,7 +595,7 @@ def build_reg_mat_time(rho_mat,theta_star_rz,theta_star,rhop,magr,magz,xgrid,ygr
     x_int_r = (xi_new_r-xgrid[0])/dx
     y_int_r = (yi_new_r-ygrid[0])/dy
 
-    x_int_c,y_int_c = np.meshgrid(arange(nx),arange(ny))
+    x_int_c,y_int_c = np.meshgrid(np.arange(nx),np.arange(ny))
     x_int_c = x_int_c.flatten('F')[~BdMat]
     y_int_c = y_int_c.flatten('F')[~BdMat]
 
@@ -634,7 +634,7 @@ def build_reg_mat_time(rho_mat,theta_star_rz,theta_star,rhop,magr,magz,xgrid,ygr
     weights[:4]/= np.sum(weights[:4],0)
 
     #higher harmonics should vanish exactly in the core!!
-    weights[4] += np.pow(np.maximum(0.05,1-RHO),30)
+    weights[4] += np.maximum(0.05,1-RHO)**30
     
     
     #left position
@@ -721,7 +721,7 @@ class HarmSolver(Process):
 
     def guess_lam(self,U,S,d):
         g0 = 2*np.log(np.median(S))
-        prod = np.asarray(dot(U.T,self.b[~d]))
+        prod = np.asarray(np.dot(U.T,self.b[~d]))
         g, f = FindMin(Press,g0,1,prod,0,S,U)
         return g
    
@@ -733,7 +733,7 @@ class HarmSolver(Process):
             H = H + self.Ht.H*self.Ht#TODO set ration between them?
             H = self.W*H*self.W.T  
 
-        wrong_dets = np.squeeze(array(self.T.sum(1)==0))
+        wrong_dets = np.squeeze(np.array(self.T.sum(1)==0))
         K = self.T[np.where(~wrong_dets)[0]]  
 
         npix = K.shape[1]
@@ -786,7 +786,7 @@ class HarmSolver(Process):
             elif lam <= 0:
                 g = self.guess_lam(U,S,wrong_dets)
             else:
-                g = mquantiles(2*log(S),lam)
+                g = mquantiles(2*np.log(S),lam)
  
             #evaluate solution
             w = w_i(g,S)
@@ -803,10 +803,10 @@ class HarmSolver(Process):
                 G[~self.BdMat] = F.apply_Pt(F.solve_Lt(vt_))
 
             retro = np.zeros_like(self.b)
-            retro[~wrong_dets] = np.dot(conj(U),f*S)
-            chi2 = (linalg.norm(((w-1)*prod))**2)/np.sum(~wrong_dets)
+            retro[~wrong_dets] = np.dot(np.conj(U),f*S)
+            chi2 = (np.linalg.norm(((w-1)*prod))**2)/np.sum(~wrong_dets)
 
-            lam = np.interp(g, 2*log(S)[::-1], np.linspace(0,1,len(S)))
+            lam = np.interp(g, 2*np.log(S)[::-1], np.linspace(0,1,len(S)))
 
             self.qout.put((G,retro,lam,chi2 ))
 
@@ -825,7 +825,7 @@ def OptimizeF0( tvec, sig, f0,df0 = 200,n_steps=400):
     
     for i in range(n_steps):
         
-        retro = np.outer(test_fun, np.dot(conj(test_fun), sig))[:,0]*2
+        retro = np.outer(test_fun, np.dot(np.conj(test_fun), sig))[:,0]*2
         difference[i] = np.linalg.norm(retro.real-sig)
         test_fun*= dtest_fun
 
@@ -866,7 +866,7 @@ def create_derivation_matrix(g, Bmat, danis,rgmin=1e-8):
     W=sparse.spdiags(g_tmp,0, npix,npix,format='csr')
 
     #Bmat = [Bper1_frwd,Bpar1_frwd,Bper2_bckwrd,Bpar2_bckwrd]
-    def sigmoid(x):    return 1 / (1 + exp(-x))
+    def sigmoid(x):    return 1 / (1 + np.exp(-x))
 
     Hper = sigmoid(-danis)*(Bmat[0].T*(W*Bmat[0]) + Bmat[2].T*(W*Bmat[2]))
     Hpar = sigmoid( danis)*(Bmat[1].T*(W*Bmat[1]) + Bmat[3].T*(W*Bmat[3]))
@@ -1186,7 +1186,7 @@ class Roto_tomo:
                     self.tok.prepare_data(self.tmin,self.tmax,1,1,1,detsCutOff=False)
         self.signals,self.error_sig = signals.T,error_sig.T
       
-        self.dets = dets[all(isfinite(error_sig),1)[dets]]
+        self.dets = dets[np.all(np.isfinite(error_sig),1)[dets]]
         
         #initialise it only once 
         dets_index = self.tok.dets_index[:-1]  
@@ -1213,7 +1213,7 @@ class Roto_tomo:
         self.t0 = self.SVDF.t0
         self.bb = list(self.SVDF.harm)
         self.bb[0] = self.bb[0].real
-        self.bb_err = [np.copy(self.SVDF.harm_err) for h in self.bb]
+        self.bb_err = [np.copy(self.SVDF.harm_err)+1e-6 for h in self.bb]
         
         #NOTE errorbars found this ways are too small for zeroth and first harmonics
         self.bb_err[0] += self.SVDF.err[~self.SVDF.invalid]
@@ -1226,8 +1226,8 @@ class Roto_tomo:
 
         #initial guess of the SXR profile
         P = (self.rhop**2+4**-2)**(-2)*np.tanh((1-self.rhop)*10)
-        P = exp(-((self.rhop)/0.7)**2)
-        G0 = interp(self.rho_mat, self.rhop, P/P[0])
+        P = np.exp(-((self.rhop)/0.7)**2)
+        G0 = np.interp(self.rho_mat, self.rhop, P/P[0])
         G0[self.BdMat] = 0
    
         #use only valid detectors
@@ -1381,7 +1381,7 @@ class Roto_tomo:
             
         f,axes = plt.subplots(max((self.n_harm+1)//2,1),2,sharex=True,num='Retrofit',figsize=(9,8))
         f.suptitle('t=%.3f'%self.t0)
-        for ax in atleast_2d(axes)[:,0]:
+        for ax in np.atleast_2d(axes)[:,0]:
             ax.set_ylabel('SXR [kW/m$^2$]')
             
         axes = axes.flatten()
@@ -1401,9 +1401,9 @@ class Roto_tomo:
                 ind = (self.dets>= det_ind[i])&(self.dets <  det_ind[i+1])
                 if np.sum(ind) < 3:  continue
                 phase_retro[ind] = np.unwrap(phase_retro[ind],discont=1.5*np.pi)
-                phase_retro[ind] -= np.round(average(phase_retro[ind], weights=aplitude_retro[ind])/(2*np.pi))*2*np.pi
+                phase_retro[ind] -= np.round(np.average(phase_retro[ind], weights=aplitude_retro[ind])/(2*np.pi))*2*np.pi
                 phase_data[ind] = np.unwrap(phase_data[ind]-phase_retro[ind])+phase_retro[ind]
-                phase_data[ind] -=  np.round(average(phase_data[ind]-phase_retro[ind], weights=aplitude_data[ind])/(2*np.pi))*2*np.pi
+                phase_data[ind] -=  np.round(np.average(phase_data[ind]-phase_retro[ind], weights=aplitude_data[ind])/(2*np.pi))*2*np.pi
 
             phase_shift =  np.average(phase_retro, weights=aplitude_retro )
             phase_data  -= phase_shift
@@ -1425,8 +1425,8 @@ class Roto_tomo:
 
             w = aplitude_data/np.nanmax(aplitude_data)
             w[weak] = 0
-            if any(~isreal(self.bb[n])):
-                ax.scatter(self.dets, phase_data*norm,facecolor=(outer((1,0,0), w)+1-w).T,      
+            if any(~np.isreal(self.bb[n])):
+                ax.scatter(self.dets, phase_data*norm,facecolor=(np.outer((1,0,0), w)+1-w).T,      
                            edgecolors=(1,0,0),s=50,linewidths=.5)
                 ax.plot( self.dets,  phase_retro*norm ,'.--b')
             ax.set_xlim(self.dets[0], self.dets[-1]+1)
@@ -1521,7 +1521,7 @@ class Roto_tomo:
 
 
     def shift_phase(self,shift_phi):
-        self.shift_phi %= 2*np.npi #periodicity
+        self.shift_phi %= 2*np.pi #periodicity
         self.time = self.t0 + self.shift_phi/(2*np.pi*self.F1)*np.abs(self.m)
         description = '#%d  at %.6fs,  f$_0$ = %.4fkHz and m/n=%d/%d'%(self.shot, self.time, self.F1/1e3, self.m,self.n)
         self.plot_description.set_text(description)
