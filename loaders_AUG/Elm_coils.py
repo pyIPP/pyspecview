@@ -77,7 +77,7 @@ class loader_BalooningCoils(loader):
             if sig == name: break
          
         self.dd.Open(self.shotfile, self.shot, experiment=self.exp, edition=self.ed)
-        tvec = self.dd.GetTimebase(name)
+        tvec = self.dd.GetTimebase(name, cal=True)
         nbeg, nend = tvec.searchsorted((tmin,tmax))
 
         sig = self.dd.GetSignal(name,cal=calib, nbeg= nbeg,nend = nend)
@@ -113,7 +113,7 @@ class loader_BalooningCoils(loader):
             
 
         self.dd.Open(self.shotfile, self.shot, experiment=self.exp, edition=self.ed)
-        tvec = self.dd.GetTimebase('B31-%.2d'%self.phase_balooning_coils[0])
+        tvec = self.dd.GetTimebase('B31-%.2d'%self.phase_balooning_coils[0], cal=True)
         nbeg, nend = tvec.searchsorted((tmin,tmax))
 
 

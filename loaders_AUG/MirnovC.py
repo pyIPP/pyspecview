@@ -110,7 +110,7 @@ class loader_MirnovCoils(loader):
             if self.shotfile != sf :
                 self.dd.Open(sf, self.shot, experiment=self.exp, edition=self.ed)
                 self.shotfile = sf
-                tvec = self.dd.GetTimebase(sig_p)
+                tvec = self.dd.GetTimebase(sig_p, cal=True)
                 nbeg, nend = tvec.searchsorted((tmin,tmax))
 
             sig = self.dd.GetSignal(sig_p,cal=calib,nbeg=nbeg,nend=nend)

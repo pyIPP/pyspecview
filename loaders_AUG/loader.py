@@ -3,7 +3,7 @@ import numpy as np
 import sys, os, random
 import traceback
 sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
-import dd_20200507_2 as dd 
+import dd_20200507 as dd 
 
 shot_path = '/afs/ipp-garching.mpg.de/augd/shots/'
 
