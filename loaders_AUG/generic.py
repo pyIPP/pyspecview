@@ -72,8 +72,8 @@ class loader_gen(loader):
         name+= ' '
         i_split = name.find(':')
 
-        tvec = self.dd.GetTimebase(name[:i_split])
-        
+        tvec = self.dd.GetTimebase(name[:i_split], cal=True)
+
         if tvec is None:
             raise Exception('No timebase has been found!!')
         
@@ -83,7 +83,7 @@ class loader_gen(loader):
 
         nbeg, nend = tvec.searchsorted((tmin,tmax))
         
-        sig = self.dd.GetSignal(name[:i_split])
+        sig = self.dd.GetSignal(name[:i_split], check=False)
         
         
         if i_split != -1:

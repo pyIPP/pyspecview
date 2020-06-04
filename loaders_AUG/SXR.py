@@ -104,15 +104,10 @@ class loader_SXR(loader):
                     self.openshotfile = shotfile
                     
                     info = self.dd.GetInfo('Time')
-<<<<<<< HEAD
-                    tlen = info.ind_len
+                    tlen = info.tlen
                     tbeg = self.dd.GetTimebase('Time', cal=True, nbeg=1, nend=1)[0]
                     tend = self.dd.GetTimebase('Time', cal=True, nbeg=tlen, nend=tlen)[0]
-=======
-                    tlen = info.tlen
-                    tbeg = self.dd.GetTimebase('Time', nbeg=1, nend=1)[0]
-                    tend = self.dd.GetTimebase('Time', nbeg=tlen, nend=tlen)[0]
->>>>>>> Taking new version
+
                     #BUG assume equally spaced time vector
                     nbeg,nend = np.int_((np.r_[tmin,tmax]-tbeg)/(tend-tbeg)*tlen)
                     tvec = np.linspace(tmin,tmax, nend-nbeg)
