@@ -2124,6 +2124,10 @@ class MainGUI(QMainWindow):
         if self.curr_tab == 3:
             canvas = self.canvas_2Dmap
             pre = '2D_profile'
+# git
+        if self.curr_tab == 4:
+            canvas = self.rototomo_canvas
+            pre = '2D_SXR'
 
         if no_gui:
             path = pre+'_'+str(self.shot)
