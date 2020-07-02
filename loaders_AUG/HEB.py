@@ -42,9 +42,10 @@ class loader_HEB(loader):
             self.dd.Open(self.shotfile , self.shot, experiment=self.exp, edition=self.ed)
         
             if not hasattr(self,'tvec'):
-                self.tvec = self.dd.GetTimebase(group)
+                print('HEB ', group)
+                self.tvec = self.dd.GetTimebase(group, cal=True, check=False) # git 24.06.20
 
-            setattr(self,group,self.dd.GetSignal(group))
+            setattr(self,group,self.dd.GetSignal(group, check=False))
         self.dd.Close()
         
         nbeg, nend = self.tvec.searchsorted((tmin,tmax))

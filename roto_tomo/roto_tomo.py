@@ -937,21 +937,13 @@ class Roto_tomo:
         self.plot_mag_theta = self.ax.plot(X,X,'--',c='0.5',lw=.5, visible=self.show_flux.isChecked())
 
         #tokamak chamber
-<<<<<<< HEAD
-        try:
-            sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
-            from get_gc import get_gc  # AUG
-        except:
-            from self.map_equ import get_gc # DIII-D
-        gc_r, gc_z = get_gc()
-=======
         try: #AUGD
             sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
             import get_gc
             gc_r, gc_z = get_gc.get_gc()
         except: #DIII-D
             gc_r, gc_z = self.map_equ.get_gc()
->>>>>>> Taking new version
+
         for key in gc_r.keys():
             self.ax.plot(gc_r[key], gc_z[key],c='0.5',lw=.5)
         

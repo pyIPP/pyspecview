@@ -303,7 +303,7 @@ class loader_ECE(loader):
         if not status:
             return
 
-        tvec = self.dd.GetTimebase('Trad-A')
+        tvec = self.dd.GetTimebase('Trad-A', cal=True)
         imin,imax = tvec[:-1].searchsorted((tmin, tmax))
 
         Te = self.dd.GetSignal('Trad-A',nbeg=imin, nend=imax+1)
@@ -314,7 +314,11 @@ class loader_ECE(loader):
         from scipy.interpolate import LSQUnivariateSpline
 
         ind = np.argsort(rho)
-        ind = ind[np.abs(rho[ind])<1&(Te[ind]>0)]
+        print('Debug1', ind, np.abs(rho[ind]))
+        import IPython
+        IPython.embed()
+        ind = ind[np.abs(rho[ind]) < 1 & Te[ind] > 0]
+        print('Debug2', ind)
         x = np.r_[rho[ind],1]
         y = np.log(np.r_[medfilt(Te[ind],5),min(Te[ind].min(),100)])
         ind_ = np.argsort(r_[-x,x])
