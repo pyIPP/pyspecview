@@ -1350,7 +1350,7 @@ class Roto_tomo:
         self.Te2Dmap.f0 = self.F1
         self.Te2Dmap.phase_locked = False
 
-        self.Te2Dmap.UpdateModeM(searchsorted(self.parent.m_numbers,self.m), animate=True)
+        self.Te2Dmap.UpdateModeM(np.searchsorted(self.parent.m_numbers,self.m), animate=True)
         self.fig.canvas.draw_idle()
 
         

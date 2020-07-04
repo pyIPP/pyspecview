@@ -2,11 +2,7 @@ import numpy as np
 from .loader import * 
 import os, sys
 from scipy.interpolate import interp1d
-sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
-import dd_20200507 as dd
-
-sf = dd.shotfile()
-
+ 
  
 def check(shot):
     #fastest check if the shotfile exist
@@ -314,11 +310,7 @@ class loader_ECE(loader):
         from scipy.interpolate import LSQUnivariateSpline
 
         ind = np.argsort(rho)
-        print('Debug1', ind, np.abs(rho[ind]))
-        import IPython
-        IPython.embed()
         ind = ind[np.abs(rho[ind]) < 1 & Te[ind] > 0]
-        print('Debug2', ind)
         x = np.r_[rho[ind],1]
         y = np.log(np.r_[medfilt(Te[ind],5),min(Te[ind].min(),100)])
         ind_ = np.argsort(r_[-x,x])
@@ -395,3 +387,6 @@ class loader_ECE(loader):
     
     def get_description(self,group,name):
         return 'AUG %d diag: %s sig: %s'%(self.shot,self.shotfile,name)
+
+
+
