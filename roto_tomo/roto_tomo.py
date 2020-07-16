@@ -991,6 +991,8 @@ class Roto_tomo:
         if t0 is np.nan:
             print( 'Select valid time range')
             return 
+        
+        
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
@@ -1033,10 +1035,14 @@ class Roto_tomo:
         if Tok == 'DIIID':
             import geometry.DIIID as Tok
             diag = 'SXR fast'
-
+            diag_path = os.path.join([tomo_local_path,'/geometry/DIIID/SXR'])
+            if not os.path.exists(diag_path): os.mkdirs(diag_path)
         elif Tok == 'AUG':
             import geometry.ASDEX as Tok
             diag = 'SXR_fast'
+            diag_path = os.path.join([tomo_local_path,'/geometry/ASDEX/SXR'])
+            if not os.path.exists(diag_path): os.mkdirs(diag_path)
+
 
         else:
             raise Exception('Support of the tokamak %s was not implemented'%tok)
