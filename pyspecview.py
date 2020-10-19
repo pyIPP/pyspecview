@@ -794,6 +794,11 @@ class DataPlot():
         
     def update_plot(self, xstart, xend, xnew=None, ynew=None):
         #dims = self.ax.axesPatch.get_window_extent().bounds
+        
+        xlim =  self.ax.get_xlim()
+        if xstart == xlim[0] and xend == xlim[1]:
+            return
+        
         dims = self.ax.get_window_extent().bounds
 
         width = int(dims[2] + 0.5)
@@ -804,7 +809,6 @@ class DataPlot():
         if ynew is not None:
             self.y = ynew
             
-        xlim =  self.ax.get_xlim()
         istart, iend = self.x.searchsorted((xstart, xend))
         
         #random sampling
@@ -1880,8 +1884,8 @@ class MainGUI(QMainWindow):
         self.m_numbers = np.r_[-4:0, 1:8]
         self.n_numbers = np.r_[-3:0, 1:4]
         
-        path = os.path.abspath(__file__)
-        path = path[:path.rfind('/')]
+ 
+        path = os.path.dirname(os.path.realpath(__file__))
         current_path = os.getcwd()
         os.chdir(path)
 
@@ -1920,11 +1924,9 @@ class MainGUI(QMainWindow):
         self.create_phase_table()
         self.create_radialplot_table()
 
-        import base64
-        if os.environ["USER"] != base64.b64decode(b'Y21hcmNoZXQ=\n').decode('utf8'):
-            #beta version of the advacent modules
-            self.create_2Dmap_table()
-            self.create_rototomo_table()
+
+        self.create_2Dmap_table()
+        self.create_rototomo_table()
         
         if not self.shot is None:
             self.shot_changed(self.shot, init=True)
@@ -2351,9 +2353,16 @@ class MainGUI(QMainWindow):
                         if not self.eqm.Open(self.shot, diag='EFITRT01'):
                             eqm_ready = False
             if eqm_ready:
-
-                self.eqm.read_scalars()
-                self.eqm.read_pfm()              
+                
+                try: #AUG version
+                    self.eqm.read_scalars()
+                    self.eqm.read_pfm()  
+                except: #DIII-D version
+                    self.eqm._read_scalars()
+                    self.eqm._read_profiles()
+                    self.eqm._read_pfm()
+                    self.eqm.read_ssq()
+           
                 self.eqm_ready = True
 
         self.statusBar().showMessage('Loading equilibrium ...', 5000 )
@@ -2582,9 +2591,7 @@ class MainGUI(QMainWindow):
         if  self.SpecWin.initialized:
             self.SpecWin.init_plot(data, tmin=xlims[0], tmax=xlims[1], fmin0=ylims[0], 
                             fmax0=ylims[1], description=description)
-        else:
-            print(data['tvec'])
-            
+        else:            
             self.SpecWin.init_plot(data, window=self.win_fun, description=description)
         self.canvas.draw_idle()
 
@@ -2787,9 +2794,8 @@ class MainGUI(QMainWindow):
         
     def on_manual(self):
 
-        path = os.path.abspath(__file__)
-        path = path[:path.rfind('/')]
-        text = open(path+'/README.md').read()
+        path = os.path.dirname(os.path.realpath(__file__))
+        text = open(path+os.sep+'README.md').read()
         
         help_win = QDialog()
 
@@ -3562,9 +3568,8 @@ class MainGUI(QMainWindow):
         cfg_path = os.path.expanduser('~/pyspecviewer.cfg')
         if not os.path.isfile(cfg_path):
             from shutil import copyfile
-            path = os.path.abspath(__file__)
-            path = path[:path.rfind('/')]
-            copyfile( path+'/pyspecviewer.cfg', cfg_path )
+            path = os.path.dirname(os.path.realpath(__file__))
+            copyfile( path+os.sep+'pyspecviewer.cfg', cfg_path )
   
         config.read(cfg_path)
     
@@ -3618,11 +3623,9 @@ class MainGUI(QMainWindow):
 
 
 if __name__ == '__main__':
-
-
-    path = os.path.abspath(__file__)
-    path = path[:path.rfind('/')]
-    text = open(path+'/README.md').read()
+ 
+    path = os.path.dirname(os.path.realpath(__file__))
+    text = open(path+os.sep+'README.md').read()
 
     parser = argparse.ArgumentParser( usage=text)
     
@@ -3646,9 +3649,13 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("plastique"))
     #set window icon
-     
-    app.setWindowIcon(QIcon(path+'/icon.png'))
+    app.setWindowIcon(QIcon(path+os.sep+'icon.png'))
     
+    if os.name == 'nt':
+        new_font = app.font()
+        new_font.setPointSize(  12 )
+        app.setFont( new_font )
+
     form = MainGUI(args.shot, args.diag, args.group, args.sig, args.diag_phase, args.signal_phase, args.tmin, args.tmax, args.fmin, args.fmax )
     
     if args.save_fig:

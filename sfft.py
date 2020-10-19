@@ -68,7 +68,8 @@ def sfft(tvec, x,nfft,resolution=1000,window='hann',fmin=0,fmax=np.infty,
     fft_backward = pyfftw.FFTW(in_step,out_step, direction='FFTW_BACKWARD',
                 flags=['FFTW_ESTIMATE','FFTW_DESTROY_INPUT'],axes=(-1,),threads=cpu_count()//2)
     
-    sig[...,:len(x)] = x
+    
+    sig[...,:len(x)] = x.T
     sig[...,:len(x)] -= x.mean(0).T
     sig[...,len(x):] = 0
 

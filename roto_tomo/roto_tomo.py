@@ -731,7 +731,7 @@ class HarmSolver(Process):
         H = self.Hper +  self.Hpar  
         if self.n > 0:
             H = H + self.Ht.H*self.Ht#TODO set ration between them?
-            H = self.W*H*self.W.T  
+            H = self.W*H*self.W.T  #compansate for asymmetry of 0. order profile
 
         wrong_dets = np.squeeze(np.array(self.T.sum(1)==0))
         K = self.T[np.where(~wrong_dets)[0]]  
@@ -739,12 +739,12 @@ class HarmSolver(Process):
         npix = K.shape[1]
 
         ind = np.where(~self.BdMat)[0] 
-        B = H[:,ind][ind,:]
-        K = K[:,ind]
+        B = H[:,ind][ind,:]  #real regularisation matrix
+        K = K[:,ind]   #complex contribution matrix
 
         if self.n > 0:
             En = self.E.tocsc()[:,ind][ind,:]**self.n
-            K *= En
+            K *= En  #include a phaase shift in the contribution matrix
 
         try:
             F = cholesky(B, ordering_method='best') #167ms
@@ -753,10 +753,11 @@ class HarmSolver(Process):
             print('Check the input data, remove corrupted channels!!!')
             #try to add regularization
             F = cholesky(B, ordering_method='best',beta=1) 
-
+        
+        #first inversion of the geometry matrix - slowest step?
         LPK = F.solve_L(F.apply_P(deepcopy(K.H.real)))
-        if self.n > 0:#add complex parts
-            LPK = LPK+1j*F.solve_L(F.apply_P(deepcopy(K.H.imag)))
+        if self.n > 0:#add complex parts, cholmod do not allow to applu solve_L on complex matrix if L is real!
+            LPK += 1j*F.solve_L(F.apply_P(deepcopy(K.H.imag)))
 
 
         LPK = LPK.toarray().T
@@ -792,15 +793,16 @@ class HarmSolver(Process):
             w = w_i(g,S)
             prod = np.dot(U.T,self.b[~wrong_dets])
             f = prod*(w/S)
-            vt_ = np.dot(np.dot(f,np.conj(U.T/S[:,None])), LPK)
-            vt_ /= sqrtD
+            #G_ solution before the last inversion 
+            G_ = np.dot(np.dot(f,np.conj(U.T/S[:,None])), LPK)
+            G_ /= sqrtD
             
             #final inversion
             G = np.zeros(npix,dtype=LPK.dtype)
             if self.n > 0:
-                G[~self.BdMat] = En*(F.apply_Pt(F.solve_Lt(vt_.real))+1j*F.apply_Pt(F.solve_Lt(vt_.imag)))
+                G[~self.BdMat] = En*(F.apply_Pt(F.solve_Lt(G_.real))+1j*F.apply_Pt(F.solve_Lt(G_.imag)))
             else:
-                G[~self.BdMat] = F.apply_Pt(F.solve_Lt(vt_))
+                G[~self.BdMat] = F.apply_Pt(F.solve_Lt(G_))
 
             retro = np.zeros_like(self.b)
             retro[~wrong_dets] = np.dot(np.conj(U),f*S)
@@ -1011,14 +1013,15 @@ class Roto_tomo:
         ir = np.argmin(np.abs(self.rhop-.5))
         self.ax.axis([self.magr[:,ir].min(),self.magr[:,ir].max(),self.magz[:,ir].min(),self.magz[:,ir].max()])
 
-
-# GIT       self.q_prof = eqm.getQuantity(self.rhop,'Qpsi', t_in=t0)
-        jtq = np.argmin(abs(eqm.t_eq - t0))
-        nrho = np.max(self.eqm.lpfp) + 1
-        psi = eqm.get_profile('PFL')[jtq, :nrho]
-        q   = eqm.get_profile('Qpsi')[jtq, :nrho]
-        rhop_q = self.eqm.rho2rho(psi, t_in=t0, coord_in='Psi', coord_out='rho_pol')[0]
-        self.q_prof = np.interp(self.rhop, rhop_q, q)
+        if hasattr(eqm,'getQuantity'): #different eqm_map version on DIII-D
+	        self.q_prof = eqm.getQuantity(self.rhop,'Qpsi', t_in=t0)	
+        else:#  and AUG
+                jtq = np.argmin(abs(eqm.t_eq - t0))
+                nrho = np.max(self.eqm.lpfp) + 1
+                psi = eqm.get_profile('PFL')[jtq, :nrho]
+                q   = eqm.get_profile('Qpsi')[jtq, :nrho]
+                rhop_q = self.eqm.rho2rho(psi, t_in=t0, coord_in='Psi', coord_out='rho_pol')[0]
+                self.q_prof = np.interp(self.rhop, rhop_q, q)
  
         #Prepare tokamak object from original tomography code
         input_parameters = read_config(tomo_code_path+"tomography.cfg")

@@ -1,7 +1,5 @@
 #!/bin/bash -f
-
-echo 12/11/2019 was done an upgrade to Python3.7, Qt5 and Matplolib 3. 
-
+ 
 echo 
 echo In case of any problem, please contact: tomas.odstrcil@gmail.com or git@ipp.mpg.de for local issues
 
