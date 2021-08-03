@@ -37,7 +37,7 @@ this short manual was prepared:
     (the difference can also be introduced by the fact that no ray-tracing 
     (and cold resonance for ECE resonance are used)
     
-## 2D profile
+## 2D Te
     1) the same procedure as for Radial profile. The phase and amplitude is then
     mapped on the 2D coordinates in a real space
     2) Poloidal mode number must be set by a user! 
@@ -45,10 +45,26 @@ this short manual was prepared:
     4) Scale slider set a lower limit of the colorbar
     5) Substract option switches between the absolute temperature and the mean subtracted value. 
     NOTE 1: Only LFS measurements are used! 
-    NOTE 2: This method can also be used for other diagnostics, like SXR and bolometers 
-    but then the line-integrated measurements are treated as local measurements
-    and results must be interpreted with caution! Real tomography could be included in the far future... 
-    
+ 
+## 2D SXR
+    The tomographic code will reconstruct stationary emissivity and several harmonics of the selected mode.
+    1) Time and frequency are defined by the same procedure as for Radial profile ot 2D Te. 
+    2) The user must specify M and N number of the mode (N is necessary only when F camera is used or  the mode
+        is compared with ECE at different toroidal locations).
+    3) Remove the corrupted channels by "Set data" button. It can be done in the same fashion as in pyTOMO
+        - by double click on the channel. Or if the discharge was already    reconstructed by pyTOMO, 
+          it will use load setting from there. 
+    4) Finally, the quality of the fit should be checked by "Retrofit" button. Reconstruction should match
+        amplitude and phase very well. If not, check that the M and N number are right (try to change
+        their sign?), or check of there are no remaining corrupted channels or the regularisation is too strong
+    5) Checkbox Te contours is used to view conrours of constant Te
+    6) Background checkbox allowes tp substract time averaged profile
+    7) Regularisation slider - set how much will be imposed smoothes constrain
+ 
+    NOTE: If there are two modes locked at the same frequency, it should be still possible to reconstruct them, but I have not tried, it can be tricky.  
+ 
+   
+ 
 ## General comments:
     Plot can be saved by File/Save plot
     All data, spectrogram, profiles, etc. are stored by File/Save data
