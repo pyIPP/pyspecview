@@ -1,5 +1,6 @@
 from .loader import * 
 import os
+import aug_sfutils as sf
 
 
 def check(shot):
@@ -26,25 +27,26 @@ class loader_DCN(loader):
         self.groups = ['raw','unwrap']
         self.diag = 'FHC' if self.shot < 31700 else 'CON' 
         
-        if not self.dd.Open(self.diag, self.shot):
+        sfo = sf.SFREAD(self.diag, self.shot)
+        if not sfo.status:
             raise Exception('Fast density data are not avalible!')
 
-        self.dd.Open('DCN', self.shot)
+        dcn = sf.SFREAD('DCN', self.shot)
 
-        self.signals = [s for s in self.dd.GetNames() if s[0] in ('H',)] 
+        self.signals = [s for s in dcn.objects if s[0] in ('H',)] 
 
         self.signals.sort()
  
-        if self.dd.GetParameter('DCNgeo','H5LFSphi') is None:
+        dcngeo = dcn('DCNgeo')
+        if 'H5LFSphi' not in dcngeo.keys():
             raise Exception('DCN geometry is not avalible')
-        
-        self.Phi     = {s:self.dd.GetParameter('DCNgeo','H%sLFSphi'%s[2])[0] for s in self.signals}
-        self.R_start = {s:self.dd.GetParameter('DCNgeo','H%sLFS_R'%s[2])[0]/1e3 for s in self.signals}
-        self.z_start = {s:self.dd.GetParameter('DCNgeo','H%sLFS_z'%s[2])[0]/1e3 for s in self.signals}
-        self.R_end   = {s:self.dd.GetParameter('DCNgeo','H%sHFS_R'%s[2])[0]/1e3 for s in self.signals}
-        self.z_end   = {s:self.dd.GetParameter('DCNgeo','H%sHFS_z'%s[2])[0]/1e3 for s in self.signals}
-        self.dd.Close()
-        
+
+        self.Phi     = {s:dcngeo['H%sLFSphi' %s[2]]     for s in self.signals}
+        self.R_start = {s:dcngeo['H%sLFS_R'  %s[2]]/1e3 for s in self.signals}
+        self.z_start = {s:dcngeo['H%sLFS_z'  %s[2]]/1e3 for s in self.signals}
+        self.R_end   = {s:dcngeo['H%sHFS_R'  %s[2]]/1e3 for s in self.signals}
+        self.z_end   = {s:dcngeo['H%sHFS_z'  %s[2]]/1e3 for s in self.signals}
+
         #values from diaggeom
         self.R_start['V1'] = 1.785
         self.R_end['V1'] =  1.785
@@ -179,37 +181,38 @@ class loader_DCN(loader):
 
         return np.single(dn)
 
-    def get_signal(self,group, name,calib=False,tmin=None,tmax=None):
-        
+
+    def get_signal(self, group, name,calib=False,tmin=None,tmax=None):
+
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
             
         if np.size(name) > 1:
             return [self.get_signal(group, n, calib=calib, tmin=tmin,tmax=tmax) for n in name]
         
-        self.dd.Open(self.diag , self.shot, experiment=self.exp, edition=self.ed)
+        sfo = sf.SFREAD(self.diag , self.shot, experiment=self.exp, edition=self.ed)
 
         if name[0] == 'H':  #DCN lasers
-            tvec = self.dd.GetTimebase('DCN_'+name,cal=True)
+            tvec = sfo.gettimebase('DCN_'+name)
             nbeg, nend = tvec.searchsorted((tmin,tmax))
 
-            sig = self.dd.GetSignal('DCN_'+name, nbeg= nbeg, nend = nend-1 )
+            sig = sfo.getobject('DCN_'+name, nbeg=nbeg, nend=nend-1 )
 
             tvec = tvec[nbeg:nend]
             
             if group == 'unwrap':  #it will also increase noise and small modes can be lost
-                ref = self.dd.GetSignal('DCN_ref', nbeg= nbeg, nend = nend-1)
+                ref = sfo.getobject('DCN_ref', nbeg=nbeg, nend=nend-1)
                 sig = self.unwrap_ne(tvec, sig,ref)
 
         elif name[0] == 'V':  #CO2 lasers
             n = int(name[-1])
-            tvec  = self.dd.GetTimebase('V%dHePh2'%n)
+            tvec  = sfo.gettimebase('V%dHePh2'%n)
             
             #the He-Ne signal is not used because it was reducing the SNR at high frequencies!
             #cos_1 = self.dd.GetSignalCalibrated('V%dHePh2'%n)-1
-            cos_2 = self.dd.GetSignalCalibrated('V%dCOPh2'%n)-1
+            cos_2 = sfo.getobject('V%dCOPh2' %n, cal=True) - 1
             #sin_1 = self.dd.GetSignalCalibrated('V%dHePh1'%n)-1
-            sin_2 = self.dd.GetSignalCalibrated('V%dCOPh1'%n)-1
+            sin_2 = sfo.getobject('V%dCOPh1' %n, cal=True) - 1
             #phi1  = unwrap(np.arctan2(cos_1,sin_1))
             phi2  = np.unwrap(np.arctan2(cos_2,sin_2)) #this signal has stronger mode signal
             sig = phi2[:min(len(phi2), len(tvec))]
@@ -225,18 +228,17 @@ class loader_DCN(loader):
         return self.signals
 
 
-    def get_rho(self,group,names,time,dR=0,dZ=0):
+    def get_rho(self, group, names, time, dR=0, dZ=0):
 
         R_start = np.array([self.R_start[name] for name in names])
         z_start = np.array([self.z_start[name] for name in names])
-        R_end = np.array([self.R_end[name] for name in names])
-        z_end = np.array([self.z_end[name] for name in names])
-        Phi = np.array([self.Phi[name] for name in names])
-        
+        R_end   = np.array([self.R_end  [name] for name in names])
+        z_end   = np.array([self.z_end  [name] for name in names])
+        Phi     = np.array([self.Phi    [name] for name in names])
 
         rho_tg,theta_tg, R,Z = super(loader_DCN,self).get_rho(time,R_start,z_start, \
                                         Phi,R_end,z_end,Phi,dR=dR,dZ=dZ)
-        
+
         return rho_tg,theta_tg,R,Z
 
         

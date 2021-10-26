@@ -1,9 +1,16 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
-import sys
-sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
+import sys, os, random, time, argparse, logging
+import traceback
 import matplotlib  
+
+fmt = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s: %(message)s', '%H:%M:%S')
+hnd = logging.StreamHandler()
+hnd.setFormatter(fmt)
+logger = logging.getLogger('pyspecview')
+logger.addHandler(hnd)
+logger.setLevel(logging.DEBUG)
+#logger.setLevel(logging.INFO)
 
 try:
     from PyQt5.QtCore import *
@@ -21,11 +28,6 @@ except:
     from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT
     matplotlib.rcParams['backend'] = 'Qt4Agg' 
-
-import sys, os, random
-import time
-import argparse
-import traceback
 
 if matplotlib.compare_versions(matplotlib.__version__, '1.9.9'):
 # http://matplotlib.org/users/dflt_style_changes.html
@@ -304,18 +306,20 @@ class SpectraViewer(object):
                             colorbar_ax=self.cax, method=self.DFT_backend)
     
         try:
+            logger.debug('%s %s', tmin.dtype, tmax.dtype)
             x, y, Z = self.stft_disp.__call__(tmin, tmax, fmin0, fmax0)
             fmax0 = min(fmax0, y[-1])
             fmin0 = max(fmin0, y[0])
         except Exception as e:
-            print('Error: ', e)
-            print( traceback.format_exc())
+            logger.error('Error: ', exc_info=True)
+            logger.error( traceback.format_exc())
             return 
 
         if x.size < 2 or y.size < 2:
             self.ax.set_ylim( fmin0, fmax0)
             self.ax.set_xlim(tmin, tmax)
-            raise Exception('time range or frequency range is too small')
+            logger.error('time range or frequency range is too small')
+            raise
         self.ax.set_ylim(y[0], y[-1])
         self.ax.set_xlim(tmin, tmax)
         self.stft_img.prepare(x[0], x[-1], y[0], y[-1], Z)
@@ -742,7 +746,7 @@ class STFTImage():
         try:
             self.im.set_data(z)
         except:
-            print(  'error self.im.set_data(z)')
+            logger.error(  'error self.im.set_data(z)')
             print( shape(z))
             print( z)
         self.im.set_extent((xstart, xend, ystart, yend))
@@ -820,7 +824,7 @@ class DataPlot():
             x = self.x[ind]
             y = self.y[ind].real
         except Exception as e:
-            print('update_plot error',str(e), len(self.x), len(ind), len(self.y))
+            logger.error('update_plot error %s %d %d %d', str(e), len(self.x), len(ind), len(self.y))
             x , y = [0, ], [0, ]
             
         self.data_plot.set_data(x, y)
@@ -901,7 +905,7 @@ class STFTDisplay():
             correction = np.vstack(correction).T
             A*= np.exp(1j*correction)
        
-        print( 'FFT done in:  %.2fs'% (time.time()-t))
+        logger.info( 'FFT done in:  %5.2fs', (time.time() - t))
          
         #mode number estimation
         if self.phase_analysis:
@@ -1324,7 +1328,7 @@ class RadialViewer:
         self.error = np.zeros(  len(self.data))
         norm = np.sum(win**2)/np.sqrt(len(win))
         for j, (tvec_, sig) in enumerate(self.data):
-            if len(tvec_)!= self.tvec.size: 
+            if len(tvec_) != self.tvec.size: 
                 sig = np.interp(self.tvec, tvec_, sig)            
             #perform a least squares fit of the orthonormal complex prototype to the measured signal 
             self.offset[j] = sig.mean()
@@ -1459,19 +1463,19 @@ class Diag2DMapping(object):
         self.remback_botton = remback_botton
 
         if self.parent.tokamak == "AUG":
-            sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
-            import get_gc
-            gc_r, gc_z = get_gc.get_gc()
+            import aug_sfutils as sf
+            gc_d = sf.getgc()
+            for gcc in gc_d.values():
+                self.ax.plot(gcc.r, gcc.z, 'k', lw=.5)
         elif self.parent.tokamak == "DIIID":
             from loaders_DIIID import map_equ
             gc_r, gc_z = map_equ.get_gc()
-
-        try:
-            for key in gc_r:
-                self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
-        except:
-            print('Loading of the  vessel shape failed!!')
-            print( traceback.format_exc())
+            try:
+                for key in gc_r:
+                    self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
+            except:
+                logger.error('Loading of the  vessel shape failed!!')
+                logger.error( traceback.format_exc())
 
 
         for label in (self.ax.get_xticklabels() + self.ax.get_yticklabels()):
@@ -1848,7 +1852,10 @@ class GetInfoThread(QThread):
 
 class MainGUI(QMainWindow):
 
+
     def __init__(self, shot=None, diag=None, group=None, signal=None, diag_phase=None, signal_phase=None, tmin=np.nan, tmax=np.nan, fmin=0, fmax=np.inf, parent=None ):
+
+
         QMainWindow.__init__(self, parent)
         
         self.setWindowTitle('Data preprocessing tool')
@@ -1867,15 +1874,12 @@ class MainGUI(QMainWindow):
         self.load_config()
         self.parent = parent
         self.MDSconn = None
-        if self.tokamak == "AUG":
-            import map_equ_20200306 as map_equ
-            self.eqm = map_equ.equ_map()
-        elif self.tokamak == "DIIID":
+        if self.tokamak == "DIIID":
             from loaders_DIIID import map_equ
             import MDSplus as mds
             self.MDSconn = mds.Connection(self.mds_server )
             self.eqm = map_equ.equ_map(self.MDSconn)
-        else:
+        elif self.tokamak != "AUG":
             raise Exception("tokamak %s is not supported yet"%self.tokamak)
         
         #correction of the error in the plasma or diagnostic  position
@@ -1883,7 +1887,6 @@ class MainGUI(QMainWindow):
         self.dZ_corr = 0        
         self.m_numbers = np.r_[-4:0, 1:8]
         self.n_numbers = np.r_[-3:0, 1:4]
-        
  
         path = os.path.dirname(os.path.realpath(__file__))
         current_path = os.getcwd()
@@ -1902,7 +1905,7 @@ class MainGUI(QMainWindow):
             for k2, v2 in v.__dict__.items():
                 if k2.startswith('loader_'): #find loader
                     loader = v2
-                if k2.startswith('check'):  #find find a shotfile check routine 
+                if k2.startswith('check'):  #find a shotfile check routine 
                     check = v2
             if loader is not None:
                 diag_loaders[k] = loader, check
@@ -1923,7 +1926,6 @@ class MainGUI(QMainWindow):
         self.create_spec_table() 
         self.create_phase_table()
         self.create_radialplot_table()
-
 
         self.create_2Dmap_table()
         self.create_rototomo_table()
@@ -2023,7 +2025,7 @@ class MainGUI(QMainWindow):
     
             if not (self.radial_view.diag == 'ECE' and prew_panel == 'Radial Profile'):
                 print('Switching radial profile to ECE diagnostic')
-                
+
                 if self.radial_view.diag != 'ECE':
                     self.diag = 'ECE'
                     self.diag_group = 'all'
@@ -2076,10 +2078,8 @@ class MainGUI(QMainWindow):
                         QMessageBox.warning(self, "rotation tomography ", traceback.format_exc(), QMessageBox.Ok)
                         return 
 
-
-                    
                     if self.roto_tomo.showTe:
-                        print('prepare ECE')
+                        logger.info('prepare ECE')
                         #update also 2D Te 
                         curr_tab = self.curr_tab
                         self.updatePanels(self.tables_names.index('2D Te'))
@@ -2314,7 +2314,8 @@ class MainGUI(QMainWindow):
         self.shot_line.setText(str(self.shot))
 
         self.eqm_ready = False
-        self.eqm.Close()
+        if self.tokamak == 'DIIID':
+            self.eqm.Close()
 
         self.cross_signal.setCurrentIndex( -1)
         self.cb_diagnostics.clear()
@@ -2336,34 +2337,35 @@ class MainGUI(QMainWindow):
             if len(l)==1 or l[1](self.shot):
                 if l[0].tor_mode_num or l[0].pol_mode_num:  #load only diagnostics supporting phase measurements
                     self.cb_diagnostics_phase.addItem(str(n)) 
-            
+
+
         def init_equlibrium():
-            eqm_ready = True
+
+            self.eqm_ready = True
             print( 'Initialise equlibrium')
-            if not self.eqm.Open(self.shot, diag=self.eq_diag, exp=self.eq_exp, ed=self.eq_ed):
-                print( """Equlibrium shotfile: diag=%s, exp=%s, ed=%d do not exist!!!
-                standard shotfile will be used"""%(self.eq_diag, self.eq_exp, self.eq_ed))
-                if self.tokamak == 'AUG':
-                    if not self.eqm.Open(self.shot, diag='EQI'):
+
+            if self.tokamak == 'AUG':
+                import aug_sfutils as sf
+                self.eqm = sf.EQU(self.shot, diag=self.eq_diag, exp=self.eq_exp, ed=self.eq_ed)
+                if not self.eqm.sf.status:
+                    self.eqm = sf.EQU(self.shot, diag='EQI')
+                    if not self.eqm.sf.status:
                         print( """standard eq. do not exist!!! use real time equilibrium""")
-                        eqm_ready = False
-                if self.tokamak == 'DIIID':
+                        self.eqm_ready = False
+
+            elif self.tokamak == 'DIIID':
+                if not self.eqm.Open(self.shot, diag=self.eq_diag, exp=self.eq_exp, ed=self.eq_ed):
+                    print( """Equlibrium shotfile: diag=%s, exp=%s, ed=%d do not exist!!!
+                    standard shotfile will be used"""%(self.eq_diag, self.eq_exp, self.eq_ed))
                     if not self.eqm.Open(self.shot, diag='EFIT01'):
                         print( """standard eq. do not exist!!! use real time equilibrium""")
                         if not self.eqm.Open(self.shot, diag='EFITRT01'):
-                            eqm_ready = False
-            if eqm_ready:
-                
-                try: #AUG version
-                    self.eqm.read_scalars()
-                    self.eqm.read_pfm()  
-                except: #DIII-D version
+                            aelf.eqm_ready = False
+                if self.eqm_ready:
                     self.eqm._read_scalars()
                     self.eqm._read_profiles()
                     self.eqm._read_pfm()
                     self.eqm.read_ssq()
-           
-                self.eqm_ready = True
 
         self.statusBar().showMessage('Loading equilibrium ...', 5000 )
 
@@ -2512,7 +2514,7 @@ class MainGUI(QMainWindow):
         elif len(self.diag_groups) >1: ind-= 1
 
         if  len(self.diag_groups) == 0:
-            print('Diagnostic is not availible')
+            logger.error('Diagnostic is not availible')
             return
             
         self.diag_group = self.diag_groups[ind]
@@ -2563,7 +2565,7 @@ class MainGUI(QMainWindow):
             if sig is None: raise
 
         except Exception as e:
-            print( traceback.format_exc())
+            logger.error( traceback.format_exc())
 
             QMessageBox.warning(self, "Loading problem", "Check if the signal exist", QMessageBox.Ok)
             return 
@@ -2571,12 +2573,13 @@ class MainGUI(QMainWindow):
         try:
             description = self.data_loader.get_description(self.diag_group, self.signal)
         except Exception as e:
-            print( traceback.format_exc())
+            logger.error( traceback.format_exc())
             description = ''
 
         data = {'tvec':tvec, 'signal':sig}
         
-        print(  'data loaded in %.2fs'%(time.time()-T), self.diag_group, self.signal)
+        logger.info(  'data loaded in %5.2fs', (time.time()-T))
+        print(self.diag_group, self.signal)
 
         if self.show_plasma_freq and self.data_loader.radial_profile and self.eqm_ready:
             try:
@@ -3463,7 +3466,7 @@ class MainGUI(QMainWindow):
                         self.rototomo_n_num, self.rototomo_plot_bcg, 
                         self.rototomo_TeOver, self.rototomo_mag_flx, self.rototomo_limit, 
                         self.rototomo_reg, self.rtomo_n_harm, self.rtomo_n_svd, 
-                        self.eqm, self.rho_lbl )
+                        self.rho_lbl )
 
         self.rototomo_m_num.currentIndexChanged.connect(self.roto_tomo.update_node_m_number)
         self.rototomo_n_num.currentIndexChanged.connect(self.roto_tomo.update_node_n_number)                    

@@ -1,5 +1,6 @@
 from .loader import * 
 import os
+import aug_sfutils as sf
 
 
 def check(shot):
@@ -20,9 +21,9 @@ class loader_HEB(loader):
         super(loader_HEB,self).__init__(*args, **kargs)
 
         self.shotfile = 'HEB'
-        if self.dd.Open(self.shotfile,self.shot):
-            LOS = self.dd.GetParameter('INFO', 'LOS')  
-            self.dd.Close()   
+        heb = sf.SFREAD(self.shotfile, self.shot)
+        if heb.status:
+            LOS = heb('INFO')['LOS']
             self.groups = ['PMT%d'%i for i in range(1,5)]
             self.names = {g:LOS.tolist() for g in self.groups}
   
@@ -39,14 +40,13 @@ class loader_HEB(loader):
         
         #load data only once and than keep then in the memory
         if not hasattr(self,group):
-            self.dd.Open(self.shotfile , self.shot, experiment=self.exp, edition=self.ed)
+            sfo = sf.SFREAD(self.shotfile , self.shot, experiment=self.exp, edition=self.ed)
         
             if not hasattr(self,'tvec'):
                 print('HEB ', group)
-                self.tvec = self.dd.GetTimebase(group, cal=True, check=False) # git 24.06.20
+                self.tvec = sfo.gettimebase(group)
 
-            setattr(self,group,self.dd.GetSignal(group, check=False))
-        self.dd.Close()
+            setattr(self, group, sfo(group))
         
         nbeg, nend = self.tvec.searchsorted((tmin,tmax))
         signal = getattr(self,group)
@@ -55,5 +55,5 @@ class loader_HEB(loader):
 
 
     def signal_info(self,group,name,time):
-        info = group+': '+name
+        info = sf.str_byt.to_str(group) + ': ' + sf.str_byt.to_str(name)
         return info

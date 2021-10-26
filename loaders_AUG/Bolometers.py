@@ -1,9 +1,6 @@
 from .loader import * 
 import os, sys
-sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
-import dd_20200507 as dd
-
-sf = dd.shotfile()
+import aug_sfutils as sf
 
 
 def check(shot):
@@ -28,47 +25,41 @@ class loader_diod_bolometers(loader):
         
 
         bolo_shotfiles = 'XVR', 'XVS'#, 'XVT'
-       
-        calib_shot = dd.PreviousShot('BLC',self.shot, experiment='AUGD')
-        if not self.dd.Open( 'BLC', calib_shot):
-            #second try
-            calib_shot = dd.PreviousShot('BLC', calib_shot-1, experiment='AUGD')
-            if not self.dd.Open( 'BLC', calib_shot):
-                raise Exception('No BLC shotfile!')
-       
-        names = [n.strip() for n in self.dd.GetNames()]
+
+        calib_shot = sf.previousshot('BLC', self.shot, exp='AUGD')
+        if calib_shot < 0:
+            raise Exception('No BLC shotfile!')
+        blc = sf.SFREAD('BLC', calib_shot, exp='AUGD')
+        names = [n.strip() for n in blc.objects + blc.parsets]
 
         cams = [b for b in names if b[0] == 'D' and len(b) == 3]
        
-        active_los = {s: np.bool_(self.dd.GetParameter(s, 'active' )) for s in cams}
+        active_los = {s: np.bool_( blc(s)['active'] ) for s in cams}
         activ_cam = [c for c in cams if any(active_los[c])]
-        self.Phi_start= {s:self.dd.GetParameter(s, 'P_Blende' )[active_los[s]] for s in activ_cam}
-        self.R_start = {s:self.dd.GetParameter(s, 'R_Blende' )[active_los[s]] for s in activ_cam}
-        self.z_start = {s:self.dd.GetParameter(s, 'z_Blende' )[active_los[s]] for s in activ_cam}
-        self.R_end   = {s:self.dd.GetParameter(s, 'R_end' )[active_los[s]] for s in activ_cam}
-        self.z_end   = {s:self.dd.GetParameter(s, 'z_end' )[active_los[s]] for s in activ_cam}
-        self.Phi_end = {s:self.dd.GetParameter(s, 'P_end' )[active_los[s]] for s in activ_cam}
-        
-
+        self.Phi_start = {s: blc(s)['P_Blende'][active_los[s]] for s in activ_cam}
+        self.R_start   = {s: blc(s)['R_Blende'][active_los[s]] for s in activ_cam}
+        self.z_start   = {s: blc(s)['z_Blende'][active_los[s]] for s in activ_cam}
+        self.R_end     = {s: blc(s)['R_end'   ][active_los[s]] for s in activ_cam}
+        self.z_end     = {s: blc(s)['z_end'   ][active_los[s]] for s in activ_cam}
+        self.Phi_end   = {s: blc(s)['P_end'   ][active_los[s]] for s in activ_cam}
 
         self.theta   = {s: np.arctan2(self.z_end[s]-self.z_start[s],self.R_end[s]-self.R_start[s])  for s in activ_cam}
-        self.delta   = {s:self.dd.GetParameter(s, 'delta' )[active_los[s]] for s in activ_cam}
+        self.delta   = {s: blc(s)['delta'][active_los[s]] for s in activ_cam}
         
-        self.all_names = [n for n in self.dd.GetNames() if n[:2] == 'CS']
+        self.all_names = [n for n in blc.objects + blc.parsets if n[:2] == 'CS']
         self.calibration= {}
-        #print(self.all_names )
 
         for name in self.all_names:
-            ncalib = int(self.dd.GetParameter(name, 'NCALSTEP' ))
+            ncalib = int(blc(name)['NCALSTEP'])
             multi,shift = [],[]
 
             for i in range(ncalib):
-                multi.append(self.dd.GetParameter(name, 'MULTIA%.2d'%i))
-                shift.append(self.dd.GetParameter(name, 'SHIFTB%.2d'%i))
+                multi.append(blc(name)['MULTIA%.2d' %i])
+                shift.append(blc(name)['SHIFTB%.2d' %i])
             self.calibration[name[1:]] = multi,shift
 
-        sig_dict = {s:np.array([c for c in self.dd.GetParameter(s, 'RAW' )]) for s in activ_cam}
-        
+        sig_dict = {s:np.array([ c for c in blc(s)['RAW'] ]) for s in activ_cam}
+
         self.subcam_ind = {c:[self.delta[c]+self.R_start[c] == r for r in np.unique(self.delta[c]+self.R_start[c])] for c in activ_cam}
         
 
@@ -89,40 +80,42 @@ class loader_diod_bolometers(loader):
         bolo_los = {}
         for bs in bolo_shotfiles:
             bolo_los[bs] = []
-            self.dd.Open(bs, self.shot)
-            names = self.dd.GetNames()
+            sfo = sf.SFREAD(bs, self.shot)
+            names = sfo.objects + sfo.parsets
             xv_names.append([n.strip() for n in names])
-           
-           
+
         self.signals = {}
         for c in activ_cam:
             sig = sig_dict[c]
             activ = active_los[c]
             ch = 1 + np.arange(len(activ))
-            sf = []
+            sfiles = []
                        
             for s in sig[activ]:
                 s = s.strip()
                # print(s)
                 if s == '': continue
                 if s in xv_names[0]:
-                    sf.append(bolo_shotfiles[0])
+                    sfiles.append(bolo_shotfiles[0])
                 elif s in xv_names[1]:
-                    sf.append(bolo_shotfiles[1])
+                    sfiles.append(bolo_shotfiles[1])
                 else:
                     print('missing signal %s'%s)
 
-            if len(sf) == 0:
+            if len(sfiles) == 0:
                 print('Missing data for camera '+c)
                 self.groups.pop(self.groups.index(c))
                 continue
-            self.signals[c] = list(zip(sig[activ],ch[activ],np.array(sf)))
+            self.signals[c] = list(zip(sig[activ], ch[activ], np.array(sfiles)))
            
 
     def get_names(self,group):
-        return sorted([int(ch) for sig,ch,sf in  self.signals[group]])
+        if group in self.signals:
+            return sorted([int(ch) for sig, ch, sfile in self.signals[group]])
+        else:
+            print('Bolometry: no activa data for shotfile %s' %group)
 
-    def get_signal(self,group, names,calib=False,tmin=None,tmax=None):
+    def get_signal(self,group, names, calib=False, tmin=None, tmax=None):
         if isinstance(names,str) or not  hasattr(names, '__iter__'):
             names = (names,)
         
@@ -134,21 +127,21 @@ class loader_diod_bolometers(loader):
      
         for name in names:
                 
-            for sig,ch,sf in self.signals[group]:
+            for sig,ch,sfile in self.signals[group]:
                 if ch == int(name):
                     break
             
-            if sf_open!= sf:
-                self.dd.Open(sf,self.shot, experiment=self.exp, edition=self.ed)
-                sf_open = sf
-                tvec = self.dd.GetTimebase('Dio-Time',cal=True)
+            if sf_open != sfile:
+                sfo = sf.SFREAD(sfile, self.shot, experiment=self.exp, edition=self.ed)
+                sf_open = sfile
+                tvec = sfo('Dio-Time')
                 offset_start = tvec.searchsorted(-.1)
                 offset_end = tvec.searchsorted(0)
                 ind = slice(tvec.searchsorted(tmin), tvec.searchsorted(tmax))
                 tvec = tvec[ind]
 
-            offset = self.dd.GetSignal(sig, nbeg=offset_start+1,nend=offset_end).mean().astype('int16')
-            signal = self.dd.GetSignal(sig,nbeg=ind.start+1,nend=ind.stop)
+            offset = sfo.getobject(sig, nbeg=offset_start+1, nend=offset_end).mean().astype('int16')
+            signal = sfo.getobject(sig, nbeg=ind.start+1, nend=ind.stop)
             signal-= offset
             
             #the calibration was not sometimes avalible, backup option:
@@ -166,7 +159,6 @@ class loader_diod_bolometers(loader):
             
         calib = True #BUG 
 
-        #self.dd.Close()
         #corrections of the diod bolometers estimated by hand!
         if calib:
             if self.shot > 34000:
@@ -176,7 +168,7 @@ class loader_diod_bolometers(loader):
             elif self.shot > 30135:
                 pass
             elif self.shot > 28523:
-                pass      
+                pass
             elif self.shot > 27352:
                 if group == 'DHC':
                     ind = np.where(np.in1d(names, np.where(self.subcam_ind['DHC'][1])[0]))[0]
@@ -200,7 +192,7 @@ class loader_diod_bolometers(loader):
     
         
     def get_names_phase(self):
-        
+
         D = []
         for r1,z1,r2,z2 in zip(self.R_start['DVC'],self.z_start['DVC'],self.R_end['DVC'],self.z_end['DVC']):
             X1 = r1-(r2-r1)/(z2-z1)*z1

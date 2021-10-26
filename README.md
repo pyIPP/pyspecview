@@ -74,7 +74,7 @@ this short manual was prepared:
 ## Install:
     module purge 
     module load python27/basic qt py27-pyqt fftw py27-pyfftw ffmpeg git
-    git clone http://gitlab.aug.ipp.mpg.de/todstrci/pyspecviewer.git
+    git clone https://github.com/pyIPP/pyspecview.git
     cd ./pyspecviewer
     python ./pyspecview.py
 

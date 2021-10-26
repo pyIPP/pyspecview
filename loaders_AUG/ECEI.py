@@ -1,7 +1,7 @@
 from scipy.interpolate import interp1d
 from .loader import * 
 import os
-
+import aug_sfutils as sf
 
 def check(shot):
     #fastest check if the shotfile exist
@@ -35,19 +35,20 @@ class loader_ECEI(loader):
         if os.path.isfile(path%(self.shot/10,self.shot)): 
             self.groups.append('ECO')
             self.groups.append('ECN')
-        
-        if self.dd.Open('RZO', self.shot, experiment="ECEI", edition=0):
-            self.RZtime_old = self.dd.GetTimebase('time')
-            self.R_old = self.dd.GetSignal('R')
-            self.z_old = self.dd.GetSignal('z')  
-            self.rho_old = self.dd.GetSignal('rho')  
 
-        if self.dd.Open('RZN', self.shot, experiment="ECEI", edition=0):
-            self.RZtime_new = self.dd.GetTimebase('time')
-            self.R_new = self.dd.GetSignal('R')
-            self.z_new = self.dd.GetSignal('z')  
-            self.rho_new = self.dd.GetSignal('rho')  
-            self.dd.Close()
+        rzo = sf.SFREAD('RZO', self.shot, experiment="ECEI", edition=0)
+        rzn = sf.SFREAD('RZN', self.shot, experiment="ECEI", edition=0)
+        if rzo.status:
+            self.RZtime_old = rzo('time')
+            self.R_old = rzo('R')
+            self.z_old = rzo('z')  
+            self.rho_old = rzo('rho')  
+
+        if rzn.status:
+            self.RZtime_new = rzn('time')
+            self.R_new = rzn('R')
+            self.z_new = rzn('z')  
+            self.rho_new = rzn('rho')
 
         eci_names = ['%.2d:%.2d'%(i+1,j+1) for i in range(16) for j in range(8)]
         eco_names = ['%.2d:%.2d'%(i+1,j+1) for i in range(16) for j in range(8)]
@@ -69,10 +70,10 @@ class loader_ECEI(loader):
         if group == 'ECI':
             LOS, ind = np.int_(name.split(':'))
             LOS = "LOS" + str(LOS)
-            if not hasattr(self,'ECI_'+LOS):
-                self.dd.Open('ECI', self.shot, experiment="AUGD")
-                self.ECI_time = self.dd.GetTimebase("time")
-                data = self.dd.GetSignal(LOS)
+            if not hasattr(self, 'ECI_'+LOS):
+                eci = sf.SFREAD('ECI', self.shot, experiment="AUGD")
+                self.ECI_time = eci("time")
+                data = eci(LOS)
                 setattr(self, 'ECI_'+LOS, data)
 
             imin,imax = self.ECI_time.searchsorted([tmin,tmax])
@@ -89,9 +90,9 @@ class loader_ECEI(loader):
             ind = ch%72
 
             if not hasattr(self, 'TDI_%d'%sig):
-                self.dd.Open('TDI', self.shot, experiment="AUGD")
-                self.TDI_time =  self.dd.GetTimebase("Sig1")
-                data = self.dd.GetSignal("Sig%d"%sig)
+                tdi = sf.SFREAD('TDI', self.shot, experiment="AUGD")
+                self.TDI_time = tdi.gettimebase("Sig1")
+                data = tdi("Sig%d" %sig)
                 setattr(self, 'TDI_%d'%sig, data)
 
             imin,imax = self.TDI_time.searchsorted([tmin,tmax])
@@ -105,6 +106,7 @@ class loader_ECEI(loader):
 
     def get_names_phase(self):
         pass
+
     def get_signal_phase(self,name,calib=False):
         pass
     def get_phi_tor(self,name):
@@ -136,8 +138,8 @@ class loader_ECEI(loader):
         z = interp1d(RZtime, z[:,i,j],axis=0)(time)
         rho_p = interp1d(RZtime, rho[:,i,j],axis=0)(time) #dR,dZ are ignored!
 
-        r0 = np.interp(time, self.eqm.t_eq, self.eqm.ssq['Rmag'])+dR
-        z0 = np.interp(time, self.eqm.t_eq, self.eqm.ssq['Zmag'])+dZ
+        r0 = np.interp(time, self.eqm.time, self.eqm.ssq['Rmag'])+dR
+        z0 = np.interp(time, self.eqm.time, self.eqm.ssq['Zmag'])+dZ
 
         return rho_p, np.arctan2(z-z0, R-r0), R,z, #,R_, z_
         

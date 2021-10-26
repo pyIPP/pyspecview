@@ -1,5 +1,6 @@
 from .loader import * 
 import os
+import aug_sfutils as sf
 
 shotfiles = 'FHA', 'FHB', 'FHC'
 
@@ -23,9 +24,9 @@ class loader_FILD(loader):
 
         self.names = {}
         for shotfile in shotfiles:
-            if self.dd.Open(shotfile,self.shot):
-                names = self.dd.GetNames()  
-                self.dd.Close()   
+            fil = sf.SFREAD(shotfile,self.shot)
+            if fil.status:
+                names = fil.getlist()  
                 names = [n for n in names if n[:2] == 'FI']
                 self.names[shotfile] = names
                 
@@ -40,11 +41,11 @@ class loader_FILD(loader):
         if tmax is None:    tmax = self.tmax
             
         self.shotfile =  group
-        self.dd.Open(group, self.shot, experiment=self.exp, edition=self.ed)
-        tvec = self.dd.GetTimebase(name)
+        sfo = sf.SFREAD(group, self.shot, experiment=self.exp, edition=self.ed)
+        tvec = sfo.gettimebase(name)
         nbeg, nend = tvec.searchsorted((tmin,tmax))
 
-        sig = self.dd.GetSignal(name,cal=calib, nbeg= nbeg,nend = nend)
+        sig = sfo.getobject(name, cal=calib, nbeg=nbeg, nend=nend)
 
         return tvec[nbeg:nend+1],sig
 

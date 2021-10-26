@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os,sys
+import os, sys, logging
 from scipy import sparse
 import matplotlib.pylab as plt
 import numpy as np
@@ -12,7 +12,10 @@ from scipy.linalg import eigh
 from scipy.stats.mstats import mquantiles
 from multiprocessing import Process,Queue
 from copy import deepcopy
-
+try:
+    import aug_sfutils as sf
+except:
+    pass
 try:
     from PyQt5.QtCore import *
     from PyQt5.QtGui import *
@@ -27,7 +30,8 @@ except:
  
 from . import fconf
 
-
+logger = logging.getLogger('pyspecview.roto_tomo')
+logger.setLevel(logging.DEBUG)
 
 from .SVDfilter import SVDFilter
 from sksparse.cholmod import  cholesky,CholmodWarning,CholmodError
@@ -43,18 +47,20 @@ cdict = {
 }
 my_cmap = colors.LinearSegmentedColormap('my_colormap', cdict, 1024)
 
+loc_dir = os.path.dirname(os.path.abspath(__file__))
+
 #AUG
 tomo_code_path = '$PYTOMO/'
-#afs/ipp-garching.mpg.de/home/t/todstrci/pytomo_orig/'
+#afs/ipp-garching.mpg.de/home/t/todstrci/pytomo_orig'
 tomo_local_path = '~/tomography/'
 
 #local
 #tomo_code_path = '/home/tomas/tomography/'
-#tomo_local_path = '/home/tomas/tomography/'
+#tomo_local_path = '/home/tomas/tomography'
 
 ##DIIID
 #tomo_code_path = '/fusion/projects/codes/pytomo/'
-#tomo_local_path = '/home/$USER/tomography/'
+#tomo_local_path = '/home/$USER/tomography'
 
 
 
@@ -887,7 +893,7 @@ class Roto_tomo:
     loaded = False
 
     def __init__(self, parent, fig,m_num,n_num,add_back, TeOver,show_flux, plot_limit,
-                 reg, n_harm,n_svd,map_equ,rho_lbl):
+                 reg, n_harm,n_svd, rho_lbl):
         
         self.m_num = m_num
         self.n_num = n_num
@@ -896,9 +902,7 @@ class Roto_tomo:
         self.slider_lim = plot_limit
         self.slider_reg = reg
         self.add_back = add_back
-        self.map_equ = map_equ
         self.rho_lbl = rho_lbl
-        
         
         self.parent = parent
         self.fig = fig
@@ -929,7 +933,6 @@ class Roto_tomo:
         self.t0 = np.nan
         self.showTe = False
 
-        
         self.tomo_img = self.ax.imshow(np.zeros((self.nx,self.ny)), animated=True,origin='lower'
                                        ,vmin = 0,vmax=1,cmap=my_cmap, interpolation='quadric')
         #magnetic flux surfaces
@@ -939,17 +942,21 @@ class Roto_tomo:
         self.plot_mag_theta = self.ax.plot(X,X,'--',c='0.5',lw=.5, visible=self.show_flux.isChecked())
 
         #tokamak chamber
-        try: #AUGD
-            sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
-            import get_gc
-            gc_r, gc_z = get_gc.get_gc()
-        except: #DIII-D
-            gc_r, gc_z = self.map_equ.get_gc()
+        logger.debug('tok lbl: %s', self.parent.tokamak)
+        if self.parent.tokamak == 'AUG':
+            gc_d = sf.getgc()
+            for gcc in gc_d.values():
+                self.ax.plot(gcc.r, gcc.z, c='0.5', lw=.5)
+        elif self.parent.tokamak == 'DIIID':
+            from loaders_DIIID import map_equ
+            gc_r, gc_z = map_equ.get_gc()
+            try:
+                for key in gc_r:
+                    self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
+            except:
+                logger.error('Loading of the  vessel shape failed!!')
+                logger.error( traceback.format_exc())
 
-        for key in gc_r.keys():
-            self.ax.plot(gc_r[key], gc_z[key],c='0.5',lw=.5)
-        
-        
         for label in (self.ax.get_xticklabels() + self.ax.get_yticklabels()):
             label.set_fontsize(self.font_size) # Size here overrides font_prop
 
@@ -983,7 +990,7 @@ class Roto_tomo:
         
   
         
-    def prepare_tomo(self, Tok,shot,tmin,tmax,fmin,fmax, eqm,tvec0,sig0):
+    def prepare_tomo(self, tok_lbl, shot, tmin, tmax, fmin, fmax, eqm, tvec0, sig0):
 
         self.shot = shot
         self.tmin = tmin
@@ -993,8 +1000,6 @@ class Roto_tomo:
         if t0 is np.nan:
             print( 'Select valid time range')
             return 
-        
-        
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
@@ -1004,24 +1009,31 @@ class Roto_tomo:
         self.rhop = np.linspace(0,1,self.nr)
         theta_in  = np.linspace(0,2*np.pi,self.ntheta)
 
-        magr,magz= eqm.rhoTheta2rz(self.rhop,theta_in,t0,coord_in=self.rho_lbl)
-        self.magr = magr[0]
-        self.magz = magz[0]
-        self.rho = eqm.rho2rho(self.rhop,t0,coord_in='rho_pol',coord_out=self.rho_lbl)[0]
+        if tok_lbl == 'AUG':
+            magr, magz= sf.rhoTheta2rz(eqm, self.rhop,theta_in,t0,coord_in=self.rho_lbl)
+            self.magr = magr[0]
+            self.magz = magz[0]
+            self.rho = sf.rho2rho(eqm, self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
+        elif tok_lbl == 'DIIID':
+            magr, magz= eqm.rhoTheta2rz(self.rhop,theta_in,t0,coord_in=self.rho_lbl)
+            self.magr = magr[0]
+            self.magz = magz[0]
+            self.rho = eqm.rho2rho(self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
+            
         
         #set view to contain rho = 0.7 contour 
-        ir = np.argmin(np.abs(self.rhop-.5))
+        ir = np.argmin(np.abs(self.rhop - 0.5))
         self.ax.axis([self.magr[:,ir].min(),self.magr[:,ir].max(),self.magz[:,ir].min(),self.magz[:,ir].max()])
 
-        if hasattr(eqm,'getQuantity'): #different eqm_map version on DIII-D
-	        self.q_prof = eqm.getQuantity(self.rhop,'Qpsi', t_in=t0)	
+        if hasattr(eqm, 'getQuantity'): #different eqm_map version on DIII-D
+            self.q_prof = eqm.getQuantity(self.rhop, 'Qpsi', t_in=t0)	
         else:#  and AUG
-                jtq = np.argmin(abs(eqm.t_eq - t0))
-                nrho = np.max(self.eqm.lpfp) + 1
-                psi = eqm.get_profile('PFL')[jtq, :nrho]
-                q   = eqm.get_profile('Qpsi')[jtq, :nrho]
-                rhop_q = self.eqm.rho2rho(psi, t_in=t0, coord_in='Psi', coord_out='rho_pol')[0]
-                self.q_prof = np.interp(self.rhop, rhop_q, q)
+            jtq = np.argmin(abs(eqm.time - t0))
+            nrho = np.max(self.eqm.lpfp) + 1
+            psi = eqm.pfl[jtq, :nrho]
+            q   = eqm.q[jtq, :nrho]
+            rhop_q = sf.rho2rho(self.eqm, psi, t_in=t0, coord_in='Psi', coord_out='rho_pol')[0]
+            self.q_prof = np.interp(self.rhop, rhop_q, q)
  
         #Prepare tokamak object from original tomography code
         input_parameters = read_config(tomo_code_path+"tomography.cfg")
@@ -1033,22 +1045,21 @@ class Roto_tomo:
 
         if not hasattr(config, 'wrong_dets_pref'):
             config.wrong_dets_pref = input_parameters['wrong_dets']
-        
 
-        if Tok == 'DIIID':
+        if tok_lbl == 'DIIID':
             import geometry.DIIID as Tok
             diag = 'SXR fast'
-            diag_path = os.path.join([tomo_local_path,'/geometry/DIIID/SXR'])
-            if not os.path.exists(diag_path): os.mkdirs(diag_path)
-        elif Tok == 'AUG':
+            diag_path = '%s%s' %(tomo_local_path, 'geometry/DIIID/SXR')
+        elif tok_lbl == 'AUG':
             import geometry.ASDEX as Tok
             diag = 'SXR_fast'
-            diag_path = os.path.join([tomo_local_path,'/geometry/ASDEX/SXR'])
-            if not os.path.exists(diag_path): os.mkdirs(diag_path)
-
-
+            diag_path = '%s%s' %(tomo_local_path, 'geometry/ASDEX/SXR')
         else:
-            raise Exception('Support of the tokamak %s was not implemented'%tok)
+            raise Exception('Support of the tokamak %s was not implemented' %tok_lbl)
+
+        logger.debug('diag_path %s', diag_path)
+        if not os.path.exists(diag_path):
+            os.makedirs(diag_path)
   
         try:
             self.tok = Tok(diag, input_parameters, load_data_only=True, only_prepare=True)#BUG 
@@ -1065,7 +1076,7 @@ class Roto_tomo:
         self.tomo_img.set_extent([self.tok.xgrid[0],self.tok.xgrid[-1]+self.tok.dx,
                                   self.tok.ygrid[0],self.tok.ygrid[-1]+self.tok.dy])
         
-        if Tok == 'DIIID':
+        if tok_lbl == 'DIIID':
             config.useCache = False  #force not using catchd SXR geometry
 
         #calculate complex geometry matrix including all informations about diagnostic            
@@ -1095,9 +1106,10 @@ class Roto_tomo:
         self.Phi0 = np.median(self.Phi) #toroidal position of SXR cameras
 
         #add correction for finite DAS IIR
-        if Tok == 'AUG':
-            slow_das = np.loadtxt('slow_sxr_diag.txt')
-            fast_das = np.loadtxt('fast_sxr_das.txt')
+
+        if tok_lbl == 'AUG':
+            slow_das = np.loadtxt('%s/slow_sxr_diag.txt' %loc_dir)
+            fast_das = np.loadtxt('%s/fast_sxr_das.txt'  %loc_dir)
             SampFreq =  self.tok.SampFreq#[dets]
             #amplitude reduction of DAS IIR
             self.A[  SampFreq == 5e5] = np.interp(self.F0*np.arange(1,n_harm_max),slow_das[:,0],slow_das[:,1])

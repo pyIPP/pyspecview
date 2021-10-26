@@ -1,15 +1,16 @@
 from .loader import * 
+import os, logging
 
-
+logger = logging.getLogger('pyspecview.sece')
 
 '''
 Created on Dec 10, 2016
-
 @author: sdenk, todstrci
 '''
-#import dd
 
-import os
+import numpy as np
+import aug_sfutils as sf
+
 
 def check(shot):
     #fastest check if the shotfile exist
@@ -20,19 +21,18 @@ def check(shot):
     for s in shotfiles:
         path = shot_path+'%d/XX/%s/%d'
         status |= os.path.isfile(path%(shot//10,s,shot))
-    
-    
-    
+
     path = shot_path+'%d/L0/%s/%d'
     status |= os.path.isfile(path%(shot//10,'IEC',shot))
     
     return status
 
-
 #/afs/ipp-garching.mpg.de/augd/shots/3197/LO/IEC/31978
 #/afs/ipp-garching.mpg.de/augd/shots/3197/L0/IEC/
 
+
 class loader_SECE(loader):
+
     radial_profile=True
 
     def __init__(self,*args, **kargs):
@@ -43,27 +43,27 @@ class loader_SECE(loader):
 
 
         self.names = {}
-        if self.dd.Open('CTA',self.shot):
-            names = self.dd.GetNames()  
-            self.dd.Close()   
+        cta = sf.SFREAD('CTA', self.shot)
+        if cta.status:
+            names = cta.objects + cta.parsets
             self.names['CTA'] = [n for n in names if n[:2] == 'ch'] [:50]  #last channels are useless     
             try:
                 self.Resonances['CTA'] = get_cold_resonances_S_ECE(self.shot, "CTA")
             except Exception as e:
                 print( e)
 
-        if self.dd.Open('CTC',self.shot):
-            names = self.dd.GetNames()  
-            self.dd.Close()   
+        ctc = sf.SFREAD('CTC', self.shot)
+        if ctc.status:
+            names = ctc.objects + ctc.parsets
             self.names['CTC'] = [n for n in names if n[:2] == 'ch'] [:50]  #last channels are useless      
             try:
                 self.Resonances['CTC'] = get_cold_resonances_S_ECE(self.shot, "CTC")
             except Exception as e:
                 print( e)
-                
-        if self.dd.Open('IEC',self.shot):
-            names = self.dd.GetNames()  
-            self.dd.Close()   
+
+        iec = sf.SFREAD('IEC', self.shot)
+        if iec.status:
+            names = iec.objects + iec.parsets
             self.names['IEC'] = [n for n in names if n[:3] == 'ECE'][:6]  #last channels are useless     
             try:
                 self.Resonances['IEC'] = get_cold_resonances_S_ECE(self.shot, "IEC")
@@ -72,17 +72,15 @@ class loader_SECE(loader):
                 
         self.groups = list(self.names.keys())
 
-        self.EQ = kkrzbrzt(self.shot)
-
         self.shotfile = ''
         
-        print( 'inicialized')
+        logger.info( 'initialized')
 
 
     def get_names(self,group):
         return self.names[group]
     
-    def get_signal(self,group, name,calib=False,tmin=None,tmax=None):
+    def get_signal(self, group, name, calib=False, tmin=None, tmax=None):
         
         if isinstance(name,str):
             names = (name, )
@@ -93,148 +91,85 @@ class loader_SECE(loader):
         if tmax is None:    tmax = self.tmax
         
         if not self.shotfile == group:
-            self.dd.Open(group, self.shot, experiment=self.exp, edition=self.ed)
-        tvec = self.dd.GetTimebase(names[0])
+            sfo = sf.SFREAD(group, self.shot, experiment=self.exp, edition=self.ed)
+        tvec = sfo.gettimebase(names[0])
         noff, nbeg, nend = tvec.searchsorted((0,tmin,tmax))
         self.shotfile =  group
 
         out = []
         for n in names:
-            sig = self.dd.GetSignal(n,cal=calib,nbeg= nbeg,nend = nend)
+            sig = sfo.getobject(n, cal=calib, nbeg=nbeg, nend=nend)
             if calib:
-                sig-= self.dd.GetSignal(n,cal=calib,nend = noff+10).mean()
+                sig -= sfo.getobject(n, cal=calib, nend=noff+10).mean()
                 if group in ('CTA','CTC'):  sig*= -1
                 
             out.append([tvec[nbeg:nend+1],sig])
-      
-        
+  
         if len(names) == 1: return  out[0]
-
         
         return out
 
-            
 
-    #def signal_info(self,group,name,time):
-        #info = group+': '+name
-        #return info
-    
-    def signal_info(self,group,name,time):
-        from time import time
-        #t = time()
+    def signal_info(self, group, name, time):
+
         rho,theta,R,z = self.get_rho(group,[name,],time)
-        #print 'time:', time()-t
-        #time = max(min(time, self.tmax), self.tmin)
-        #time = max(min(time,self.RZtime[-1] ), self.RZtime[0] )
 
-        #R = interp1d(self.RZtime, self.R[:,name])(time)
         info = 'ch: '+str(name)+'  R:%.3fm   z:%.3fm  '%(R,z)+self.rho_lbl+': %.3f'%rho
         return info
     
 
-    def get_RZ_theta(self, time,group,names,dR=0,dZ=0,cold=False):
-        
-        #import kk
-        #time = max(min(time,self.RZtime[-1] ), self.RZtime[0] )
+    def get_RZ_theta(self, time, group, names, dR=0, dZ=0, cold=False):
 
-        
-        EQ_t = self.EQ(time)
-        B_spl = RectBivariateSpline(EQ_t.R, EQ_t.z, np.sqrt(EQ_t.Br ** 2 + EQ_t.Bt ** 2 + EQ_t.Bz ** 2))
-        
+        Brt, Bzt, Btt = sf.Bmesh(self.eqm, t_in=time)
+        Br, Bz, Bt = Brt[0], Bzt[0], Btt[0]
+        B_spl = RectBivariateSpline(self.eqm.Rmesh, self.eqm.Zmesh, np.sqrt(Br**2 + Bt**2 + Bz**2))
+
         ch_num = []
         for n in names:
             for  i,a in enumerate(self.names[group]):
                 if a == n: ch_num.append(i)
         
-        print('get resonance positions')
-        #for i,a in enumerate(self.names[group]) if a in names]
+        logger.info('get resonance positions')
+
         if group in self.Resonances:
-            R,z = self.Resonances[group](time,np.min(EQ_t.R),np.max(EQ_t.R),
-                                        np.min(EQ_t.z),np.max(EQ_t.z),B_spl, ch_num)
+            R,z = self.Resonances[group](time, self.eqm.Rmesh[0], self.eqm.Rmesh[-1],
+                                               self.eqm.Zmesh[0], self.eqm.Zmesh[-1], B_spl, ch_num)
         else:
             R,z = zeros_like(ch_num),zeros_like(ch_num)
 
-        
-        #print R,z
-        r0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Rmag'])+dR
-        z0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Zmag'])+dZ
+        r0 = np.interp(time, self.eqm.time, self.eqm.Rmag) + dR
+        z0 = np.interp(time, self.eqm.time, self.eqm.Zmag) + dZ
 
-        #out = kk.KK().kkeqpfx(self.shot, time,diag=self.eq_diag,ed=self.eq_ed,exp=self.eq_exp)
-        #self.kk_ed = out.ed
-        #r0,z0 = out.Raxis+dR, out.zaxis+dZ
-        
-        return R,z, arctan2(z-z0, R-r0)#,R_, z_
-        
+        return R,z, np.arctan2(z-z0, R-r0)
 
 
-    #def get_rho(self,group,names,time,dR=0,dZ=0):
+    def get_rho(self, group, names, time, dR=0, dZ=0):
 
-        ##if hasattr(self,'RZtime'):
-        #import kk
-        ##print time
-        #time = max(min(time, self.tmax), self.tmin)
-        ##print time
-
-        #R,z,theta = self.get_RZ_theta(time,group,names,dR=dR,dZ=dZ)
-
-        #rho = kk.KK().kkrzptfn(self.shot,time, R-dR,z-dZ,diag=self.eq_diag,ed=self.eq_ed,exp=self.eq_exp)
-        #if self.rho_pol:
-            #rho = atleast_1d(rho.rho_p)
-        #else:
-            #rho = atleast_1d(rho.rho_t)
-
-        #R = atleast_1d( R)
-
-        #out = kk.KK().kkeqpfx(self.shot,time,diag=self.eq_diag,ed=self.eq_ed,exp=self.eq_exp)
-        #rho[R < out.Raxis+dR] *= -1
-            
-
-        #return rho,theta,R,z
-    
-
-    def get_rho(self,group,names,time,dR=0,dZ=0):
-
-        #if hasattr(self,'RZtime'):
-            #import kk
-
+        print('SECE:get_rho', time)
+        print(self.tmax)
+        print(self.tmin)
         time = max(min(time, self.tmax), self.tmin)
 
         R,z,theta = self.get_RZ_theta(time,group,names,dR=dR,dZ=dZ)
 
-        #rho = kk.KK().kkrzptfn(self.shot,time, R-dR,z-dZ,diag=self.eq_diag,ed=self.eq_ed,exp=self.eq_exp)
-        rho = self.eqm.rz2rho( R-dR,z-dZ, time, coord_out = self.rho_lbl)[0]
-        #if self.rho_pol:
-            #rho = atleast_1d(rho.rho_p)
-        #else:
-            #rho = atleast_1d(rho.rho_t)
-        r0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Rmag'])+dR
+        rho = sf.rz2rho(self.eqm, R-dR, z-dZ, time, coord_out = self.rho_lbl)[0]
 
-        R = atleast_1d( R)
+        r0 = np.interp(time, self.eqm.time, self.eqm.Rmag)+dR
 
-        #out = kk.KK().kkeqpfx(self.shot,time,diag=self.eq_diag,ed=self.eq_ed,exp=self.eq_exp)
-        #print shape(R), shape(rho)
+        R = np.atleast_1d( R)
+
         rho[R < r0] *= -1
-        
-        #else:
-            #err = ones(len(names))*nan
-            #rho,theta,R,z = err,err,err,err
-        
+
         return rho,theta,R,z
 
 
-
-
-
 import ctypes as ct
-#import matplotlib.pyplot as plt
-#libECRHso = '/afs/ipp-garching.mpg.de/home/s/sdenk/F90/ECFM_lib/libaug_ecrh_setmirrors.so'
 libECRHso = '/afs/ipp/u/ecrh/lib/libaug_ecrh_setmirrors.so'
 from scipy.interpolate import InterpolatedUnivariateSpline ,RectBivariateSpline
 import numpy as np
 import datetime
 # NOTE: This routine is not compatible with ECRH 3, yet.
 # Contact S. Denk for a new version.
-
 
 gy_pos_x = np.r_[(2.380,)*2,(2.311,)*2, (2.361,)*4]
 gy_pos_y = 0.,0.,-0.075,0.075,-0.115,0.115,0.115,-0.115
@@ -286,8 +221,11 @@ class libECRH_wrapper:
         # print(theta_pol, phi_tor)
         return theta_pol, phi_tor
 
+
 class gyrotron:
+
     def __init__(self, shot, N, ECS, ECN, view=False):  # N is the gyrotron number from 1-8 (ECRH III not included)
+
         self.x = gy_pos_x[N - 1]
         self.y = gy_pos_y[N - 1]
         self.z = gy_pos_z[N - 1]
@@ -299,10 +237,11 @@ class gyrotron:
         self.y = np.sin(self.phi) * self.R
         libECRH_obj = libECRH_wrapper(shot)
         self.error = 0
-        N_2 = (N-1)%4+1
-        
+        N_2 = (N-1)%4 + 1
+
         gyro_name = 'P_sy%d_g%d'%((N-1)//4+1, (N-1)%4+1)
-        self.f = ECS.GetParameter(gyro_name, 'gyr_freq')
+        gyro_pset = ECS(gyro_name)
+        self.f = gyro_pset['gyr_freq']
         if(np.abs(self.f - 1.40e11) < 5.e9):
             self.curv_y = gy_curv_y_140[N - 1]
             self.curv_z = gy_curv_z_140[N - 1]
@@ -327,10 +266,10 @@ class gyrotron:
                 print("Error!: Gyrotron data not properly read")
         self.avail = True
         if(N < 4):
-            self.a = ECS.GetParameter(gyro_name, 'GPolPos') * 1000
-            self.beta = ECS.GetParameter(gyro_name, 'GTorPos')
+            self.a    = gyro_pset['GPolPos'] * 1000
+            self.beta = gyro_pset['GTorPos']
         elif(N < 9):
-            SUCOMDAT = ECN.GetSignal('SUCOMDAT')
+            SUCOMDAT = ECN('SUCOMDAT')
             if(N == 5):
                 beta = SUCOMDAT[26] / 10.0
                 a = SUCOMDAT[27] / 10.0
@@ -343,8 +282,8 @@ class gyrotron:
             elif(N == 8):
                 beta = SUCOMDAT[161] / 10.0
                 a = SUCOMDAT[162] / 10.0
-            a_ECS = ECS.GetParameter(gyro_name, 'GPolPos') * 1000
-            beta_ECS = ECS.GetParameter(gyro_name, 'GTorPos')
+            a_ECS    = gyro_pset['GPolPos'] * 1000
+            beta_ECS = gyro_pset['GTorPos']
             if(np.abs(a - a_ECS) > 0.1):
                 print("WARNING ECS and SUCOMDAT do not hold same spindle position")
                 print(("ECS, SUCOMDAT", a, ",", a_ECS))
@@ -362,14 +301,14 @@ class gyrotron:
             print("Gy > 8 not supported")
             self.error = -1
         if(N < 5):
-            self.time = ECS.GetTimebase('T-B')
-            self.PW = ECS.GetSignal("PG{0:n}".format(N_2), dtype=np.double)
+            self.time = ECS('T-B')
+            self.PW = ECS("PG{0:n}".format(N_2)).astype(np.double)
             self.theta_pol, self.phi_tor = libECRH_obj.setval2tp(gy, self.a, self.beta)
         elif(N < 9):
-            time = ECS.GetTimebase('T-B')
+            time = ECS('T-B')
 
-            self.time = ECN.GetTimebase('T-Base')
-            self.a_t = ECN.GetSignalCalibrated("G{0:n}POL".format(N_2)) * 10.0
+            self.time = ECN('T-Base')
+            self.a_t = ECN("G{0:n}POL".format(N_2)) * 10.0
             # self.a_t = self.a_t - self.a_t[0] + a  # Treat last a_t as offset and replace it with a from SUCOMDAT
             a_t_0 = self.a_t[0]
             self.a_t = self.a_t - self.a_t[0] + a_ECS  # Treat last a_t as offset and replace it with a from ECS
@@ -384,7 +323,7 @@ class gyrotron:
             # Changes is beta during discharge not supported
             self.beta_t[:] = beta
             # Treat inital error as offset beta_t - beta_t[0] +
-            PW = np.double(ECS.GetSignal("PG{0:n}N".format(N_2)))
+            PW = np.double(ECS("PG{0:n}N".format(N_2)))
             pw_spline = InterpolatedUnivariateSpline(time, PW)
             self.PW = pw_spline(self.time)
             if view :
@@ -404,11 +343,9 @@ class gyrotron:
 
 
 def get_ECRH_viewing_angles(shot, LOS_no):
-    from . import dd
-    ECS = dd.shotfile()
-    ECS.Open("ECS", int(shot), experiment="AUGD")
-    ECN = dd.shotfile()
-    ECN.Open("ECN", int(shot), experiment="AUGD")
+
+    ECS = sf.SFREAD("ECS", int(shot))
+    ECN = sf.SFREAD("ECN", int(shot))
 
     return gyrotron(shot, LOS_no, ECS, ECN, True)
 
@@ -439,21 +376,7 @@ def get_freqs(shot, diag):
             141.12, 141.22, 141.32, 141.42, 141.52, 141.62, 141.72, \
             141.82, 141.92, 142.02, 142.32, 142.82, 143.32, 143.82, \
             144.57]) * 1.e9
-    #elif(diag.name == "ECE"):
-        #CEC = dd.shotfile(diag.diag, int(shot), \
-                           #experiment=diag.exp, edition=diag.Rz_ed)
-        #f = np.array(CEC.GetParameter('parms-A', 'f').data) * 1.e9
-        #f = f[np.array(CEC.GetParameter('parms-A', 'AVAILABL').data)]
-    #elif(diag.name == "ECN" or diag.name == "ECO"):
-        #ECI = dd.shotfile(diag.Rz_diag, int(shot), \
-                           #experiment=diag.Rz_exp, edition=diag.Rz_ed)
-        #x = np.array(ECI.GetParameter('BEAMS', 'x').data)
-        #freq_ECI_in = np.array(ECI.GetParameter('PAR', 'freq').data) * 1.e9
-        #f = []
-        #for i in range(len(x)):
-            #for j in range(len(freq_ECI_in)):
-                #f.append(freq_ECI_in[j])
-        #f = np.array(f)
+
     return f
 
 class Diag:
@@ -467,7 +390,9 @@ class Diag:
 
 
 class get_cold_resonances_S_ECE:
+
     def __init__(self,shot,diag_name ):
+
         self.shot = shot
         self.diag_name = diag_name
         
@@ -539,85 +464,4 @@ class get_cold_resonances_S_ECE:
                 R_rez.append(R_spl(root[0]))
                 Z_rez.append(z_spl(root[0]))
 
-        #import IPython
-        #IPython.embed()
         return np.array(R_rez), np.array(Z_rez)
-
-class kkrzbrzt:
-   #BUG use map_equ!!
-    def __init__(self,shot,exp='AUGD',diag='EQI',ed=0,dR=0, dZ=0):
-        #import sys
-        #sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib')
-        from . import dd
-        dd = dd.shotfile()
-
-        dd.Open('MAI',shot,experiment='AUGD',edition=0)
-        self.tvec_bt = dd.GetTimebase('BTF')    
-        self.Bt = dd.GetSignal('BTF')
-        
-    def __call__(self,tin):
-
-
-        i = np.argmin(np.abs(self.tvec_bt-tin))  
-        
-
-        R = np.linspace(1,3, 30)
-        z = np.linspace(-1.5,1.5, 10)
-        Bt = tile(self.Bt[i]*1.65/R, (len(z), 1)).T
-        Br = 0
-        Bz = 0
-
-        class output: pass
-        out = output()
-            
-        out.R = R
-        out.z = z
-        out.Br = Br
-        out.Bz = Bz
-        out.Bt = Bt
-
-        return out
-
-
-#def test_resonance():
-    #shot = 33585
-    #time = 1.68
-    #eq_exp = "AUGD"
-    #eq_diag = "EQH"  # "IDE"
-    #eq_ed = 0
-    #bt_vac_correction = 1.005
-    ##EQ_obj = EQData(shot, eq_exp, eq_diag, eq_ed, bt_vac_correction)
-    ##EQ_t = EQ_obj.read_EQ_from_shotfile(time)
-    #import IPython
-    #IPython.embed()
-    
-    #import sys
-    #sys.path.append('/afs/ipp-garching.mpg.de/home/t/todstrci/pyspecviewer/')
-    #EQ = kkrzbrzt(shot)
-    #EQ_t = EQ(time)
-            
-
-    #B_spl = RectBivariateSpline(EQ_t.R, EQ_t.z, np.sqrt(EQ_t.Br ** 2 + EQ_t.Bt ** 2 + EQ_t.Bz ** 2))
-
-    #Resonances = get_cold_resonances_S_ECE(shot, "IEC")
-    #R,z = Resonances(time, np.min(EQ_t.R), np.max(EQ_t.R), np.min(EQ_t.z), np.max(EQ_t.z), B_spl,arange(6))
-    
-    #plt.plot(R, z, "+")
-    #plt.show()
-
-#test_resonance()
-
-
-
-
-
-
-
-#import sys
-#sys.path.append('/afs/ipp/home/t/todstrci/TRANSP/')
-
-#ece = loader_SECE(33697)
-
-#n = ece.get_names('IEC')
-#ece.get_signal('IEC',n[0])
-
