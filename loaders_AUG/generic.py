@@ -1,6 +1,7 @@
 from .loader import * 
-import os
-import aug_sfutils as sf
+
+logger = logging.getLogger('pyspecview.gen')
+logger.setLevel(logging.INFO)
 
 #simple interface to load genetic signal 
 
@@ -66,11 +67,11 @@ class loader_gen(loader):
         tvec = sfo.gettimebase(name[:i_split])
 
         if tvec is None:
-            raise Exception('No timebase has been found!!')
-        
+            raise Exception('No timebase found!')
+
         dt = np.diff(tvec)
         if np.std(dt) > np.mean(dt)/5:
-            print('NWarning: non equally spaced timebase!!')
+            logger.warning('Warning: non equally spaced timebase!')
 
         nbeg, nend = tvec.searchsorted((tmin,tmax))
         

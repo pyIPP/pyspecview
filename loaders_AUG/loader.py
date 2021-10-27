@@ -1,6 +1,5 @@
-#from numpy import *
 import numpy as np
-import sys, os, logging
+import os, logging
 import traceback
 import aug_sfutils as sf
 

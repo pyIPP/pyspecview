@@ -1,17 +1,21 @@
 from .loader import * 
-import os
-import aug_sfutils as sf
+
+logger = logging.getLogger('pyspecview.fild')
+logger.setLevel(logging.INFO)
+
 
 shotfiles = 'FHA', 'FHB', 'FHC'
 
 def check(shot):
-    #fastest check if the shotfile exist
+    """
+    Check if any shotfile exists
+    """
 
     status = False
     
     for s in shotfiles:
-        path = shot_path+'/%d/XX/%s/%d'
-        status |= os.path.isfile(path%(shot//10,s,shot))
+        path = shot_path + '/%d/XX/%s/%d'
+        status |= os.path.isfile(path %(shot//10, s, shot))
     
     return status
 

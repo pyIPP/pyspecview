@@ -1,5 +1,3 @@
-import os, logging
-from scipy.interpolate import interp1d
 from .loader import * 
 
 logger = logging.getLogger('pyspecview.sxr')
@@ -67,17 +65,6 @@ class loader_SXR(loader):
 
         self.ADCmin = 0
 
-        self.MULTIA   = {}
-        self.SHIFTB   = {}
-
-        for k, s in enumerate(signals):
-            par = csx('C'+s)
-            n = int(par['NCALSTEP'])
-            self.MULTIA[s] = [par['MULTIA%.2d' %i] for i in range(n)]
-            self.SHIFTB[s] = [par['SHIFTB%.2d' %i] for i in range(n)]
-            if self.SHIFTB[s][-1] == 0 or different_det[s]:  #corrupted signal
-                shotfiles[k] = 'OOO'
-
         self.SXR_diods = {}
         for sf in np.unique(shotfiles):
             self.SXR_diods[sf] = []
@@ -125,29 +112,21 @@ class loader_SXR(loader):
                     self.ed = sfo.ed
                     self.openshotfile = shotfile
                     
-                    tvec = sfo('Time')
-                    sig = sfo(name)
-                    
-                    #remove corrupted points!! SLOW!
+                    tvec = sfo('Time').astype(np.float32)
+                    sig = sfo.getobject(name, copy=True) #*1. # git create a copy of read-only array
+
+# remove corrupted points
                     wrong =  (sig < self.ADCmin) |  (sig > self.ADCrange[name]) 
 
                     if any(wrong):
                         sig[wrong]=np.interp(np.where(wrong)[0], np.where(~wrong)[0],sig[~wrong])
-                    output[j] = [tvec, sig]
+                    if calib:
+                        sig = sfo.raw2calib(sig)
 
-        #the calibration could be done also with cal=True 
-        #but in this case a corrupted points could not be identified
-        if calib:
-            for j, name in enumerate(names):
-                sig = np.single(output[j][1])
-                M = self.MULTIA[name]
-                S = self.SHIFTB[name]
+                    output[j] = [tvec, sig.astype(np.float32)]
 
-                sig*= np.prod(M)
-                sig+= ((S[0]*M[1]+S[1])*M[2]+S[2])*M[3]+S[3]
-                output[j][1] = sig
- 
-        if len(names) == 1: return  output[0]
+        if len(names) == 1:
+            return output[0]
 
         return output
 

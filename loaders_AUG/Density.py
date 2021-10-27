@@ -1,10 +1,13 @@
 from .loader import * 
-import os
-import aug_sfutils as sf
+
+logger = logging.getLogger('pyspecview.density')
+logger.setLevel(logging.INFO)
 
 
 def check(shot):
-    #fastest check if the shotfile exist
+    """
+    Check if any shotfile exists
+    """
 
     status = False
     path = shot_path+'/%d/L0/CON/%d'
@@ -72,7 +75,7 @@ class loader_DCN(loader):
         from scipy.signal import argrelmax,argrelmin,argrelextrema
         from numpy import random
 
-        print( 'unwraping DCN....')
+        logger.info('Unwrapping DCN...')
         #preprocess signals
         sig = np.single(sig)
         sig -= np.mean(sig)

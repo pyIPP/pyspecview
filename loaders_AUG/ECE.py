@@ -1,15 +1,14 @@
-import numpy as np
 from .loader import * 
-import os, sys, logging
 from scipy.interpolate import interp1d
-import aug_sfutils as sf
 
-logger = logging.getLogger('pyspecview.ece_new')
+logger = logging.getLogger('pyspecview.ece')
 logger.setLevel(logging.INFO)
 
 
 def check(shot):
-    #fastest check if the shotfile exist
+    """
+    Check if any shotfile exists
+    """
 
     path = shot_path+'/%d/XX/%s/%d'
 
@@ -215,10 +214,10 @@ class loader_ECE(loader):
                 raise Exception()
 
         except Exception as e:
-            print(( 'spline fit has failured: ', e))
+            logger.warning('spline fit has failed: %s', str(e))
             Te_ = np.exp(np.interp(rho, np.r_[-x,x][ind_], np.r_[y,y][ind_]))
         
-        return   rho, Te_
+        return rho, Te_
 
     def get_names_phase(self):
         pass

@@ -34,7 +34,7 @@ logger = logging.getLogger('pyspecview.roto_tomo')
 logger.setLevel(logging.DEBUG)
 
 from .SVDfilter import SVDFilter
-from sksparse.cholmod import  cholesky,CholmodWarning,CholmodError
+from sksparse.cholmod import cholesky, CholmodWarning, CholmodError
 from matplotlib import colors,cbook,cm
 
 cdict = {
@@ -850,8 +850,6 @@ def find_f0(t,x):
     return f0
 
 
-
- 
 def create_derivation_matrix(g, Bmat, danis,rgmin=1e-8):
     """
     Prepare matrix of derivation according to choosed regularization method
@@ -863,14 +861,9 @@ def create_derivation_matrix(g, Bmat, danis,rgmin=1e-8):
     max_g = np.nanmax(abs(g_tmp))
 
     g_tmp /= max_g
-    
-
     g_tmp[g_tmp < rgmin] = rgmin
-    
-
     g_tmp **=-1
 
- 
     W=sparse.spdiags(g_tmp,0, npix,npix,format='csr')
 
     #Bmat = [Bper1_frwd,Bpar1_frwd,Bper2_bckwrd,Bpar2_bckwrd]
@@ -878,11 +871,8 @@ def create_derivation_matrix(g, Bmat, danis,rgmin=1e-8):
 
     Hper = sigmoid(-danis)*(Bmat[0].T*(W*Bmat[0]) + Bmat[2].T*(W*Bmat[2]))
     Hpar = sigmoid( danis)*(Bmat[1].T*(W*Bmat[1]) + Bmat[3].T*(W*Bmat[3]))
-
-    
         
     return Hper.tocsc(), Hpar.tocsc()
-
 
 
 class Roto_tomo:
@@ -946,7 +936,7 @@ class Roto_tomo:
         if self.parent.tokamak == 'AUG':
             gc_d = sf.getgc()
             for gcc in gc_d.values():
-                self.ax.plot(gcc.r, gcc.z, c='0.5', lw=.5)
+                self.ax.plot(gcc.r, gcc.z, 'b', lw=1.)
         elif self.parent.tokamak == 'DIIID':
             from loaders_DIIID import map_equ
             gc_r, gc_z = map_equ.get_gc()
@@ -978,7 +968,6 @@ class Roto_tomo:
         
         self.ax.patch.set_facecolor(my_cmap(0))
 
-
         self.ax.axis([1.4,2.2,-0.25,0.35]) 
         self.shift_phi = 0
         self.dR = 0
@@ -988,7 +977,6 @@ class Roto_tomo:
         self.cid_press   = self.fig.canvas.mpl_connect('key_press_event',   self.onKeyPress)
         self.cid_release = self.fig.canvas.mpl_connect('key_release_event', self.onKeyRelease)
         
-  
         
     def prepare_tomo(self, tok_lbl, shot, tmin, tmax, fmin, fmax, eqm, tvec0, sig0):
 
@@ -1083,11 +1071,9 @@ class Roto_tomo:
         self.T_full = geom_mat_setting( self.tok,self.nx, self.ny, 
                              self.tok.virt_chord, path=None)[0]
 
-
         #Auxiliarly tokamak to avoid loading of efquilibrium from tomography
         self.aux_tok = tokamak(self.rhop,self.magr, self.magz,self.tok.xgrid,self.tok.ygrid)
         self.aux_tok.vessel_boundary = self.tok.vessel_boundary
-
 
         #find a mean frequency of the mode
         self.F0 = (fmin+fmax)/2
@@ -1096,7 +1082,6 @@ class Roto_tomo:
         #identify strongest mode frequency in the selected range
         tind = slice(*tvec0.searchsorted([tmin,tmax]))
         self.F0 = OptimizeF0(tvec0[tind], sig0[tind], self.F0,df0= fmax-self.F0,n_steps=200)
-   
         
         #Load diagnostic infomation
         n_harm_max = 10
@@ -1133,7 +1118,6 @@ class Roto_tomo:
         self.Bmat, diag_mat = mat_deriv_B(self.aux_tok, 0, 1,None)
         self.Ht = build_reg_mat_time(self.rho_mat,self.theta_star_rz,theta_star,self.rhop,self.magr,
                                 self.magz,self.xgridc,self.ygridc,self.BdMat,self.dtheta)
-
         
         #contours of constant theta star
         t = np.linspace(0,2*np.pi,self.n_theta_plot,endpoint=False)
@@ -1144,7 +1128,6 @@ class Roto_tomo:
         r = np.linspace(0,self.rho[-1],self.n_rho_plot)
         self.isoflux_R = interp1d(self.rho,self.magr)(r).T
         self.isoflux_Z = interp1d(self.rho,self.magz)(r).T
-        
               
         #update plots of magnetics map_coordinates 
         for ip,p in enumerate(self.plot_mag_theta):
@@ -1168,9 +1151,9 @@ class Roto_tomo:
         self.TeOverplot()
 
 
-
     def calculate_tomo(self):
-        tcalc = time.time()
+        tcalc = np.zeros(4)
+        tcalc[0] = time.time()
         ##close threats from previous calculation
         if not self.initialized:
             return
@@ -1189,12 +1172,15 @@ class Roto_tomo:
         
         #convert time dependent signals in complex harmonics 
         self.prepare_harms()
+        tcalc[1] = time.time()
         #prepare inversion
         self.precalc_tomo()
+        tcalc[2] = time.time()
         #use m and n number from the GUI and evaluate tomography 
         self.update_mode_number()
-        
-        print( 'Inversion calculated in %.1fs'%(time.time()-tcalc))
+        tcalc[3] = time.time()
+
+        print( 'Inversion calculated', np.diff(tcalc))
 
         
     def load_data(self):
@@ -1223,13 +1209,11 @@ class Roto_tomo:
 
     def prepare_harms(self):
         #calculate complex harmonics out of the measured signals
-                                                
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
         #apply SVD filter to get complex harmonic 
         self.SVDF.run_filter(update_plots=False)
-        
         
         self.F1 = self.SVDF.f0
         self.t0 = self.SVDF.t0
@@ -1272,8 +1256,6 @@ class Roto_tomo:
                 qin.close()
                 qout.close()
                 h.join(1e-2)
-                
-                
     
         G0 = G0.reshape(self.ny,self.nx,order='F')
         #use asymmetry of . 0. harmonic in the regularization operator
@@ -1290,9 +1272,9 @@ class Roto_tomo:
 
         QApplication.restoreOverrideCursor()
 
-         
         
     def update_node_m_number(self,ind):
+
         M = self.parent.m_numbers[ind]
         if M is self.m: return 
         self.m = M
@@ -1305,6 +1287,7 @@ class Roto_tomo:
         
         
     def update_node_n_number(self,ind):
+
         N = self.parent.n_numbers[ind]
         if N is self.n: return 
         self.n = N
@@ -1355,7 +1338,6 @@ class Roto_tomo:
                 self.fig.canvas.draw_idle()
             QApplication.restoreOverrideCursor()
             return
-
         
         #load ECE data, prepare 2D profile
         if not self.parent.Te2Dmap.initialized:
@@ -1374,9 +1356,6 @@ class Roto_tomo:
         self.Te2Dmap.UpdateModeM(np.searchsorted(self.parent.m_numbers,self.m), animate=True)
         self.fig.canvas.draw_idle()
 
-        
-        #self.shift_phase(self.shift_phi)
-
         QApplication.restoreOverrideCursor()
 
         
@@ -1389,7 +1368,6 @@ class Roto_tomo:
         
     def show_retrofit(self):
         #show how well were fitted experimental data 
-        
         
         dets_dict = self.tok.detectors_dict
         det_ind = [0,]
@@ -1435,7 +1413,6 @@ class Roto_tomo:
             phase_data[weak] = np.nan
             phase_retro[weak] = np.nan
 
-
             norm = np.amax(aplitude_retro)/6./1e3
             ax.plot(self.dets, aplitude_retro/1e3, 'b',label='retro')
             ax.errorbar(self.dets,aplitude_data/1e3, aplitude_err/1e3,c='r',label='data')
@@ -1465,12 +1442,6 @@ class Roto_tomo:
             f.canvas.draw()
         else:
             f.show()
-
-
-
-
-
-
 
         
     def set_mode_numbes(self):
@@ -1508,7 +1479,6 @@ class Roto_tomo:
                            cmplxT[n],self.BdMat,self.bb[n],self.bb_err[n], ndet)
             h.start()
             self.hsolvers.append(h)
-
 
         self.shift_phase(0)
         
@@ -1556,7 +1526,6 @@ class Roto_tomo:
 
         G_t = np.sum(G_t[1:] if self.substract else G_t,0)
         self.tomo_img.set_array(G_t/1e3)
-        
      
         if self.substract:
             self.tomo_img.set_clim(-self.plot_lim*self.vmax_bcg/1e3, self.vmax_bcg*self.plot_lim/1e3)
@@ -1633,6 +1602,3 @@ class Roto_tomo:
             gc.collect()
         except Exception as e:
             print('Error __del__', e)
-            
-
-

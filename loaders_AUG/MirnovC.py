@@ -1,6 +1,4 @@
 from .loader import * 
-import os, sys, logging
-import aug_sfutils as sf
 
 logger = logging.getLogger('pyspecview.mirnov')
 logger.setLevel(logging.INFO)
@@ -23,6 +21,7 @@ def check(shot):
 
 
 class loader_MirnovCoils(loader):
+
 
     mode_range = (-6,5)
     pol_mode_num = True
@@ -112,7 +111,7 @@ class loader_MirnovCoils(loader):
             if self.shotfile != sfile:
                 sfo = sf.SFREAD(sfile, self.shot, experiment=self.exp, edition=self.ed)
                 self.shotfile = sfile
-                tvec = sfo.gettimebase(sig_p, cal=True)
+                tvec = sfo.gettimebase(sig_p)
                 nbeg, nend = tvec.searchsorted((tmin,tmax))
 
             sig = sfo.getobject(sig_p, cal=calib, nbeg=nbeg, nend=nend)
@@ -137,7 +136,9 @@ class loader_MirnovCoils(loader):
         return tvec, data
     
     def get_theta_pol(self,name,tshot = 4 ,rhop=.2 ):
-        
+
+        import aug_sfutils as sf # for call cross-phaseogram
+
         try:
             magr,magz, theta0, theta_star = self.mag_theta_star( tshot,rhop )
         except:

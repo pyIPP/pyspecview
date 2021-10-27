@@ -747,8 +747,8 @@ class STFTImage():
             self.im.set_data(z)
         except:
             logger.error(  'error self.im.set_data(z)')
-            print( shape(z))
-            print( z)
+            logger.error( shape(z))
+
         self.im.set_extent((xstart, xend, ystart, yend))
  
         t3 = time.time()
@@ -1580,20 +1580,19 @@ class Diag2DMapping(object):
                     break
 
             emiss = load(path, allow_pickle=True)
-            print( 'found SXR from %.4f to %.4f'%(emiss['tvec'][0], emiss['tvec'][-1]))
+            logger.info( 'found SXR from %.4f to %.4f', emiss['tvec'][0], emiss['tvec'][-1] )
 
             if self.tvec[-1] > emiss['tvec'][-1] or  self.tvec[0] < emiss['tvec'][0]:
                 raise Exception('out of SXR tomography %.3f - %.3fs'%(emiss['tvec'][0], emiss['tvec'][-1]))
                         
             if  self.sxr_emiss is None or not all(emiss['tvec'] == self.sxr_tvec):
                 self.sxr_tvec = emiss['tvec']
-                print( 'loading SXR from %.4f to %.4f'%(self.sxr_tvec[0], self.sxr_tvec[-1]))
+                logger.info( 'loading SXR from %.4f to %.4f', self.sxr_tvec[0], self.sxr_tvec[-1] )
                 self.sxr_emiss = np.single(emiss['gres'])*emiss['gres_norm'][None, None, :]
                 self.sxr_r = emiss['rvec']
                 self.sxr_z = emiss['zvec']
 
         except Exception as e:
-            #print(e)
             self.sxr_emiss = None
 
         #set back the m-number!
@@ -1647,7 +1646,7 @@ class Diag2DMapping(object):
             Ac = np.sum((self.mode_Te[:, imax]-m)*np.cos(self.phi*self.m))
             As = np.sum((self.mode_Te[:, imax]-m)*np.sin(self.phi*self.m))
             self.phi0 = np.arctan2(As, Ac)/np.abs(self.m)
-            print(' ECE phase shifted by %ddeg'%np.rad2deg(self.phi0 ))
+            logger.info(' ECE phase shifted by %ddeg', np.rad2deg(self.phi0 ))
 
 
     def shift_phase(self, shift_phi):
@@ -1844,8 +1843,7 @@ class GetInfoThread(QThread):
         try:
             info = self.fun(*self.args)
         except Exception as e:
-            print( 'info err', e, self.fun)
-            print( traceback.format_exc())
+            logger.error( traceback.format_exc())
             info = ''
         self.finished.emit(info)
 
@@ -2024,7 +2022,7 @@ class MainGUI(QMainWindow):
         if new_panel == '2D Te':
     
             if not (self.radial_view.diag == 'ECE' and prew_panel == 'Radial Profile'):
-                print('Switching radial profile to ECE diagnostic')
+                logger.info('Switching radial profile to ECE diagnostic')
 
                 if self.radial_view.diag != 'ECE':
                     self.diag = 'ECE'
@@ -2072,8 +2070,8 @@ class MainGUI(QMainWindow):
                     try:
                         self.roto_tomo.prepare_tomo(self.tokamak, self.shot, tmin, tmax, fmin, fmax, self.eqm, tvec0, sig0)
                     except:
-                        print('rotation tomography failed')
-                        print( traceback.format_exc())
+                        logger.error('rotation tomography failed')
+                        logger.error( traceback.format_exc())
 
                         QMessageBox.warning(self, "rotation tomography ", traceback.format_exc(), QMessageBox.Ok)
                         return 
@@ -2097,7 +2095,7 @@ class MainGUI(QMainWindow):
 
         canvas = None
         if not (self.SpecWin.initialized or self.SpecWin_phase.initialized ):
-            print('spectrum or cross-spectrum is not initialised')
+            logger.error('spectrum or cross-spectrum is not initialised')
             return
         
         fine_resolution = False
@@ -2150,7 +2148,7 @@ class MainGUI(QMainWindow):
             if path == '': return 
             if path[-4]!= '.': path+= str(selected_filter)[-5:-1]
             
-        print( 'path: ', path)
+        logger.info( 'path: ', path)
 
         if not canvas is None:
             canvas.print_figure(path, dpi=self.dpi*4)
@@ -2161,7 +2159,7 @@ class MainGUI(QMainWindow):
 
         T = time.time()
         if T - self.movie_saved < 10:
-            print('Prevent multiple calls os save_anim')
+            logger.info('Prevent multiple calls of save_anim')
             return
         
         if self.tables_names[self.curr_tab] == '2D Te':
@@ -2186,9 +2184,9 @@ class MainGUI(QMainWindow):
 
             obj.shift_phase(t)
             out = obj.update(update_mag=False, update_cax=False, animate=True)
-            #print(out)
+
             return out
-        
+
         save_gui = QFileDialog(self)
         save_gui.setDefaultSuffix( '.mp4' )
                 
@@ -2198,24 +2196,24 @@ class MainGUI(QMainWindow):
         if isinstance(path, tuple): #correction for python 3
             path = path[0]
  
-        print('Movie path', path)
+        logger.info('Movie path', path)
 
         ani = animation.FuncAnimation(obj.fig, animate, theta, interval=25, blit=False, repeat =False) #BUG blit true? 
 
         writer = animation.FFMpegWriter(fps=15, bitrate=2000)
         try:
             ani.save(path, writer=writer, dpi=self.dpi)
-            print( '\n Writing finished in %.1fs'%(time.time()-T))
+            logger.info( '\n Writing finished in %.1fs', (time.time()-T))
             del ani
             self.statusBar().showMessage('Saved to %s' % path, 5000)
             self.movie_saved = time.time()
             return
         except:
-            print('Animation failed')
-            print( traceback.format_exc())
+            logger.error('Animation failed')
+            logger.error( traceback.format_exc())
 
             QMessageBox.warning(self, "Animation failed", traceback.format_exc(), QMessageBox.Ok)
-            return 
+            return
 
 
     def save_data(self):
@@ -2237,7 +2235,7 @@ class MainGUI(QMainWindow):
         try:
             description = data_loader.get_description(diag_group, signal)
         except Exception as e:
-            print( 'save_data:', e)
+            logger.error( 'save_data: %s', str(e))
             description = ''
             
         name = description.replace(' ', '_')            
@@ -2260,9 +2258,9 @@ class MainGUI(QMainWindow):
                 out['radial_prof_time'] = self.radial_view.t_range
                 out['radial_prof_freq'] = self.radial_view.f_range
         except Exception as e:
-            print( 'save_data2:', e)
+            logger.warning( 'save_data2: %s', str(e))
             pass
-        
+
         try:
             if self.Te2Dmap.initialized:
                 out['Te2Dmap_R'] = self.Te2Dmap.Rmag_ece
@@ -2272,7 +2270,7 @@ class MainGUI(QMainWindow):
                 out['Te2DmapECE_z'] = self.Te2Dmap.Z
          
         except Exception as e:
-            print( 'save_data3:', e)
+            logger.warning( 'save_data3: %s', str(e))
             pass
         
         if hasattr(SpecWin, 'data_plot'):
@@ -2291,7 +2289,7 @@ class MainGUI(QMainWindow):
         try:
             info = data_loader.signal_info(diag_group, signal, out['tvec'].mean())
         except Exception as e:
-            print( 'save_data3:', e)
+            logger.warning( 'save_data3: %s', str(e))
             info = ''
       
         np.savez_compressed(path, description=description, info=info, **out)
@@ -2342,25 +2340,28 @@ class MainGUI(QMainWindow):
         def init_equlibrium():
 
             self.eqm_ready = True
-            print( 'Initialise equlibrium')
+            logger.info( 'Initialise equlibrium')
 
+            warn_rt = 'Standard equilibrium does not exist! Use real time equilibrium'
+            warn_eq1 = 'Equlibrium shotfile: diag=%s, exp=%s, ed=%d do not exist!' %(self.eq_diag, self.eq_exp, self.eq_ed)
+            warn_eq = warn_eq1 + '\nStandard shotfile will be used'
             if self.tokamak == 'AUG':
                 import aug_sfutils as sf
                 self.eqm = sf.EQU(self.shot, diag=self.eq_diag, exp=self.eq_exp, ed=self.eq_ed)
                 if not self.eqm.sf.status:
+                    logger.warning(warn_eq)
                     self.eqm = sf.EQU(self.shot, diag='EQI')
                     if not self.eqm.sf.status:
-                        print( """standard eq. do not exist!!! use real time equilibrium""")
+                        logger.error(warn_rt)
                         self.eqm_ready = False
 
             elif self.tokamak == 'DIIID':
                 if not self.eqm.Open(self.shot, diag=self.eq_diag, exp=self.eq_exp, ed=self.eq_ed):
-                    print( """Equlibrium shotfile: diag=%s, exp=%s, ed=%d do not exist!!!
-                    standard shotfile will be used"""%(self.eq_diag, self.eq_exp, self.eq_ed))
+                    logger.warning(warn_eq)
                     if not self.eqm.Open(self.shot, diag='EFIT01'):
-                        print( """standard eq. do not exist!!! use real time equilibrium""")
+                        logger.warning(warn_rt)
                         if not self.eqm.Open(self.shot, diag='EFITRT01'):
-                            aelf.eqm_ready = False
+                            self.eqm_ready = False
                 if self.eqm_ready:
                     self.eqm._read_scalars()
                     self.eqm._read_profiles()
@@ -2375,7 +2376,7 @@ class MainGUI(QMainWindow):
     def shot_phase_changed(self):
 
         if not str(self.shot_line_phase.text()).strip().isdigit(): 
-            print( 'It is not a valid shot number')
+            logger.error( 'It is not a valid shot number')
             return  
         self.shot_changed(self.shot_line_phase.text())
 
@@ -2392,7 +2393,7 @@ class MainGUI(QMainWindow):
     def shot_spect_changed(self):
 
         if not str(self.shot_line.text()).strip().isdigit(): 
-            print( 'It is not a valid shot number')
+            logger.error( 'It is not a valid shot number')
             return 
         self.shot_changed(self.shot_line.text())
 
@@ -2406,7 +2407,7 @@ class MainGUI(QMainWindow):
             dZ = self.QLinedZ.text()
             dZ  = 0 if dZ == '' else float(dZ)
         except Exception as e:
-            print('No a valid number')
+            logger.error('No a valid number')
             return
     
         if dR!= self.dR_corr or dZ != self.dZ_corr:
@@ -2435,8 +2436,8 @@ class MainGUI(QMainWindow):
             self.data_loader = self.diag_loaders[self.diag][0](self.shot, 
                         eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)
         except Exception as e:
-            print('error in loading')
-            print( traceback.format_exc())
+            logger.error('error in loading')
+            logger.error( traceback.format_exc())
             QMessageBox.warning(self, "Loading problem", str(e), QMessageBox.Ok)
             return       
         
@@ -2463,7 +2464,7 @@ class MainGUI(QMainWindow):
             self.data_loader_radial = self.diag_loaders[self.diag_radial][0](self.shot, 
                         ed=0, eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)
         except Exception as e:
-            print( traceback.format_exc())
+            logger.error( traceback.format_exc())
             c.warning(self, "Loading problem", str(e), QMessageBox.Ok)
             return 
             
@@ -2492,11 +2493,11 @@ class MainGUI(QMainWindow):
             self.data_loader_phase = loader(self.shot, 
                         ed=0, eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)
         except:
-            print( traceback.format_exc())
+            logger.error( traceback.format_exc())
             QMessageBox.warning(self, "Loading problem", str(e), QMessageBox.Ok)
             return 
         self.sig_names_phase = self.data_loader_phase.get_names_phase()
-        #print('change diag phase', self.sig_names_phase)
+
         try:
             self.cb_signal_phase.clear()
         except:
@@ -2587,7 +2588,7 @@ class MainGUI(QMainWindow):
                                     np.mean(xlims), dR=self.dR_corr, dZ=self.dZ_corr)[0]
                 data['freq_tvec'], data['freq'] = self.data_loader.get_plasma_freq(rho)
             except Exception as e:
-                print( traceback.format_exc())
+                logger.error( traceback.format_exc())
                 data['freq_tvec'] = data['freq'] = np.nan
                 return                 
 
@@ -2616,7 +2617,7 @@ class MainGUI(QMainWindow):
 
         if  self.data_loader is None :
             QMessageBox.warning(self, "Select diagnostic", "Diagnostic in the spectrogram panel is not selected", QMessageBox.Ok)
-            return 
+            return
 
         tmin, tmax = self.radial_view.t_range
 
@@ -2713,7 +2714,7 @@ class MainGUI(QMainWindow):
         try:
             description = self.data_loader.get_description(self.diag_group, self.signal)
         except Exception as e:
-            print( traceback.format_exc())
+            logger.warning( traceback.format_exc())
             description = ''
             
         self.radial_view.description = description
@@ -2738,7 +2739,7 @@ class MainGUI(QMainWindow):
             tvec, sig = self.data_loader_phase.get_signal_phase(self.signal_phase)
             if sig is None: raise
         except Exception as e:
-            print( traceback.format_exc())
+            logger.error( traceback.format_exc())
 
             QMessageBox.warning(self, "Loading problem", "Check if the signal exist", QMessageBox.Ok)
         self.statusBar().showMessage('')
@@ -2761,7 +2762,7 @@ class MainGUI(QMainWindow):
         try:
             description = self.data_loader_phase.get_description(   self.signal_phase , '')
         except:
-            print( traceback.format_exc())
+            logger.warning( traceback.format_exc())
 
         if  self.SpecWin_phase.initialized:
             self.SpecWin_phase.init_plot(data, tmin=xlims[0], tmax=xlims[1], 
@@ -3037,7 +3038,7 @@ class MainGUI(QMainWindow):
         self.QLinedR = QLineEdit(self.cWidget)
         self.QLinedZ = QLineEdit(self.cWidget)
         
-        self.load_config()
+# git        self.load_config()
         self.QLinedR.setText(str(self.dR_corr))
         self.QLinedZ.setText(str(self.dZ_corr))
 
@@ -3316,9 +3317,8 @@ class MainGUI(QMainWindow):
         try:
             from roto_tomo.roto_tomo import Roto_tomo
         except Exception as e:
-            print('import of the rotation tomography failed: '+str(e))
-            print( traceback.format_exc())
-
+            logger.error('import of the rotation tomography failed: '+str(e))
+            logger.error( traceback.format_exc())
             return 
         
         self.tab_widget_rototomo = QWidget(self)
@@ -3562,7 +3562,7 @@ class MainGUI(QMainWindow):
         if checkable:
             action.setCheckable(True)
         return action
-    
+
 
     def load_config(self):
         
@@ -3583,7 +3583,7 @@ class MainGUI(QMainWindow):
             #backward compatibility 
             self.mds_server = None
             self.tokamak = 'AUG'
-        print('TOKAMAK = %s' %self.tokamak)
+        logger.info('TOKAMAK = %s' %self.tokamak)
  
         self.spect_cmap = config.get('spectrogram', 'spect_cmap')
         self.win_fun = config.get('spectrogram', 'win_fun')

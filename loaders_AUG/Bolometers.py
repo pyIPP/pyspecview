@@ -1,16 +1,18 @@
 from .loader import * 
-import os, sys
-import aug_sfutils as sf
+
+logger = logging.getLogger('pyspecview.bolo')
+logger.setLevel(logging.INFO)
 
 
 def check(shot):
-    #fastest check if the shotfile exist
+    """
+    Check if any shotfile exists
+    """
 
     status = False
-    path = shot_path+'/%d/XX/%s/%d'
+    path = shot_path + '/%d/XX/%s/%d'
     for diag in ('XVR', 'XVS', 'XVT'):
-        status |= os.path.isfile(path%(shot/10,diag,shot))
-    #print status
+        status |= os.path.isfile(path %(shot/10, diag, shot))
     return status
 
 
@@ -98,10 +100,10 @@ class loader_diod_bolometers(loader):
                 elif s in xv_names[1]:
                     sfiles.append(bolo_shotfiles[1])
                 else:
-                    print('missing signal %s'%s)
+                    logger.warning('Missing signal %s', s)
 
             if len(sfiles) == 0:
-                print('Missing data for camera '+c)
+                logger.warning('Missing data for camera %s', c)
                 self.groups.pop(self.groups.index(c))
                 continue
             self.signals[c] = list(zip(sig[activ], ch[activ], np.array(sfiles)))
@@ -111,7 +113,8 @@ class loader_diod_bolometers(loader):
         if group in self.signals:
             return sorted([int(ch) for sig, ch, sfile in self.signals[group]])
         else:
-            print('Bolometry: no activa data for shotfile %s' %group)
+            logger.error('Bolometry: no active data for shotfile %s' %group)
+
 
     def get_signal(self,group, names, calib=False, tmin=None, tmax=None):
         if isinstance(names,str) or not  hasattr(names, '__iter__'):
@@ -166,7 +169,6 @@ class loader_diod_bolometers(loader):
         if self.shot > 34000:
             if group == 'DHC' and 29 in names:
                 ind = np.where(np.array(names) == 29)[0][0]
-                print(( ind, data[0].shape, len(data)))
                 data[ind][:] *= 0  #corrupted LOS
     
         if len(data) == 1: 

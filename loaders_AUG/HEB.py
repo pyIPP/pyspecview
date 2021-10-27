@@ -1,6 +1,7 @@
 from .loader import * 
-import os
-import aug_sfutils as sf
+
+logger = logging.getLogger('pyspecview.heb')
+logger.setLevel(logging.INFO)
 
 
 def check(shot):
@@ -39,10 +40,10 @@ class loader_HEB(loader):
         ich = self.names[group].index(name)
         
         #load data only once and than keep then in the memory
-        if not hasattr(self,group):
+        if not hasattr(self, group):
             sfo = sf.SFREAD(self.shotfile , self.shot, experiment=self.exp, edition=self.ed)
         
-            if not hasattr(self,'tvec'):
+            if not hasattr(self, 'tvec'):
                 print('HEB ', group)
                 self.tvec = sfo.gettimebase(group)
 

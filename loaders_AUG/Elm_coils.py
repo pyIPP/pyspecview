@@ -1,11 +1,14 @@
 from .loader import * 
-import os, sys
-import aug_sfutils as sf
+
+logger = logging.getLogger('pyspecview.elm_c')
+logger.setLevel(logging.INFO)
 
 shotfiles = 'MHI','MHA','MHB','MHC','MHD','MHE','MHF','MHG','MHH'
  
 def check(shot):
-    #fastest check if the shotfile exist
+    """
+    Check if any shotfile exists
+    """
 
     for shotfile in shotfiles:
         path = shot_path+str(shot//10)+'/MH/'+shotfile+'/'+str(shot)
@@ -24,6 +27,7 @@ class loader_BalooningCoils(loader):
 
 
     def __init__(self,*args, **kargs):
+
         super(loader_BalooningCoils,self).__init__(*args, **kargs)
 
         if self.shot > 21496:
@@ -97,7 +101,7 @@ class loader_BalooningCoils(loader):
         if tmax is None:    tmax = self.tmax
 
         sfo = sf.SFREAD(self.shotfile, self.shot, experiment=self.exp, edition=self.ed)
-        tvec = sf.gettimebase('B31-%.2d'%self.phase_balooning_coils[0])
+        tvec = sfo.gettimebase('B31-%.2d'%self.phase_balooning_coils[0])
         nbeg, nend = tvec.searchsorted((tmin,tmax))
 
         if name in  ['BCoils',]:
@@ -136,6 +140,6 @@ class loader_BalooningCoils(loader):
             info = str(name)+' theta: %.2fdeg, phi: %.2fdeg'%(np.rad2deg(theta),np.rad2deg(phi))
         except:
             
-            print(( theta,phi,name))
+            print( theta, phi, name)
             raise
         return info

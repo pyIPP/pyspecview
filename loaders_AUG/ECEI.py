@@ -1,18 +1,22 @@
 from scipy.interpolate import interp1d
 from .loader import * 
-import os
-import aug_sfutils as sf
+
+logger = logging.getLogger('pyspecview.ecei')
+logger.setLevel(logging.INFO)
+
 
 def check(shot):
-    #fastest check if the shotfile exist
+    """
+    Check if any shotfile exists
+    """
 
     status = False
 
     path = shot_path+'%d/L1/ECI/%d.1' 
-    status |= os.path.isfile(path%(shot//10,shot)) and os.stat(path%(shot//10,shot)).st_size
+    status |= os.path.isfile(path %(shot//10, shot)) and os.stat(path %(shot//10, shot)).st_size
 
-    path = shot_path+'%d/XX/TDI/%d' 
-    status |= os.path.isfile(path%(shot//10,shot))
+    path = shot_path + '%d/XX/TDI/%d' 
+    status |= os.path.isfile(path %(shot//10, shot))
 
     return status
 
@@ -128,7 +132,7 @@ class loader_ECEI(loader):
             rho = self.rho_old
             
         else:
-            print( 'Warning: shotfile with resonance  positions was not found ')
+            logger.error( 'Warning: shotfile with resonance positions was not found ')
             return np.nan,np.nan,np.nan,np.nan
             
         time = np.clip(time, *RZtime[[0,-1]])
