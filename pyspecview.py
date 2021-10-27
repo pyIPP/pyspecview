@@ -9,8 +9,8 @@ hnd = logging.StreamHandler()
 hnd.setFormatter(fmt)
 logger = logging.getLogger('pyspecview')
 logger.addHandler(hnd)
-logger.setLevel(logging.DEBUG)
-#logger.setLevel(logging.INFO)
+#logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 try:
     from PyQt5.QtCore import *
@@ -1461,12 +1461,12 @@ class Diag2DMapping(object):
         
         self.n_contour = n_contour
         self.remback_botton = remback_botton
-
         if self.parent.tokamak == "AUG":
+            logger.debug('AUG graphite contours')
             import aug_sfutils as sf
             gc_d = sf.getgc()
             for gcc in gc_d.values():
-                self.ax.plot(gcc.r, gcc.z, 'k', lw=.5)
+                self.ax.plot(gcc.r, gcc.z, 'b', lw=1.)
         elif self.parent.tokamak == "DIIID":
             from loaders_DIIID import map_equ
             gc_r, gc_z = map_equ.get_gc()

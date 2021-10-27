@@ -8,7 +8,7 @@ def check(shot):
 
     status = False
     path = shot_path+'/%d/XX/%s/%d'
-    for diag in ('XVR', 'XVS','XVT'):
+    for diag in ('XVR', 'XVS', 'XVT'):
         status |= os.path.isfile(path%(shot/10,diag,shot))
     #print status
     return status
@@ -17,12 +17,12 @@ def check(shot):
 class loader_diod_bolometers(loader):
     tor_mode_num = False  #it was useless
     n_mode_range = (1,2)
-    radial_profile=True
+    radial_profile = True
     units = 'W/m$^2$'
 
     def __init__(self,*args, **kargs):
+
         super(loader_diod_bolometers,self).__init__(*args, **kargs)
-        
 
         bolo_shotfiles = 'XVR', 'XVS'#, 'XVT'
 
@@ -36,32 +36,31 @@ class loader_diod_bolometers(loader):
        
         active_los = {s: np.bool_( blc(s)['active'] ) for s in cams}
         activ_cam = [c for c in cams if any(active_los[c])]
-        self.Phi_start = {s: blc(s)['P_Blende'][active_los[s]] for s in activ_cam}
-        self.R_start   = {s: blc(s)['R_Blende'][active_los[s]] for s in activ_cam}
-        self.z_start   = {s: blc(s)['z_Blende'][active_los[s]] for s in activ_cam}
-        self.R_end     = {s: blc(s)['R_end'   ][active_los[s]] for s in activ_cam}
-        self.z_end     = {s: blc(s)['z_end'   ][active_los[s]] for s in activ_cam}
-        self.Phi_end   = {s: blc(s)['P_end'   ][active_los[s]] for s in activ_cam}
 
-        self.theta   = {s: np.arctan2(self.z_end[s]-self.z_start[s],self.R_end[s]-self.R_start[s])  for s in activ_cam}
-        self.delta   = {s: blc(s)['delta'][active_los[s]] for s in activ_cam}
-        
-        self.all_names = [n for n in blc.objects + blc.parsets if n[:2] == 'CS']
-        self.calibration= {}
+        self.Phi_start  = {}
+        self.R_start    = {}
+        self.z_start    = {}
+        self.R_end      = {}
+        self.z_end      = {}
+        self.Phi_end    = {}
+        self.theta      = {}
+        sig_dict        = {}
+        self.subcam_ind = {}
 
-        for name in self.all_names:
-            ncalib = int(blc(name)['NCALSTEP'])
-            multi,shift = [],[]
-
-            for i in range(ncalib):
-                multi.append(blc(name)['MULTIA%.2d' %i])
-                shift.append(blc(name)['SHIFTB%.2d' %i])
-            self.calibration[name[1:]] = multi,shift
-
-        sig_dict = {s:np.array([ c for c in blc(s)['RAW'] ]) for s in activ_cam}
-
-        self.subcam_ind = {c:[self.delta[c]+self.R_start[c] == r for r in np.unique(self.delta[c]+self.R_start[c])] for c in activ_cam}
-        
+        for s in activ_cam:
+            parset = blc(s)
+            act_los = active_los[s]
+            self.Phi_start[s] = parset['P_Blende'][act_los]
+            self.R_start[s]   = parset['R_Blende'][act_los]
+            self.z_start[s]   = parset['z_Blende'][act_los]
+            self.R_end[s]     = parset['R_end'   ][act_los]
+            self.z_end[s]     = parset['z_end'   ][act_los]
+            self.Phi_end[s]   = parset['P_end'   ][act_los]
+            self.theta[s]     = np.arctan2(self.z_end[s] - self.z_start[s], \
+                                           self.R_end[s] - self.R_start[s])
+            delta = parset['delta'][act_los]
+            sig_dict[s]       = parset['RAW']
+            self.subcam_ind[s] = [delta + self.R_start[s] == r for r in np.unique(delta + self.R_start[s])]
 
         #geometric corrections  estimated by hand!
         n =  self.R_end['DHC']-self.R_start['DHC'], self.z_end['DHC']-self.z_start['DHC']
@@ -92,8 +91,7 @@ class loader_diod_bolometers(loader):
             sfiles = []
                        
             for s in sig[activ]:
-                s = s.strip()
-               # print(s)
+                s = sf.str_byt.to_str(s)
                 if s == '': continue
                 if s in xv_names[0]:
                     sfiles.append(bolo_shotfiles[0])
@@ -107,7 +105,7 @@ class loader_diod_bolometers(loader):
                 self.groups.pop(self.groups.index(c))
                 continue
             self.signals[c] = list(zip(sig[activ], ch[activ], np.array(sfiles)))
-           
+
 
     def get_names(self,group):
         if group in self.signals:
@@ -127,7 +125,7 @@ class loader_diod_bolometers(loader):
      
         for name in names:
                 
-            for sig,ch,sfile in self.signals[group]:
+            for sig, ch, sfile in self.signals[group]:
                 if ch == int(name):
                     break
             
@@ -136,48 +134,34 @@ class loader_diod_bolometers(loader):
                 sf_open = sfile
                 tvec = sfo('Dio-Time')
                 offset_start = tvec.searchsorted(-.1)
-                offset_end = tvec.searchsorted(0)
+                offset_end   = tvec.searchsorted(0)
                 ind = slice(tvec.searchsorted(tmin), tvec.searchsorted(tmax))
-                tvec = tvec[ind]
+                tvec = tvec[ind].astype(np.float32)
 
-            offset = sfo.getobject(sig, nbeg=offset_start+1, nend=offset_end).mean().astype('int16')
-            signal = sfo.getobject(sig, nbeg=ind.start+1, nend=ind.stop)
+            offset = sfo.getobject(sig, cal=True, nbeg=offset_start+1, nend=offset_end).mean()
+            signal = sfo.getobject(sig, cal=True, nbeg=ind.start+1, nend=ind.stop)
             signal-= offset
-            
-            #the calibration was not sometimes avalible, backup option:
-            if  calib:
-                signal = np.float_(signal)
 
-                multi, shift = self.calibration[sig.strip()]
-                signal*= np.prod(multi)
-                offset = shift[0]
-                for m,s in zip(multi[1:],shift[1:]):
-                    offset = offset*m+s
-                signal+= offset
-            
-            data.append(signal)
-            
-        calib = True #BUG 
+            data.append(signal.astype(np.float32))
 
-        #corrections of the diod bolometers estimated by hand!
-        if calib:
-            if self.shot > 34000:
-                pass
-            elif self.shot > 31591:
-                pass
-            elif self.shot > 30135:
-                pass
-            elif self.shot > 28523:
-                pass
-            elif self.shot > 27352:
-                if group == 'DHC':
-                    ind = np.where(np.in1d(names, np.where(self.subcam_ind['DHC'][1])[0]))[0]
-                    for i in ind:  data[i]/= 1.05
-                    ind = np.where(np.in1d(names, np.where(self.subcam_ind['DHC'][2])[0]))[0]
-                    for i in ind:  data[i]*= 1.3
-                if group == 'DVC':
-                    ind = np.where(np.in1d(names, np.where(self.subcam_ind['DVC'][0])[0]))[0]
-                    for i in ind:  data[i]*= 1.1
+#corrections of the diod bolometers estimated by hand!
+        if self.shot > 34000:
+            pass
+        elif self.shot > 31591:
+            pass
+        elif self.shot > 30135:
+            pass
+        elif self.shot > 28523:
+            pass
+        elif self.shot > 27352:
+            if group == 'DHC':
+                ind = np.where(np.in1d(names, np.where(self.subcam_ind['DHC'][1])[0]))[0]
+                for i in ind:  data[i]/= 1.05
+                ind = np.where(np.in1d(names, np.where(self.subcam_ind['DHC'][2])[0]))[0]
+                for i in ind:  data[i]*= 1.3
+            if group == 'DVC':
+                ind = np.where(np.in1d(names, np.where(self.subcam_ind['DVC'][0])[0]))[0]
+                for i in ind:  data[i]*= 1.1
        
         if self.shot > 34000:
             if group == 'DHC' and 29 in names:
@@ -189,8 +173,8 @@ class loader_diod_bolometers(loader):
             return tvec, data[0]
         
         return [(tvec, d) for d in data]
-    
-        
+
+
     def get_names_phase(self):
 
         D = []
@@ -204,7 +188,7 @@ class loader_diod_bolometers(loader):
         indDVC,indD13  = np.arange(len(self.signals['DVC'])),np.argmin(D,1)
 
         return ['DVC-%.2d:D13-%.2d'%(i,j) for i,j in zip(indDVC,indD13)]
-       
+
     def get_signal_phase(self,name,calib=False,tmin=None,tmax=None):
         i = int(name[4:6])+1
         j = int(name[-2:])+1
@@ -215,26 +199,26 @@ class loader_diod_bolometers(loader):
 
         return tvec[:min_len], np.vstack((sig1[:min_len],sig2[:min_len])).T
 
-    def get_phi_tor(self,name):
-        i = int(name[4:6])
+    def get_phi_tor(self, name):
+        i = int(name[4: 6])
         j = int(name[-2:])
 
         return np.r_[self.Phi_['DVC'][i],self.Phi_start['D13'][j]]/180*np.pi
     
-    def get_rho(self,group,names,time,dR=0,dZ=0):
+    def get_rho(self, group, names, time, dR=0, dZ=0):
         
-        rho_tg,theta_tg, R,Z = super(loader_diod_bolometers,self).get_rho(time, 
-                            self.R_start[group],self.z_start[group],self.Phi_start[group],
-                            self.R_end[group],self.z_end[group],self.Phi_end[group],dR=dR,dZ=dZ)
-        
+        rho_tg, theta_tg, R, Z = super(loader_diod_bolometers,self).get_rho(time, 
+                            self.R_start[group], self.z_start[group], self.Phi_start[group],
+                            self.R_end[group], self.z_end[group], self.Phi_end[group], dR=dR, dZ=dZ)
+
         all_names = self.get_names(group)
        
         ind = np.where(np.in1d(  all_names, [int(n) for n in names]))
 
-        return rho_tg[ind],theta_tg[ind],R[ind],Z[ind]
+        return rho_tg[ind], theta_tg[ind], R[ind], Z[ind]
 
-    
-    def signal_info(self,group,name,time):
+
+    def signal_info(self, group, name, time):
 
         rho_tg = self.get_rho(group,[name,],time)[0]
                 
