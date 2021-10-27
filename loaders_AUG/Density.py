@@ -27,7 +27,7 @@ class loader_DCN(loader):
 
         super(loader_DCN,self).__init__(*args, **kargs)
         
-        self.groups = ['raw','unwrap']
+        self.groups = ['raw', 'unwrap']
         self.diag = 'FHC' if self.shot < 31700 else 'CON' 
         
         sfo = sf.SFREAD(self.diag, self.shot)
@@ -51,17 +51,17 @@ class loader_DCN(loader):
         self.z_end   = {s:dcngeo['H%sHFS_z'  %s[2]]/1e3 for s in self.signals}
 
         #values from diaggeom
-        self.R_start['V1'] = 1.785
-        self.R_end['V1'] =  1.785
+        self.R_start['V1'] =  1.785
+        self.R_end  ['V1'] =  1.785
         self.z_start['V1'] =  1.200
-        self.z_end['V1'] = -1.200
-        self.Phi['V1'] = np.nan
+        self.z_end  ['V1'] = -1.200
+        self.Phi    ['V1'] = np.nan
         
-        self.R_start['V2'] = 1.200
-        self.R_end['V2'] =  1.200
+        self.R_start['V2'] =  1.200
+        self.R_end  ['V2'] =  1.200
         self.z_start['V2'] =  1.200
-        self.z_end['V2'] = -1.200
-        self.Phi['V2'] = np.nan
+        self.z_end  ['V2'] = -1.200
+        self.Phi    ['V2'] = np.nan
         
         if self.diag == 'CON': self.signals+= ['V1','V2'] 
 
@@ -197,8 +197,8 @@ class loader_DCN(loader):
 
         if name[0] == 'H':  #DCN lasers
             tvec = sfo.gettimebase('DCN_'+name)
-            nbeg, nend = tvec.searchsorted((tmin,tmax))
-
+            nbeg, nend = tvec.searchsorted((tmin, tmax))
+            logger.debug('%s %.2f %.2f %.2f %.2f %d %d', self.diag, tvec[0], tvec[-1], tmin, tmax, nbeg, nend)
             sig = sfo.getobject('DCN_'+name, nbeg=nbeg, nend=nend-1 )
 
             tvec = tvec[nbeg:nend]

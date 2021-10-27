@@ -2,7 +2,7 @@ from .loader import *
 from scipy.interpolate import interp1d
 
 logger = logging.getLogger('pyspecview.ece')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 def check(shot):
@@ -44,6 +44,11 @@ class loader_ECE(loader):
         if rmc.status:
             self.shotfile = 'RMC' # new diag
             self.mixers = rmc('parms-A')['IFGROUP']
+            calib_shot = sf.previousshot('RMD', self.shot, exp=self.exp)
+            rmd = sf.SFREAD('RMD', calib_shot, experiment=self.exp, edition=self.ed)
+            self.names = np.where(rmd('parms-A')['AVAILABL'])[0] + 1
+            if 'rztime' in rmd.objects and calib_shot == self.shot:
+                new_rmd_shotfile = True
         elif rma.status:
             self.shotfile = 'RMA' # old diag
         elif rad.status:
@@ -56,14 +61,14 @@ class loader_ECE(loader):
 
         if self.mixers is None: # it was missing in old shotfiles 
             self.mixers = np.int_(np.r_[(1,)*36,(2,)*12, (3,)*12])
-            
+
         self.groups = ['mixer %d'%d for d in np.unique(self.mixers)]
 
         #get the final clalibration factors
-        if not new_rmd_shotfile:
-            sfo = sf.SFREAD('CEC', self.shot)
-        else:
+        if new_rmd_shotfile:
             sfo = sf.SFREAD('RMD', self.shot)
+        else:
+            sfo = sf.SFREAD('CEC', self.shot)
 
         self.RZtime = sfo('rztime')
         self.R = sfo('R-A')
@@ -117,15 +122,14 @@ class loader_ECE(loader):
             return data
 
         n = int(name)-1
-        sig_name = 'Trad-A1' if n < 30 else 'Trad-A2'
         
         #cache loaded Te data
         if n < 30:
             if not hasattr(self, 'TradA1'):
                 if self.shotfile == 'RMC':
                     rmc = sf.SFREAD(self.shotfile, self.shot, experiment=self.exp, edition=self.ed)
-                    self.tvecA1 = rmc.gettimebase(sig_name)
-                    self.TradA1 = rmc.getobject(sig_name, cal=True)
+                    self.tvecA1 = rmc.gettimebase('Trad-A1')
+                    self.TradA1 = rmc.getobject('Trad-A1', cal=True)
                     
                 if self.shotfile in ('RMA', 'RMB', 'RAD') :
                     if self.shotfile == 'RMA':
@@ -140,12 +144,12 @@ class loader_ECE(loader):
             if not hasattr(self, 'TradA2'):
                 if self.shotfile == 'RMC':
                     rmc = sf.SFREAD(self.shotfile, self.shot, experiment=self.exp, edition=self.ed)
-                    self.tvecA2 = rmc.gettimebase(sig_name)
-                    self.TradA2 = rmc.getobject(sig_name, cal=True)
+                    self.tvecA2 = rmc.gettimebase('Trad-A2')
+                    self.TradA2 = rmc.getobject('Trad-A2', cal=True)
                     
                 if self.shotfile in ('RMA', 'RMB', 'RAD') :
-                    if self.shotfile == 'RMA':
-                        self.shotfile = 'RMB'
+                    if self.shotfile == 'RMB':
+                        self.shotfile = 'RMA'
                     sfo = sf.SFREAD(self.shotfile, self.shot, experiment=self.exp, edition=self.ed)
                     self.tvecA2 = sfo.gettimebase('SI-MI-C')
                     self.TradA2 = np.hstack((sfo.getobject('SI-MI-C', cal=True), sfo.getobject('SI-MI-D', cal=True)))
@@ -153,6 +157,8 @@ class loader_ECE(loader):
             sig = self.TradA2[:, n-30]
 
         ioff, imin, imax = tvec.searchsorted((0, tmin, tmax))
+        logger.debug('len(tvec): %d, imin: %d, imax: %d, tmin: %.2f, tmax: %.2f', len(tvec), imin, imax, tmin, tmax)
+        print(tvec[0], tvec[-1])
         tvec = tvec[imin: imax].astype(np.float32)
         sig = sig[imin: imax].astype(np.float32)
         logger.debug('tvec-size: %d, sig-size: %d', len(tvec), len(sig))
