@@ -2522,9 +2522,10 @@ class MainGUI(QMainWindow):
         self.sig_names = self.data_loader.get_names(self.diag_group)
 
         self.cb_signal.clear()
-        self.cb_signal.addItem(' ') 
-        for n in self.sig_names:
-            self.cb_signal.addItem(str(n)) 
+        self.cb_signal.addItem(' ')
+        if self.sig_names is not None:
+            for n in self.sig_names:
+                self.cb_signal.addItem(str(n)) 
             
             
     def change_sig_group_radial(self, ind):
