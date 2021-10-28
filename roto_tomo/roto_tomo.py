@@ -31,7 +31,7 @@ except:
 from . import fconf
 
 logger = logging.getLogger('pyspecview.roto_tomo')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 from .SVDfilter import SVDFilter
 from sksparse.cholmod import cholesky, CholmodWarning, CholmodError

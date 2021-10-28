@@ -2,7 +2,7 @@ from .loader import *
 from scipy.signal import argrelmin
 
 logger = logging.getLogger('pyspecview.density')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 def check(shot):

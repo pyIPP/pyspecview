@@ -2,7 +2,7 @@ from .loader import *
 from scipy.interpolate import interp1d
 
 logger = logging.getLogger('pyspecview.ece')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 def check(shot):

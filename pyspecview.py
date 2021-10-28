@@ -1868,7 +1868,7 @@ class MainGUI(QMainWindow):
         self.data_loader = None
         self.data_loader_radial = None
         self.data_loader_phase = None
-        
+
         self.load_config()
         self.parent = parent
         self.MDSconn = None
@@ -3039,7 +3039,7 @@ class MainGUI(QMainWindow):
         self.QLinedR = QLineEdit(self.cWidget)
         self.QLinedZ = QLineEdit(self.cWidget)
         
-# git        self.load_config()
+#        self.load_config()
         self.QLinedR.setText(str(self.dR_corr))
         self.QLinedZ.setText(str(self.dZ_corr))
 
@@ -3585,7 +3585,7 @@ class MainGUI(QMainWindow):
             self.mds_server = None
             self.tokamak = 'AUG'
         logger.info('TOKAMAK = %s' %self.tokamak)
- 
+
         self.spect_cmap = config.get('spectrogram', 'spect_cmap')
         self.win_fun = config.get('spectrogram', 'win_fun')
         self.show_plasma_freq = config.get('spectrogram', 'show_plasma_freq').strip() == 'True'
@@ -3600,6 +3600,11 @@ class MainGUI(QMainWindow):
         self.rho_lbl = config.get('equilibrium', 'radial_coord').strip()
         self.dR_corr = float(config.get('equilibrium', 'dR'))
         self.dZ_corr = float(config.get('equilibrium', 'dz'))
+        if self.shot is None: # git
+            try:
+                self.shot = int(config.get('equilibrium', 'shot'))
+            except:
+                self.shot = None
 
         self.use_LFS_data = config.get('Diag2DMapping', 'use_LFS').strip() == 'True'
         self.phase_locked_tomo = config.get('Diag2DMapping', 'phase_locked').strip() == 'True'
