@@ -1,7 +1,8 @@
 from .loader import * 
+from scipy.signal import argrelmin
 
 logger = logging.getLogger('pyspecview.density')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 def check(shot):
@@ -44,11 +45,11 @@ class loader_DCN(loader):
         if 'H5LFSphi' not in dcngeo.keys():
             raise Exception('DCN geometry is not avalible')
 
-        self.Phi     = {s:dcngeo['H%sLFSphi' %s[2]]     for s in self.signals}
-        self.R_start = {s:dcngeo['H%sLFS_R'  %s[2]]/1e3 for s in self.signals}
-        self.z_start = {s:dcngeo['H%sLFS_z'  %s[2]]/1e3 for s in self.signals}
-        self.R_end   = {s:dcngeo['H%sHFS_R'  %s[2]]/1e3 for s in self.signals}
-        self.z_end   = {s:dcngeo['H%sHFS_z'  %s[2]]/1e3 for s in self.signals}
+        self.Phi     = {s: dcngeo['H%sLFSphi' %s[2]]     for s in self.signals}
+        self.R_start = {s: dcngeo['H%sLFS_R'  %s[2]]/1e3 for s in self.signals}
+        self.z_start = {s: dcngeo['H%sLFS_z'  %s[2]]/1e3 for s in self.signals}
+        self.R_end   = {s: dcngeo['H%sHFS_R'  %s[2]]/1e3 for s in self.signals}
+        self.z_end   = {s: dcngeo['H%sHFS_z'  %s[2]]/1e3 for s in self.signals}
 
         #values from diaggeom
         self.R_start['V1'] =  1.785
@@ -66,7 +67,7 @@ class loader_DCN(loader):
         if self.diag == 'CON': self.signals+= ['V1','V2'] 
 
 
-    def unwrap_ne(self,tvec, sig,ref):
+    def unwrap_ne(self,tvec, sig, ref):
         #remove referece signal and get unwraped phase
         #BUG slow!!
         
@@ -76,6 +77,7 @@ class loader_DCN(loader):
         from numpy import random
 
         logger.info('Unwrapping DCN...')
+        logger.debug('Unwrap: %d %d %d', len(ref), len(sig), len(tvec))
         #preprocess signals
         sig = np.single(sig)
         sig -= np.mean(sig)
@@ -94,46 +96,26 @@ class loader_DCN(loader):
         #idenitify an envelope
         N = int(round(1/dt/5e4))
 
-        def loc_max(sig,N):
-            #find local maxima (much fastter than argrelmin)
-            imax = np.argmax(sig[:len(sig)//(2*N)*(2*N)].reshape(-1,2*N),axis=1)
-            ind = ~((imax==0)|(imax==2*N-1))
-            ind |= (imax==0) & (np.r_[0,imax[:-1]]==2*N-1)
-            imax = imax[ind]+np.arange(len(ind))[ind]*2*N
-    
-            iimaxL =  ( np.r_[np.diff(imax)] < N )  
-            iimaxR =  ( np.r_[N,np.diff(imax)[:-1]] < N )  
-            comp_ind = sig[imax][:-1][iimaxL]<sig[imax][:-1][iimaxR]
-            iimaxL[iimaxL] &= comp_ind
-            iimaxR[iimaxR] &= ~comp_ind
-            iimax = iimaxL|iimaxR
-            imax = imax[:-1][~iimax]
-            return imax
-        
-        pos = loc_max(sig,N)
-        max_sig = np.interp(np.arange(len(tvec)),pos, sig[pos])
+        pos = argrelmax(sig, order=N)[0]
+        max_sig = np.interp(np.arange(len(tvec)), pos, sig[pos])
 
-        pos = loc_max(-sig,N)
-        min_sig = np.interp(np.arange(len(tvec)),pos, sig[pos])
-        
+        pos = argrelmax(-sig, order=N)[0]
+        min_sig = np.interp(np.arange(len(tvec)), pos, sig[pos])
 
-        pos = loc_max(ref,N)
+        pos = argrelmax(ref, order=N)[0]
+        max_ref = np.interp(np.arange(len(tvec)), pos, ref[pos])
 
-        max_ref = np.interp(np.arange(len(tvec)),pos, ref[pos])
-
-        pos = loc_max(-ref,N)
-
-        min_ref = np.interp(np.arange(len(tvec)),pos, ref[pos])
+        pos = argrelmax(-ref, order=N)[0]
+        min_ref = np.interp(np.arange(len(tvec)), pos, ref[pos])
 
         #normalize for unitary envelope (BUG can introduce fake higher harminics!!!!)
         sig = (sig-(max_sig+min_sig)/2)/(max_sig-min_sig)*2
         ref = (ref-(max_ref+min_ref)/2)/(max_ref-min_ref)*2
 
-        ref[ref>1] = 1-1e-6
+        ref[ref> 1] =  1-1e-6
         ref[ref<-1] = -1+1e-6
-        sig[sig>1] = 1-1e-6
+        sig[sig> 1] =  1-1e-6
         sig[sig<-1] = -1+1e-6
-
 
         #unwrap reference phase
         ref = np.arcsin(ref,ref)
@@ -199,13 +181,13 @@ class loader_DCN(loader):
             tvec = sfo.gettimebase('DCN_'+name)
             nbeg, nend = tvec.searchsorted((tmin, tmax))
             logger.debug('%s %.2f %.2f %.2f %.2f %d %d', self.diag, tvec[0], tvec[-1], tmin, tmax, nbeg, nend)
-            sig = sfo.getobject('DCN_'+name, nbeg=nbeg, nend=nend-1 )
+            sig = sfo.getobject('DCN_'+name, nbeg=nbeg, nend=nend)
 
             tvec = tvec[nbeg:nend]
             
             if group == 'unwrap':  #it will also increase noise and small modes can be lost
-                ref = sfo.getobject('DCN_ref', nbeg=nbeg, nend=nend-1)
-                sig = self.unwrap_ne(tvec, sig,ref)
+                ref = sfo.getobject('DCN_ref', nbeg=nbeg, nend=nend)
+                sig = self.unwrap_ne(tvec, sig, ref)
 
         elif name[0] == 'V':  #CO2 lasers
             n = int(name[-1])
