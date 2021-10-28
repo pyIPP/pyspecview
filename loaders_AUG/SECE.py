@@ -20,10 +20,10 @@ def check(shot):
     shotfiles = 'CTA', 'CTC'
     for s in shotfiles:
         path = shot_path+'%d/XX/%s/%d'
-        status |= os.path.isfile(path%(shot//10,s,shot))
+        status |= os.path.isfile(path%(shot//10, s, shot))
 
     path = shot_path+'%d/L0/%s/%d'
-    status |= os.path.isfile(path%(shot//10,'IEC',shot))
+    status |= os.path.isfile(path%(shot//10, 'IEC', shot))
     
     return status
 
@@ -35,9 +35,9 @@ class loader_SECE(loader):
 
     radial_profile=True
 
-    def __init__(self,*args, **kargs):
+    def __init__(self, *args, **kargs):
         
-        super(loader_SECE,self).__init__(*args, **kargs)
+        super(loader_SECE, self).__init__(*args, **kargs)
 
         self.Resonances = {}
 
@@ -50,7 +50,7 @@ class loader_SECE(loader):
             try:
                 self.Resonances['CTA'] = get_cold_resonances_S_ECE(self.shot, "CTA")
             except Exception as e:
-                print( e)
+                logger.error(str(e))
 
         ctc = sf.SFREAD('CTC', self.shot)
         if ctc.status:
@@ -59,7 +59,7 @@ class loader_SECE(loader):
             try:
                 self.Resonances['CTC'] = get_cold_resonances_S_ECE(self.shot, "CTC")
             except Exception as e:
-                print( e)
+                logger.info(str(e))
 
         iec = sf.SFREAD('IEC', self.shot)
         if iec.status:
@@ -68,7 +68,7 @@ class loader_SECE(loader):
             try:
                 self.Resonances['IEC'] = get_cold_resonances_S_ECE(self.shot, "IEC")
             except Exception as e:
-                print( e)
+                logger.info(str(e))
                 
         self.groups = list(self.names.keys())
 
@@ -77,12 +77,12 @@ class loader_SECE(loader):
         logger.info( 'initialized')
 
 
-    def get_names(self,group):
+    def get_names(self, group):
         return self.names[group]
     
     def get_signal(self, group, name, calib=False, tmin=None, tmax=None):
         
-        if isinstance(name,str):
+        if isinstance(name, str):
             names = (name, )
         else:  names = name
         
@@ -93,7 +93,7 @@ class loader_SECE(loader):
         if not self.shotfile == group:
             sfo = sf.SFREAD(group, self.shot, experiment=self.exp, edition=self.ed)
         tvec = sfo.gettimebase(names[0])
-        noff, nbeg, nend = tvec.searchsorted((0,tmin,tmax))
+        noff, nbeg, nend = tvec.searchsorted((0, tmin, tmax))
         self.shotfile =  group
 
         out = []
@@ -101,9 +101,9 @@ class loader_SECE(loader):
             sig = sfo.getobject(n, cal=calib, nbeg=nbeg, nend=nend)
             if calib:
                 sig -= sfo.getobject(n, cal=calib, nend=noff+10).mean()
-                if group in ('CTA','CTC'):  sig*= -1
+                if group in ('CTA', 'CTC'):  sig*= -1
                 
-            out.append([tvec[nbeg:nend+1],sig])
+            out.append([tvec[nbeg:nend+1], sig])
   
         if len(names) == 1: return  out[0]
         
@@ -112,9 +112,9 @@ class loader_SECE(loader):
 
     def signal_info(self, group, name, time):
 
-        rho,theta,R,z = self.get_rho(group,[name,],time)
+        rho, theta, R, z = self.get_rho(group, [name, ], time)
 
-        info = 'ch: '+str(name)+'  R:%.3fm   z:%.3fm  '%(R,z)+self.rho_lbl+': %.3f'%rho
+        info = 'ch: '+str(name)+'  R:%.3fm   z:%.3fm  '%(R, z)+self.rho_lbl+': %.3f'%rho
         return info
     
 
@@ -126,63 +126,58 @@ class loader_SECE(loader):
 
         ch_num = []
         for n in names:
-            for  i,a in enumerate(self.names[group]):
+            for  i, a in enumerate(self.names[group]):
                 if a == n: ch_num.append(i)
         
         logger.info('get resonance positions')
 
         if group in self.Resonances:
-            R,z = self.Resonances[group](time, self.eqm.Rmesh[0], self.eqm.Rmesh[-1],
+            R, z = self.Resonances[group](time, self.eqm.Rmesh[0], self.eqm.Rmesh[-1], 
                                                self.eqm.Zmesh[0], self.eqm.Zmesh[-1], B_spl, ch_num)
         else:
-            R,z = zeros_like(ch_num),zeros_like(ch_num)
+            R, z = zeros_like(ch_num), zeros_like(ch_num)
 
         r0 = np.interp(time, self.eqm.time, self.eqm.Rmag) + dR
         z0 = np.interp(time, self.eqm.time, self.eqm.Zmag) + dZ
 
-        return R,z, np.arctan2(z-z0, R-r0)
+        return R, z, np.arctan2(z-z0, R-r0)
 
 
     def get_rho(self, group, names, time, dR=0, dZ=0):
 
-        print('SECE:get_rho', time)
-        print(self.tmax)
-        print(self.tmin)
+        logger.info('SECE: get_rho %.2f %.2f %.2f', time, self.tmax, self.tmin)
         time = max(min(time, self.tmax), self.tmin)
 
-        R,z,theta = self.get_RZ_theta(time,group,names,dR=dR,dZ=dZ)
+        R, z, theta = self.get_RZ_theta(time, group, names, dR=dR, dZ=dZ)
 
         rho = sf.rz2rho(self.eqm, R-dR, z-dZ, time, coord_out = self.rho_lbl)[0]
-
-        r0 = np.interp(time, self.eqm.time, self.eqm.Rmag)+dR
-
-        R = np.atleast_1d( R)
-
+        r0 = np.interp(time, self.eqm.time, self.eqm.Rmag) + dR
+        R = np.atleast_1d(R)
         rho[R < r0] *= -1
 
-        return rho,theta,R,z
+        return rho, theta, R, z
 
 
 import ctypes as ct
 libECRHso = '/afs/ipp/u/ecrh/lib/libaug_ecrh_setmirrors.so'
-from scipy.interpolate import InterpolatedUnivariateSpline ,RectBivariateSpline
+from scipy.interpolate import InterpolatedUnivariateSpline , RectBivariateSpline
 import numpy as np
 import datetime
 # NOTE: This routine is not compatible with ECRH 3, yet.
 # Contact S. Denk for a new version.
 
-gy_pos_x = np.r_[(2.380,)*2,(2.311,)*2, (2.361,)*4]
-gy_pos_y = 0.,0.,-0.075,0.075,-0.115,0.115,0.115,-0.115
-gy_sect  = np.r_[(7.,)*4, (4.5,)*4]
-gy_pos_z = np.r_[(0.,)*4,(0.32025,)*2, (-0.32025,)*2]
-gy_curv_y_105 = np.r_[(0.8793,)*2,(2.9664,)*2,(1.1700,)*4 ]
-gy_curv_y_140 = np.r_[(0.8793,)*2,(2.9664,)*2,(0.8540,)*4 ]
-gy_curv_z_105 = np.r_[(0.8793,)*2,(2.9664,)*2,(1.1700,)*4 ]
-gy_curv_z_140 = np.r_[(0.8793,)*2,(2.9664,)*2,(0.8540,)*4 ]
-gy_width_y_105= np.r_[(0.0364,)*2,(0.0329,)*2,(0.0229,)*4 ]
-gy_width_y_140= np.r_[(0.0364,)*2,(0.0329,)*2,(0.017, )*4 ]
-gy_width_z_105= np.r_[(0.0364,)*2,(0.0329,)*2,(0.0229,)*4 ]
-gy_width_z_140= np.r_[(0.0364,)*2,(0.0329,)*2,(0.017, )*4 ]
+gy_pos_x = np.r_[(2.380, )*2, (2.311, )*2, (2.361, )*4]
+gy_pos_y = 0., 0., -0.075, 0.075, -0.115, 0.115, 0.115, -0.115
+gy_sect  = np.r_[(7., )*4, (4.5, )*4]
+gy_pos_z = np.r_[(0., )*4, (0.32025, )*2, (-0.32025, )*2]
+gy_curv_y_105 = np.r_[(0.8793, )*2, (2.9664, )*2, (1.1700, )*4 ]
+gy_curv_y_140 = np.r_[(0.8793, )*2, (2.9664, )*2, (0.8540, )*4 ]
+gy_curv_z_105 = np.r_[(0.8793, )*2, (2.9664, )*2, (1.1700, )*4 ]
+gy_curv_z_140 = np.r_[(0.8793, )*2, (2.9664, )*2, (0.8540, )*4 ]
+gy_width_y_105= np.r_[(0.0364, )*2, (0.0329, )*2, (0.0229, )*4 ]
+gy_width_y_140= np.r_[(0.0364, )*2, (0.0329, )*2, (0.017, )*4 ]
+gy_width_z_105= np.r_[(0.0364, )*2, (0.0329, )*2, (0.0229, )*4 ]
+gy_width_z_140= np.r_[(0.0364, )*2, (0.0329, )*2, (0.017, )*4 ]
 
 
 gy_name = np.array(['ECRH1_1', 'ECRH1_2', 'ECRH1_3', 'ECRH1_4', \
@@ -203,7 +198,7 @@ class libECRH_wrapper:
         error.value = 0
         ct_theta_pol = ct.c_double(a)
         ct_phi_tor = ct.c_double(beta)
-        # print(a, beta)
+
         try:
             libECRH = ct.cdll.LoadLibrary(libECRHso)
             libECRH.setval2tp_(ct.byref(error), ct.byref(ct_gy), ct.byref(ct_theta_pol), ct.byref(ct_phi_tor), ct.byref(self.date))
@@ -212,13 +207,11 @@ class libECRH_wrapper:
             raise Exception('ECRH library %s was not found'%libECRHso)
         
         if(error.value != 0):
-            print(("Encountered error ", error.value))
+            logger.error('Encountered error %d', error.value)
             if(np.abs(error.value) == 102 or np.abs(error.value) == 2):
-                # print(a, beta)
                 gy_obj.error = -1
         theta_pol = ct_theta_pol.value
         phi_tor = ct_phi_tor.value  # note - phi tor changes during poloidal sweep
-        # print(theta_pol, phi_tor)
         return theta_pol, phi_tor
 
 
@@ -254,16 +247,16 @@ class gyrotron:
             self.width_z = gy_width_z_105[N - 1]
         elif(self.f < 5.e9 and not view):
             self.avail = False
-            print(("Gyrotron " + self.name + " not available"))
+            logger.warning('Gyrotron %s not available' %self.name)
             self.error = -1
             return
         elif(not view):
-            print(("Found gyrotron with f = {0:1.3e}".format(self.f) , ", which is currently not supported"))
+            logger.warning('Found gyrotron with freq=%.2f which is currently not supported', self.f)
             self.error = -1
             return
-        if(self.curv_y == 0.e0):
-                print("Zero encountered in curvature")
-                print("Error!: Gyrotron data not properly read")
+        if self.curv_y == 0.:
+            logger.error('Zero encountered in curvature')
+            logger.error('Gyrotron data not properly read')
         self.avail = True
         if(N < 4):
             self.a    = gyro_pset['GPolPos'] * 1000
@@ -285,20 +278,20 @@ class gyrotron:
             a_ECS    = gyro_pset['GPolPos'] * 1000
             beta_ECS = gyro_pset['GTorPos']
             if(np.abs(a - a_ECS) > 0.1):
-                print("WARNING ECS and SUCOMDAT do not hold same spindle position")
-                print(("ECS, SUCOMDAT", a, ",", a_ECS))
+                logger.error('ECS vs SUCOMDAT: different spindle position')
+                logger.error('ECS: %.2f, SUCOMDAT: %.2f', a, a_ECS)
                 raise ValueError
             if(np.abs(beta - beta_ECS) > 0.1):
-                print("WARNING ECS and SUCOMDAT do not hold same toroidal launching angle")
-                print(("ECS, SUCOMDAT", a, ",", a_ECS))
+                logger.error('ECS vs SUCOMDAT: different toroidal launching angle')
+                logger.error('ECS: %.2f, SUCOMDAT: %.2f', a, a_ECS)
                 raise ValueError
-        # print("a and beta", a, beta)
+
         if(N < 4):
             gy = 100 + N
         elif(N < 9):
             gy = 200 + N - 4
         else:
-            print("Gy > 8 not supported")
+            logger.warning('Gy > 8 not supported')
             self.error = -1
         if(N < 5):
             self.time = ECS('T-B')
@@ -309,20 +302,15 @@ class gyrotron:
 
             self.time = ECN('T-Base')
             self.a_t = ECN("G{0:n}POL".format(N_2)) * 10.0
-            # self.a_t = self.a_t - self.a_t[0] + a  # Treat last a_t as offset and replace it with a from SUCOMDAT
+
             a_t_0 = self.a_t[0]
             self.a_t = self.a_t - self.a_t[0] + a_ECS  # Treat last a_t as offset and replace it with a from ECS
-            #print("Offset correction:", (a_ECS - a_t_0))
-            # beta_t = ECN.GetSignalCalibrated("G{0:n}TOR".format(N_2))[0]  # should not change
-            # self.time = DDS.GetTimebase('ProtTime')
-            # a_t = DDS.GetSignal("XECRH{0:n}G{1:n}".format(N / 2, N_2)) * 1000.0
-            # According to M. Reich this is most likely not necessary, but it shouldn't be wrong either
-            # According to M. Schubert the offset might also drift. Hence, it might be a good idea to get the value at the beginning and at the end of the
-            # discharge
+# According to M. Schubert the offset might also drift
+# -> get the value at the beginning and at the end of the discharge
             self.beta_t = np.zeros(len(self.a_t))
-            # Changes is beta during discharge not supported
+# Changes is beta during discharge not supported
             self.beta_t[:] = beta
-            # Treat inital error as offset beta_t - beta_t[0] +
+# Treat inital error as offset beta_t - beta_t[0] +
             PW = np.double(ECS("PG{0:n}N".format(N_2)))
             pw_spline = InterpolatedUnivariateSpline(time, PW)
             self.PW = pw_spline(self.time)
@@ -331,15 +319,14 @@ class gyrotron:
             else:
                 self.avail = np.any(self.PW > 5.e3)
             if not self.avail:
-                print(("Gyrotron " + self.name + " not active"))
+                logger.error('Gyrotron %s not active', self.name)
                 return
             self.theta_pol = np.zeros(len(self.time))
             self.phi_tor = np.zeros(len(self.time))
             for i in range(len(self.time)):
                 self.theta_pol[i], self.phi_tor[i] = libECRH_obj.setval2tp(self, gy, self.a_t[i], self.beta_t[i])
-            # plt.plot(self.time, self.theta_pol)
         else:
-            print(("ECRH3 not supported, yet - contact S. Denk --", str(N) , " > 8"))
+            logger.warning('Gy > 8 not supported')
 
 
 def get_ECRH_viewing_angles(shot, LOS_no):
@@ -379,34 +366,34 @@ def get_freqs(shot, diag):
 
     return f
 
+
 class Diag:
+
     def __init__(self, name, exp, diag_str, ed):
+
         self.name = name
         self.exp = exp
         self.diag = diag_str
         self.ed = ed
 
 
-
-
 class get_cold_resonances_S_ECE:
 
-    def __init__(self,shot,diag_name ):
+    def __init__(self, shot, diag_name ):
 
         self.shot = shot
         self.diag_name = diag_name
         
-        if(diag_name == "CTC" or diag_name == "IEC"):
+        if (diag_name == "CTC" or diag_name == "IEC"):
             beamline = 5
-        elif(diag_name == "CTA"):
+        elif diag_name == "CTA":
             beamline = 6
         else:
-            print(("Unknown Diag name: {0:s}".format(diag_name)))
-            raise ValueError("Unknown Diag name: {0:s}".format(diag_name))
+            logger.error('Unknown Diag name: %s', diag_name)
+            raise ValueError
             
         self.gy = get_ECRH_viewing_angles(shot, beamline)
 
-    
 
     def __call__(self, time, R_min, R_max, z_min, z_max, B_spline, ch_no, exp="AUGD", diag="None", ed=0):
     # B_spline is expected to be a UnivariateSpline of the total magnetic field
@@ -414,12 +401,10 @@ class get_cold_resonances_S_ECE:
 
         import scipy.constants as cnst
 
-
         diagnostic = Diag(self.diag_name, exp, diag, ed)
         f = get_freqs(self.shot, diagnostic) 
 
-
-        x = self.gy.x, self.gy.y,self.gy.z
+        x = self.gy.x, self.gy.y, self.gy.z
         norm = np.hypot(self.gy.R , self.gy.z)
         t1 = np.argmin(np.abs(self.gy.time - time + 0.005))
         t2 = np.argmin(np.abs(self.gy.time - time - 0.005))

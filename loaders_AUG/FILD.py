@@ -22,13 +22,13 @@ def check(shot):
 
 class loader_FILD(loader):
 
-    def __init__(self,*args, **kargs):
+    def __init__(self, *args, **kargs):
         
-        super(loader_FILD,self).__init__(*args, **kargs)
+        super(loader_FILD, self).__init__(*args, **kargs)
 
         self.names = {}
         for shotfile in shotfiles:
-            fil = sf.SFREAD(shotfile,self.shot)
+            fil = sf.SFREAD(shotfile, self.shot)
             if fil.status:
                 names = fil.getlist()  
                 names = [n for n in names if n[:2] == 'FI']
@@ -36,10 +36,10 @@ class loader_FILD(loader):
                 
         self.groups = list(self.names.keys())
 
-    def get_names(self,group):
+    def get_names(self, group):
         return self.names[group]
     
-    def get_signal(self,group, name,calib=False,tmin=None,tmax=None):
+    def get_signal(self, group, name, calib=False, tmin=None, tmax=None):
 
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
@@ -47,12 +47,12 @@ class loader_FILD(loader):
         self.shotfile =  group
         sfo = sf.SFREAD(group, self.shot, experiment=self.exp, edition=self.ed)
         tvec = sfo.gettimebase(name)
-        nbeg, nend = tvec.searchsorted((tmin,tmax))
+        nbeg, nend = tvec.searchsorted((tmin, tmax))
 
         sig = sfo.getobject(name, cal=calib, nbeg=nbeg, nend=nend)
 
-        return tvec[nbeg:nend+1],sig
+        return tvec[nbeg:nend+1], sig
 
-    def signal_info(self,group,name,time):
+    def signal_info(self, group, name, time):
         info = group+': '+name
         return info

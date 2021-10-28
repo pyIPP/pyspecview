@@ -18,13 +18,13 @@ def check(shot):
 
 class loader_diod_bolometers(loader):
     tor_mode_num = False  #it was useless
-    n_mode_range = (1,2)
+    n_mode_range = (1, 2)
     radial_profile = True
     units = 'W/m$^2$'
 
-    def __init__(self,*args, **kargs):
+    def __init__(self, *args, **kargs):
 
-        super(loader_diod_bolometers,self).__init__(*args, **kargs)
+        super(loader_diod_bolometers, self).__init__(*args, **kargs)
 
         bolo_shotfiles = 'XVR', 'XVS'#, 'XVT'
 
@@ -109,16 +109,16 @@ class loader_diod_bolometers(loader):
             self.signals[c] = list(zip(sig[activ], ch[activ], np.array(sfiles)))
 
 
-    def get_names(self,group):
+    def get_names(self, group):
         if group in self.signals:
             return sorted([int(ch) for sig, ch, sfile in self.signals[group]])
         else:
             logger.error('Bolometry: no active data for shotfile %s' %group)
 
 
-    def get_signal(self,group, names, calib=False, tmin=None, tmax=None):
-        if isinstance(names,str) or not  hasattr(names, '__iter__'):
-            names = (names,)
+    def get_signal(self, group, names, calib=False, tmin=None, tmax=None):
+        if isinstance(names, str) or not  hasattr(names, '__iter__'):
+            names = (names, )
         
         sf_open = None
         data = []
@@ -180,37 +180,37 @@ class loader_diod_bolometers(loader):
     def get_names_phase(self):
 
         D = []
-        for r1,z1,r2,z2 in zip(self.R_start['DVC'],self.z_start['DVC'],self.R_end['DVC'],self.z_end['DVC']):
+        for r1, z1, r2, z2 in zip(self.R_start['DVC'], self.z_start['DVC'], self.R_end['DVC'], self.z_end['DVC']):
             X1 = r1-(r2-r1)/(z2-z1)*z1
             D.append([])
-            for r1,z1,r2,z2 in zip(self.R_start['D13'],self.z_start['D13'],self.R_end['D13'],self.z_end['D13']):
+            for r1, z1, r2, z2 in zip(self.R_start['D13'], self.z_start['D13'], self.R_end['D13'], self.z_end['D13']):
                 X2 = r1-(r2-r1)/(z2-z1)*z1
                 D[-1].append(abs(X1-X2))  #distance of cross-setions with midplane 
 
-        indDVC,indD13  = np.arange(len(self.signals['DVC'])),np.argmin(D,1)
+        indDVC, indD13  = np.arange(len(self.signals['DVC'])), np.argmin(D, 1)
 
-        return ['DVC-%.2d:D13-%.2d'%(i,j) for i,j in zip(indDVC,indD13)]
+        return ['DVC-%.2d:D13-%.2d'%(i, j) for i, j in zip(indDVC, indD13)]
 
-    def get_signal_phase(self,name,calib=False,tmin=None,tmax=None):
+    def get_signal_phase(self, name, calib=False, tmin=None, tmax=None):
         i = int(name[4:6])+1
         j = int(name[-2:])+1
 
-        tvec , sig1 = self.get_signal('DVC', i,calib=calib,tmin=tmin,tmax=tmax)
-        tvec2, sig2 = self.get_signal('D13', j,calib=calib,tmin=tmin,tmax=tmax)
+        tvec , sig1 = self.get_signal('DVC', i, calib=calib, tmin=tmin, tmax=tmax)
+        tvec2, sig2 = self.get_signal('D13', j, calib=calib, tmin=tmin, tmax=tmax)
         min_len = min(len(sig1), len(sig2))
 
-        return tvec[:min_len], np.vstack((sig1[:min_len],sig2[:min_len])).T
+        return tvec[:min_len], np.vstack((sig1[:min_len], sig2[:min_len])).T
 
     def get_phi_tor(self, name):
         i = int(name[4: 6])
         j = int(name[-2:])
 
-        return np.r_[self.Phi_['DVC'][i],self.Phi_start['D13'][j]]/180*np.pi
+        return np.r_[self.Phi_['DVC'][i], self.Phi_start['D13'][j]]/180*np.pi
     
     def get_rho(self, group, names, time, dR=0, dZ=0):
         
-        rho_tg, theta_tg, R, Z = super(loader_diod_bolometers,self).get_rho(time, 
-                            self.R_start[group], self.z_start[group], self.Phi_start[group],
+        rho_tg, theta_tg, R, Z = super(loader_diod_bolometers, self).get_rho(time, 
+                            self.R_start[group], self.z_start[group], self.Phi_start[group], 
                             self.R_end[group], self.z_end[group], self.Phi_end[group], dR=dR, dZ=dZ)
 
         all_names = self.get_names(group)
@@ -222,12 +222,12 @@ class loader_diod_bolometers(loader):
 
     def signal_info(self, group, name, time):
 
-        rho_tg = self.get_rho(group,[name,],time)[0]
+        rho_tg = self.get_rho(group, [name, ], time)[0]
                 
         all_names = self.get_names(group)
        
         ind = all_names.index(name)
 
         phi = self.Phi_start[group][ind] 
-        info = group+' '+str(name)+' Phi: %d deg, rho_tg: %.3f'%(phi,rho_tg)
+        info = group+' '+str(name)+' Phi: %d deg, rho_tg: %.3f'%(phi, rho_tg)
         return info

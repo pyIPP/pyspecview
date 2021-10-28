@@ -12,10 +12,10 @@ def check(shot):
 
     status = False
     path = shot_path+'/%d/L0/CON/%d'
-    status |= os.path.isfile(path%(shot//10,shot))
+    status |= os.path.isfile(path%(shot//10, shot))
     
     path = shot_path+'/%d/XX/FHC/%d'
-    status |= os.path.isfile(path%(shot//10,shot))&(shot>30150)&(shot<31700)
+    status |= os.path.isfile(path%(shot//10, shot))&(shot>30150)&(shot<31700)
     
     return status
 
@@ -24,9 +24,9 @@ class loader_DCN(loader):
 
     radial_profile=True
 
-    def __init__(self,*args, **kargs):
+    def __init__(self, *args, **kargs):
 
-        super(loader_DCN,self).__init__(*args, **kargs)
+        super(loader_DCN, self).__init__(*args, **kargs)
         
         self.groups = ['raw', 'unwrap']
         self.diag = 'FHC' if self.shot < 31700 else 'CON' 
@@ -37,7 +37,7 @@ class loader_DCN(loader):
 
         dcn = sf.SFREAD('DCN', self.shot)
 
-        self.signals = [s for s in dcn.objects if s[0] in ('H',)] 
+        self.signals = [s for s in dcn.objects if s[0] in ('H', )] 
 
         self.signals.sort()
  
@@ -64,16 +64,16 @@ class loader_DCN(loader):
         self.z_end  ['V2'] = -1.200
         self.Phi    ['V2'] = np.nan
         
-        if self.diag == 'CON': self.signals+= ['V1','V2'] 
+        if self.diag == 'CON': self.signals+= ['V1', 'V2'] 
 
 
-    def unwrap_ne(self,tvec, sig, ref):
+    def unwrap_ne(self, tvec, sig, ref):
         #remove referece signal and get unwraped phase
         #BUG slow!!
         
         #not working for 32427, H1, why? 
         
-        from scipy.signal import argrelmax,argrelmin,argrelextrema
+        from scipy.signal import argrelmax, argrelmin, argrelextrema
         from numpy import random
 
         logger.info('Unwrapping DCN...')
@@ -118,7 +118,7 @@ class loader_DCN(loader):
         sig[sig<-1] = -1+1e-6
 
         #unwrap reference phase
-        ref = np.arcsin(ref,ref)
+        ref = np.arcsin(ref, ref)
 
         ref_sign = np.ones_like(ref)
         ref_sign[np.abs(ref) == np.pi/2] = -1
@@ -129,7 +129,7 @@ class loader_DCN(loader):
         ref*= np.sign(np.mean(ref))
 
         #unwrap signal phase
-        sig = np.arcsin(sig,sig)
+        sig = np.arcsin(sig, sig)
 
         sig_sign = np.ones_like(sig)
         sig_sign[np.abs(sig) == np.pi/2] = -1
@@ -141,11 +141,11 @@ class loader_DCN(loader):
         sig*= sign_sig
 
         #remove phase jumps and some low frequency information
-        knots,vals = [],[]
-        ind_knots = np.r_[0:len(tvec):N*1000,-1]
+        knots, vals = [], []
+        ind_knots = np.r_[0:len(tvec):N*1000, -1]
         peaks = np.infty
-        ind = slice(None,None)
-        dsig,tvec_ = ref-sig,tvec
+        ind = slice(None, None)
+        dsig, tvec_ = ref-sig, tvec
         for i in range(7):
             if not np.any(peaks>11):
                 break
@@ -155,7 +155,7 @@ class loader_DCN(loader):
             retrofit = np.interp(tvec_, np.array(knots)[sort_ind], np.array(vals)[sort_ind])
             peaks = np.abs(dsig-retrofit)
             ind = peaks>10
-            ind_knots = argrelmax(peaks[ind],0,100)[0]
+            ind_knots = argrelmax(peaks[ind], 0, 100)[0]
             dsig = dsig[ind]
             tvec_ = tvec_[ind]
 
@@ -167,13 +167,13 @@ class loader_DCN(loader):
         return np.single(dn)
 
 
-    def get_signal(self, group, name,calib=False,tmin=None,tmax=None):
+    def get_signal(self, group, name, calib=False, tmin=None, tmax=None):
 
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
             
         if np.size(name) > 1:
-            return [self.get_signal(group, n, calib=calib, tmin=tmin,tmax=tmax) for n in name]
+            return [self.get_signal(group, n, calib=calib, tmin=tmin, tmax=tmax) for n in name]
         
         sfo = sf.SFREAD(self.diag , self.shot, experiment=self.exp, edition=self.ed)
 
@@ -198,17 +198,17 @@ class loader_DCN(loader):
             cos_2 = sfo.getobject('V%dCOPh2' %n, cal=True) - 1
             #sin_1 = self.dd.GetSignalCalibrated('V%dHePh1'%n)-1
             sin_2 = sfo.getobject('V%dCOPh1' %n, cal=True) - 1
-            #phi1  = unwrap(np.arctan2(cos_1,sin_1))
-            phi2  = np.unwrap(np.arctan2(cos_2,sin_2)) #this signal has stronger mode signal
+            #phi1  = unwrap(np.arctan2(cos_1, sin_1))
+            phi2  = np.unwrap(np.arctan2(cos_2, sin_2)) #this signal has stronger mode signal
             sig = phi2[:min(len(phi2), len(tvec))]
             #sig2 = phi1[:min(len(phi1), len(tvec))]
 
             tvec = tvec[:len(sig)]
 
-        return tvec,sig
+        return tvec, sig
 
     
-    def get_names(self,group):
+    def get_names(self, group):
       
         return self.signals
 
@@ -221,17 +221,17 @@ class loader_DCN(loader):
         z_end   = np.array([self.z_end  [name] for name in names])
         Phi     = np.array([self.Phi    [name] for name in names])
 
-        rho_tg,theta_tg, R,Z = super(loader_DCN,self).get_rho(time,R_start,z_start, \
-                                        Phi,R_end,z_end,Phi,dR=dR,dZ=dZ)
+        rho_tg, theta_tg, R, Z = super(loader_DCN, self).get_rho(time, R_start, z_start, \
+                                        Phi, R_end, z_end, Phi, dR=dR, dZ=dZ)
 
-        return rho_tg,theta_tg,R,Z
+        return rho_tg, theta_tg, R, Z
 
         
-    def signal_info(self,group,name,time):
+    def signal_info(self, group, name, time):
         
-        rho_tg = self.get_rho(group,[name,],time)[0]
+        rho_tg = self.get_rho(group, [name, ], time)[0]
         
         phi = self.Phi[name]
         
-        info = str(name)+' Phi: %f deg, rho_tg: %.2f'%(phi,rho_tg)
+        info = str(name) + ' Phi: %f deg, rho_tg: %.2f' %(phi, rho_tg)
         return info

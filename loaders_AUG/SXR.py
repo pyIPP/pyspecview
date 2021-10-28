@@ -9,7 +9,7 @@ def check(shot):
     status = False
 
     path = shot_path+'/%d/SX/SXA/%d'
-    status |= os.path.isfile(path%(shot/10,shot))
+    status |= os.path.isfile(path%(shot/10, shot))
 
     return status
 
@@ -20,8 +20,8 @@ class loader_SXR(loader):
     tor_mode_num = True
     pol_mode_num = False  #not implemented yet!! 
 
-    mode_range = (-3,4)
-    radial_profile=True
+    mode_range = (-3, 4)
+    radial_profile = True
     units = 'W/m$^2$'
 
 
@@ -97,12 +97,12 @@ class loader_SXR(loader):
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
         
-        if isinstance(name,str):
+        if isinstance(name, str):
             names = (name, )
         else:  names = name
         
         output = np.empty(len(names), dtype=object)
-        for shotfile,signals in self.SXR_diods.items():
+        for shotfile, signals in self.SXR_diods.items():
             
             for j, name in enumerate(names):
                 if name in signals :
@@ -119,7 +119,7 @@ class loader_SXR(loader):
                     wrong =  (sig < self.ADCmin) |  (sig > self.ADCrange[name]) 
 
                     if any(wrong):
-                        sig[wrong]=np.interp(np.where(wrong)[0], np.where(~wrong)[0],sig[~wrong])
+                        sig[wrong]=np.interp(np.where(wrong)[0], np.where(~wrong)[0], sig[~wrong])
                     if calib:
                         sig = sfo.raw2calib(sig)
 
@@ -145,31 +145,31 @@ class loader_SXR(loader):
         return FGnames
         
     
-    def get_signal_phase(self,name,calib=False,tmin=None,tmax=None):
+    def get_signal_phase(self, name, calib=False, tmin=None, tmax=None):
         
         logger.debug('get_signal_phase')
         if name[:2]!= 'FG':    raise Exception()
       
-        tvec1, sig1 = self.get_signal('F','F'+name[2:],calib=calib,tmin=tmin,tmax=tmax)
-        tvec2, sig2 = self.get_signal('G','G'+name[2:],calib=calib,tmin=tmin,tmax=tmax)
+        tvec1, sig1 = self.get_signal('F', 'F'+name[2:], calib=calib, tmin=tmin, tmax=tmax)
+        tvec2, sig2 = self.get_signal('G', 'G'+name[2:], calib=calib, tmin=tmin, tmax=tmax)
 
         #downsample  to the slower DAS
-        def reduce(x,y,x_out):
+        def reduce(x, y, x_out):
             r = int(round(float(len(x))/len(x_out)))
-            x = np.mean(x[:(len(x)//r)*r].reshape(len(x)//r, r),1)
-            y = np.mean(y[:(len(y)//r)*r].reshape(len(y)//r, r),1)
+            x = np.mean(x[:(len(x)//r)*r].reshape(len(x)//r, r), 1)
+            y = np.mean(y[:(len(y)//r)*r].reshape(len(y)//r, r), 1)
             return np.interp( x_out, x, y)
 
         if len(sig1)!= len(sig2):
             if len(sig1) > len(sig2):
-                sig1,tvec1 = reduce(tvec1,sig1,tvec2),tvec2
+                sig1, tvec1 = reduce(tvec1, sig1, tvec2), tvec2
             else:
-                sig2,tvec2 = reduce(tvec2,sig2,tvec1),tvec1
+                sig2, tvec2 = reduce(tvec2, sig2, tvec1), tvec1
 
-        return tvec1, np.single(np.vstack((sig1,sig2)).T)
+        return tvec1, np.single(np.vstack((sig1, sig2)).T)
     
     
-    def get_phi_tor(self,name=None):
+    def get_phi_tor(self, name=None):
 
         logger.debug('get_phi_tor')
         if name in self.get_names_phase():
@@ -177,13 +177,13 @@ class loader_SXR(loader):
             phi1 = self.Phi['F'+name[2:]]
             phi2 = self.Phi['G'+name[2:]]
             
-            return np.deg2rad( np.r_[phi1,phi2])
+            return np.deg2rad( np.r_[phi1, phi2])
         elif name in self.Phi:
             return np.deg2rad(self.Phi[name])
         
         else: 
             try:
-                return np.deg2rad(np.median([v for k,v in self.Phi.items()]))
+                return np.deg2rad(np.median([v for k, v in self.Phi.items()]))
             except:
                 logger.error(extra=self.Phi)
                 raise
@@ -198,28 +198,28 @@ class loader_SXR(loader):
         R_end = np.array([self.R_end[name] for name in names])
         z_end = np.array([self.z_end[name] for name in names])
         Phi = np.array([self.Phi[name] for name in names])
-        rho_tg,theta_tg,R,Z = super(loader_SXR,self).get_rho(time,R_start,
-                                    z_start,Phi,R_end,z_end,Phi,dR=dR, dZ=dZ)
+        rho_tg, theta_tg, R, Z = super(loader_SXR, self).get_rho(time, R_start, 
+                                    z_start, Phi, R_end, z_end, Phi, dR=dR, dZ=dZ)
 
-        return rho_tg, theta_tg,R,Z
+        return rho_tg, theta_tg, R, Z
 
     
-    def signal_info(self,group,name,time):
+    def signal_info(self, group, name, time):
         
         logger.debug('signal_info')
         if name[:2] == 'FG': 
-            rho_tg1 = self.get_rho(group,[ 'F'+name[2:],],time)[0]
-            rho_tg2 = self.get_rho(group,[ 'G'+name[2:],],time)[0]
+            rho_tg1 = self.get_rho(group, [ 'F'+name[2:], ], time)[0]
+            rho_tg2 = self.get_rho(group, [ 'G'+name[2:], ], time)[0]
 
             phi1 = self.Phi['F'+name[2:]]
             phi2 = self.Phi['G'+name[2:]]
             
-            info = str(name)+'   Phi: %d and %d deg, rho_tg: %.2f'%(phi1,phi2,rho_tg1)
+            info = str(name)+'   Phi: %d and %d deg, rho_tg: %.2f'%(phi1, phi2, rho_tg1)
 
         else:
-            rho_tg = self.get_rho(group,[ name,],time)[0]
+            rho_tg = self.get_rho(group, [ name, ], time)[0]
             phi = self.Phi[name]
 
-            info = str(name)+' Phi: %d deg, rho_tg: %.2f'%(phi,rho_tg)
+            info = str(name) + ' Phi: %d deg, rho_tg: %.2f' %(phi, rho_tg)
 
         return info

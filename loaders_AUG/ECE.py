@@ -12,13 +12,13 @@ def check(shot):
 
     path = shot_path+'/%d/XX/%s/%d'
 
-    for diag in ('RMC', 'RMA','RMB'):
-        if os.path.isfile(path%(shot//10,diag, shot)):
+    for diag in ('RMC', 'RMA', 'RMB'):
+        if os.path.isfile(path%(shot//10, diag, shot)):
             return True
         
     path = shot_path+'/%d/L0/%s/%d'
 
-    if os.path.isfile(path%(shot//10,'RAD', shot)):
+    if os.path.isfile(path%(shot//10, 'RAD', shot)):
         return True
 
     return False
@@ -29,9 +29,9 @@ class loader_ECE(loader):
     radial_profile = True
     units = 'eV'
 
-    def __init__(self,*args, **kargs):
+    def __init__(self, *args, **kargs):
 
-        super(loader_ECE,self).__init__(*args, **kargs)
+        super(loader_ECE, self).__init__(*args, **kargs)
 
         self.mixers = None
         self.corrupted_calibration=False
@@ -60,7 +60,7 @@ class loader_ECE(loader):
             self.names = np.arange(60)+1
 
         if self.mixers is None: # it was missing in old shotfiles 
-            self.mixers = np.int_(np.r_[(1,)*36,(2,)*12, (3,)*12])
+            self.mixers = np.int_(np.r_[(1, )*36, (2, )*12, (3, )*12])
 
         self.groups = ['mixer %d'%d for d in np.unique(self.mixers)]
 
@@ -83,9 +83,9 @@ class loader_ECE(loader):
     
             tvec = sfo.gettimebase('Trad-A')
             i0, imin, imax = tvec.searchsorted((0, self.tmin, self.tmax))
-            TeCEC = sfo.getobject('Trad-A',nbeg=imin, nend=imax-1).mean(0)
+            TeCEC = sfo.getobject('Trad-A', nbeg=imin, nend=imax-1).mean(0)
 
-            rad = sf.SFREAD('RAD',self.shot)
+            rad = sf.SFREAD('RAD', self.shot)
             tvec = rad('TIME-AD')
             i0 = tvec.searchsorted(0)
             Te1 = rad('SI-MI-A', cal=True, nend=imax+1)
@@ -93,8 +93,8 @@ class loader_ECE(loader):
             Te3 = rad('SI-MI-C', cal=True, nend=imax+1)
             Te4 = rad('SI-MI-D', cal=True, nend=imax+1)
             
-            TeRAD0 = np.hstack((Te1,Te2,Te3,Te4))[:i0].mean(0)
-            TeRAD  = np.hstack((Te1,Te2,Te3,Te4))[i0:].mean(0)
+            TeRAD0 = np.hstack((Te1, Te2, Te3, Te4))[:i0].mean(0)
+            TeRAD  = np.hstack((Te1, Te2, Te3, Te4))[i0:].mean(0)
             TeRAD -= TeRAD0
             self.calfact = TeCEC/abs(TeRAD)
 
@@ -107,7 +107,7 @@ class loader_ECE(loader):
     def get_signal_groups(self):
         return  self.groups
 
-    def get_names(self,group):
+    def get_names(self, group):
         mixer = int(group[-1])
 
         return self.names[self.mixers[self.names-1] == mixer]
@@ -158,7 +158,6 @@ class loader_ECE(loader):
 
         ioff, imin, imax = tvec.searchsorted((0, tmin, tmax))
         logger.debug('len(tvec): %d, imin: %d, imax: %d, tmin: %.2f, tmax: %.2f', len(tvec), imin, imax, tmin, tmax)
-        print(tvec[0], tvec[-1])
         tvec = tvec[imin: imax].astype(np.float32)
         sig = sig[imin: imax].astype(np.float32)
         logger.debug('tvec-size: %d, sig-size: %d', len(tvec), len(sig))
@@ -196,7 +195,7 @@ class loader_ECE(loader):
         imin, imax = tvec[:-1].searchsorted((tmin, tmax))
 
         Te = cec.getobject('Trad-A', nbeg=imin, nend=imax+1)
-        Te = np.nanmedian(Te[:,self.names-1], 0)
+        Te = np.nanmedian(Te[:, self.names-1], 0)
         from scipy.signal import medfilt
   
         from scipy.interpolate import LSQUnivariateSpline
@@ -204,16 +203,16 @@ class loader_ECE(loader):
         ind = np.argsort(rho)
         ind = ind[(np.abs(rho[ind]) < 1) & (Te[ind] > 0)]
 
-        x = np.r_[rho[ind],1]
-        y = np.log(np.r_[medfilt(Te[ind],5),min(Te[ind].min(),100)])
-        ind_ = np.argsort(np.r_[-x,x])
+        x = np.r_[rho[ind], 1]
+        y = np.log(np.r_[medfilt(Te[ind], 5), min(Te[ind].min(), 100)])
+        ind_ = np.argsort(np.r_[-x, x])
         
         try:
-            S   = LSQUnivariateSpline(np.r_[-x,x][ind_],np.r_[y,y][ind_],np.linspace(-0.999,0.999,21),ext=3, bbox=[-1,1],k=2)
+            S   = LSQUnivariateSpline(np.r_[-x, x][ind_], np.r_[y, y][ind_], np.linspace(-0.999, 0.999, 21), ext=3, bbox=[-1, 1], k=2)
             c = (S(x)-y)/S(x) < 0.005
-            x,y = x[c], y[c]
-            ind_ = np.argsort(np.r_[-x,x])
-            S   = LSQUnivariateSpline(np.r_[-x,x][ind_], np.r_[y,y][ind_],np.linspace(-0.999,0.999,21),ext=3, bbox=[-1,1],k=2)
+            x, y = x[c], y[c]
+            ind_ = np.argsort(np.r_[-x, x])
+            S   = LSQUnivariateSpline(np.r_[-x, x][ind_], np.r_[y, y][ind_], np.linspace(-0.999, 0.999, 21), ext=3, bbox=[-1, 1], k=2)
             Te_ = np.exp(S(rho))
 
             if not all(np.isfinite(Te_)):
@@ -221,65 +220,65 @@ class loader_ECE(loader):
 
         except Exception as e:
             logger.warning('spline fit has failed: %s', str(e))
-            Te_ = np.exp(np.interp(rho, np.r_[-x,x][ind_], np.r_[y,y][ind_]))
+            Te_ = np.exp(np.interp(rho, np.r_[-x, x][ind_], np.r_[y, y][ind_]))
         
         return rho, Te_
 
     def get_names_phase(self):
         pass
-    def get_signal_phase(self,name,calib=False):
+    def get_signal_phase(self, name, calib=False):
         pass
-    def get_phi_tor(self,name=None):
+    def get_phi_tor(self, name=None):
         return np.deg2rad(300+40.5) # position of SXR and relative distance between SXR anbd ECE #BUG what abiut these 45deg in SXR loader? 
-    def get_phase_corrections(self,name):
+    def get_phase_corrections(self, name):
         pass
         
     
-    def get_RZ_theta(self, time,names,dR=0,dZ=0,cold=False):
+    def get_RZ_theta(self, time, names, dR=0, dZ=0, cold=False):
 
-        if not hasattr(self,'RZtime'):
+        if not hasattr(self, 'RZtime'):
             err = np.ones(len(names))*np.nan
-            return err,err,err
+            return err, err, err
 
-        time = np.clip(time,*self.RZtime[[0,-1]])
+        time = np.clip(time, *self.RZtime[[0, -1]])
         ch_ind = np.in1d(self.names, np.int_(names))
         
-        R = interp1d(self.RZtime, self.R[:,np.array(names)-1],axis=0)(time)
-        z = interp1d(self.RZtime, self.z[:,np.array(names)-1],axis=0)(time)
+        R = interp1d(self.RZtime, self.R[:, np.array(names)-1], axis=0)(time)
+        z = interp1d(self.RZtime, self.z[:, np.array(names)-1], axis=0)(time)
 
         r0 = np.interp(time, self.eqm.time, self.eqm.Rmag)+dR
         z0 = np.interp(time, self.eqm.time, self.eqm.Zmag)+dZ
    
-        return R,z, np.arctan2(z-z0, R-r0)
+        return R, z, np.arctan2(z-z0, R-r0)
         
     
-    def get_rho(self,group,names,time,dR=0,dZ=0):
+    def get_rho(self, group, names, time, dR=0, dZ=0):
 
-        if hasattr(self,'RZtime'):
-            time = np.clip(time, self.tmin,self.tmax)
-            R,z,theta = self.get_RZ_theta(time,names,dR=dR,dZ=dZ)
+        if hasattr(self, 'RZtime'):
+            time = np.clip(time, self.tmin, self.tmax)
+            R, z, theta = self.get_RZ_theta(time, names, dR=dR, dZ=dZ)
             
-            rho = super(loader_ECE,self).get_rho(time,R,z,dR=dR,dZ=dZ)
+            rho = super(loader_ECE, self).get_rho(time, R, z, dR=dR, dZ=dZ)
 
             r0 = np.interp(time, self.eqm.time, self.eqm.Rmag)+dR
             R = np.atleast_1d( R)
             rho[R < r0] *= -1
         else:
             err = np.ones(len(names))*np.nan
-            rho,theta,R,z = err,err,err,err
+            rho, theta, R, z = err, err, err, err
         
         return rho, theta, R, z
     
         
-    def signal_info(self,group,name,time):
+    def signal_info(self, group, name, time):
         name = int(name)
-        rho,theta,R,z = self.get_rho(group,[name,],time)
+        rho, theta, R, z = self.get_rho(group, [name, ], time)
 
         info = 'ch: '+str(name)+'  R:%.3f m   '%R+self.rho_lbl+': %.3f'%rho
         return info
     
-    def get_description(self,group,name):
-        return 'AUG %d diag: %s sig: %s'%(self.shot,self.shotfile,name)
+    def get_description(self, group, name):
+        return 'AUG %d diag: %s sig: %s'%(self.shot, self.shotfile, name)
 
 
 

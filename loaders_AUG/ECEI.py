@@ -25,18 +25,18 @@ class loader_ECEI(loader):
 
     radial_profile=False
 
-    def __init__(self,*args, **kargs):
+    def __init__(self, *args, **kargs):
 
-        super(loader_ECEI,self).__init__(*args, **kargs)
+        super(loader_ECEI, self).__init__(*args, **kargs)
 
         self.groups = []
         
         path = shot_path+'%d/L1/ECI/%d.1' 
-        if os.path.isfile(path%(self.shot/10,self.shot)): 
+        if os.path.isfile(path%(self.shot/10, self.shot)): 
             self.groups.append('ECI')
 
         path = shot_path+'%d/XX/TDI/%d' 
-        if os.path.isfile(path%(self.shot/10,self.shot)): 
+        if os.path.isfile(path%(self.shot/10, self.shot)): 
             self.groups.append('ECO')
             self.groups.append('ECN')
 
@@ -54,18 +54,18 @@ class loader_ECEI(loader):
             self.z_new = rzn('z')  
             self.rho_new = rzn('rho')
 
-        eci_names = ['%.2d:%.2d'%(i+1,j+1) for i in range(16) for j in range(8)]
-        eco_names = ['%.2d:%.2d'%(i+1,j+1) for i in range(16) for j in range(8)]
-        ecn_names = ['%.2d:%.2d'%(i+1,j+1) for i in range(20) for j in range(8)]
+        eci_names = ['%.2d:%.2d'%(i+1, j+1) for i in range(16) for j in range(8)]
+        eco_names = ['%.2d:%.2d'%(i+1, j+1) for i in range(16) for j in range(8)]
+        ecn_names = ['%.2d:%.2d'%(i+1, j+1) for i in range(20) for j in range(8)]
         self.names = {'ECI':eci_names, 'ECO':eco_names, 'ECN':ecn_names  }
         
     def get_signal_groups(self):
         return  self.groups
             
-    def get_names(self,group):
+    def get_names(self, group):
         return self.names[group]
 
-    def get_signal(self,group, name,calib=False, tmin=None,tmax=None):
+    def get_signal(self, group, name, calib=False, tmin=None, tmax=None):
                         
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
@@ -80,12 +80,12 @@ class loader_ECEI(loader):
                 data = eci(LOS)
                 setattr(self, 'ECI_'+LOS, data)
 
-            imin,imax = self.ECI_time.searchsorted([tmin,tmax])
-            sig = getattr(self, 'ECI_'+LOS)[imin:imax+1,ind-1]
+            imin, imax = self.ECI_time.searchsorted([tmin, tmax])
+            sig = getattr(self, 'ECI_'+LOS)[imin:imax+1, ind-1]
             tvec = self.ECI_time[imin:imax+1]
             
-        elif group in ('ECO','ECN'):
-            los,ind = np.int_(name.split(':'))
+        elif group in ('ECO', 'ECN'):
+            los, ind = np.int_(name.split(':'))
             ch = (los-1)*(ind-1)
             
             if group == 'ECN': ch += 128
@@ -99,26 +99,26 @@ class loader_ECEI(loader):
                 data = tdi("Sig%d" %sig)
                 setattr(self, 'TDI_%d'%sig, data)
 
-            imin,imax = self.TDI_time.searchsorted([tmin,tmax])
-            sig = getattr(self, 'TDI_%d'%sig)[imin:imax+1,ind]
+            imin, imax = self.TDI_time.searchsorted([tmin, tmax])
+            sig = getattr(self, 'TDI_%d'%sig)[imin:imax+1, ind]
             tvec = self.TDI_time[imin:imax+1]
 
         else:
             raise Exception('ECEI group %s do not exists!'%group)
   
-        return tvec,sig 
+        return tvec, sig 
 
     def get_names_phase(self):
         pass
 
-    def get_signal_phase(self,name,calib=False):
+    def get_signal_phase(self, name, calib=False):
         pass
-    def get_phi_tor(self,name):
+    def get_phi_tor(self, name):
         pass
-    def get_phase_corrections(self,name):
+    def get_phase_corrections(self, name):
         pass
     
-    def get_rho(self,group,names,time,dR=0,dZ=0):
+    def get_rho(self, group, names, time, dR=0, dZ=0):
 
         if group == 'ECN' and hasattr(self, 'RZtime_new'):
             RZtime = self.RZtime_new
@@ -133,29 +133,29 @@ class loader_ECEI(loader):
             
         else:
             logger.error( 'Warning: shotfile with resonance positions was not found ')
-            return np.nan,np.nan,np.nan,np.nan
+            return np.nan, np.nan, np.nan, np.nan
             
-        time = np.clip(time, *RZtime[[0,-1]])
+        time = np.clip(time, *RZtime[[0, -1]])
         
-        i,j =  np.int_(names[0].split(':'))-1
-        R = interp1d(RZtime, R[:,i,j],axis=0)(time)
-        z = interp1d(RZtime, z[:,i,j],axis=0)(time)
-        rho_p = interp1d(RZtime, rho[:,i,j],axis=0)(time) #dR,dZ are ignored!
+        i, j =  np.int_(names[0].split(':'))-1
+        R = interp1d(RZtime, R[:, i, j], axis=0)(time)
+        z = interp1d(RZtime, z[:, i, j], axis=0)(time)
+        rho_p = interp1d(RZtime, rho[:, i, j], axis=0)(time) #dR, dZ are ignored!
 
         r0 = np.interp(time, self.eqm.time, self.eqm.ssq['Rmag'])+dR
         z0 = np.interp(time, self.eqm.time, self.eqm.ssq['Zmag'])+dZ
 
-        return rho_p, np.arctan2(z-z0, R-r0), R,z, #,R_, z_
+        return rho_p, np.arctan2(z-z0, R-r0), R, z, #, R_, z_
         
 
-    def signal_info(self,group,name,time):
+    def signal_info(self, group, name, time):
 
-        rho, theta, R,z = self.get_rho(group,(name,),time)
+        rho, theta, R, z = self.get_rho(group, (name, ), time)
 
-        info =  'ch: '+str(name)+'  R: %.3fm  z: %.3fm rho_p: %.2f'%(R,z,rho)
+        info =  'ch: '+str(name)+'  R: %.3fm  z: %.3fm rho_p: %.2f'%(R, z, rho)
   
         return info
     
-    def get_description(self,group,name):
+    def get_description(self, group, name):
         diag = 'ECI' if group=='ECI' else 'TDI'
-        return 'AUG %d diag: %s sig: %s'%(self.shot,diag,name)
+        return 'AUG %d diag: %s sig: %s'%(self.shot, diag, name)

@@ -2,7 +2,7 @@
 
 import sys, os, random, time, argparse, logging
 import traceback
-import matplotlib  
+import matplotlib
 
 fmt = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s: %(message)s', '%H:%M:%S')
 hnd = logging.StreamHandler()
@@ -78,11 +78,12 @@ from sstft import sstft
 random_seed = 10
 font_size = 10
 
+
 class colorize:
 
     def __init__( self, hue, invert=True):
 
-        # hue is a list of hue values for which the colors will be evaluated
+# hue is a list of hue values for which the colors will be evaluated
         from colorsys import hsv_to_rgb
         self.colors = np.array([hsv_to_rgb(h, 1, 1) for h in hue])
         self.invert = invert
@@ -92,16 +93,16 @@ class colorize:
         
         value = r/np.amax(r)
         
-        #get fully saturated colors
+#get fully saturated colors
         color = self.colors[index, :]
         
-        #reduce the lightness 
+#reduce the lightness 
         color *= np.asarray(value)[..., None]
         
-        #invert colors 
+#invert colors 
         if self.invert:   color = 1-color
 
-        #remove a rounding errors
+#remove a rounding errors
         color[color<0] = 0 
         color[color*256>255] = 255./256
 
@@ -110,7 +111,7 @@ class colorize:
 
 def min_fine(x, y):
  
-    #find extrem with a subpixel precision
+# find extrem with a subpixel precision
     i = np.argmin(y)
     if i==0 or i == len(y)-1: return y[i], x[i]    #not working at the edge! 
     A = x[i-1:i+2]**2, x[i-1:i+2], np.ones(3)
@@ -121,22 +122,15 @@ def min_fine(x, y):
     return  ymin, xmin
 
 
-class MyFormatter(ScalarFormatter):   # improved format of axis
-    def __call__(self, x, pos=None):
-        self.set_scientific(True)
-        self.set_useOffset(True)
-        self.set_powerlimits((-3, 3))
-        return ScalarFormatter.__call__(self, x, pos)
-
 class NavigationToolbar(NavigationToolbar2QT):
-    # only display the buttons we need
+#  only display the buttons we need
     toolitems = [t for t in NavigationToolbar2QT.toolitems if
                  t[0] in ('Home', 'Pan', 'Zoom')]
 
 
 class SpectraViewer(object):
     
-    #class for the spectrum and data plot handling 
+# class for the spectrum and data plot handling 
     
     def __init__(self, sgamma, stau, method, message_out, show_raw=True, show_colorbar=False, 
                  allow_selector=True, fig_name=None, fig=None, phase_analysis=False, cmap= 'gnuplot2'):
@@ -198,14 +192,14 @@ class SpectraViewer(object):
         self.stau   = stau
         self.method = method
         
-        #set parameters of the gamma slider
+#set parameters of the gamma slider
         sgamma.setRange(0.001*self.sdpi, 1*self.sdpi)
         sgamma.setValue(.5*self.sdpi)
         sgamma.setTracking(True)
         sgamma.setTickPosition(QSlider.NoTicks)
         sgamma.setSingleStep(.1)
 
-        #set parameters of the NFFT slider
+#set parameters of the NFFT slider
         self.tau0 = .6 #dimensionaless parameter for time resolution between 0 and 1
         stau.setRange(.3*self.sdpi, .8*self.sdpi)
         stau.setValue(self.tau0*self.sdpi)
@@ -213,7 +207,7 @@ class SpectraViewer(object):
         stau.setTickPosition(QSlider.NoTicks)
         stau.setSingleStep(1)
 
-        #set parameters of the method menu
+#set parameters of the method menu
         
         self.method.addItem("STFT")
         self.method.addItem("SFFT")
@@ -222,14 +216,14 @@ class SpectraViewer(object):
         ind_method = [i for i, n in enumerate(self.methods) if n == self.DFT_backend][0]
         self.method.setCurrentIndex( ind_method)
         
-        #default time and frequency range
+#default time and frequency range
         self.t_range = np.nan, np.nan
         self.f_range = 0, 2e5
 
         matplotlib.rcParams['xtick.direction'] = 'in'
         matplotlib.rcParams['ytick.direction'] = 'in'
         
-        #time trace of the mhd mode 
+#time trace of the mhd mode 
         self.plt_trace, = self.ax.plot([], [], 'gray', zorder=99)
 
         c  = 1-np.array(plt.cm.get_cmap( cmap)(0))[:3] #inverse of the lowest color in the colormap
@@ -247,7 +241,7 @@ class SpectraViewer(object):
     def init_plot(self, data, window=None, tmin=None, tmax=None, 
                   fmin0=-np.infty, fmax0=np.infty, description='', mode_range=None, mode_num_lbl='' ):
         
-        #object of the spectrogram
+#object of the spectrogram
         
         if window is None and not hasattr(self, 'window'):
             window = 'gauss'
@@ -269,7 +263,7 @@ class SpectraViewer(object):
         if tmin is None: tmin =  data['tvec'][0]
         if tmax is None: tmax =  data['tvec'][-1]
 
-        #clear the image
+#clear the image
         for im in self.ax.get_images():
             im.remove()
             del im
@@ -283,16 +277,16 @@ class SpectraViewer(object):
    
         if self.show_raw:
 
-            #clear it before use
+# clear it before use
             for l in self.uax.get_lines():
                 l.remove()
                 del l
             
-            #object of the plot with raw data
+# object of the plot with raw data
             self.data_plot = DataPlot(self.uax, lw=.5, c='k')
             self.data_plot.prepare(data, tmin, tmax)
 
-            #object of the both + STFT algorithms 
+# object of the both + STFT algorithms 
             self.stft_disp = STFTDisplay(data, self.stft_img, self.ax, self.data_plot, 
                         nfft=self.nfft0, win=window, phase_analysis=self.phase_analysis, 
                         colorbar_ax=self.cax, method=self.DFT_backend)
@@ -405,7 +399,7 @@ class SpectraViewer(object):
         xstart, xend, ystart, yend = self.stft_img.im.get_extent()
         if nfft!= self.stft_disp.nfft:
             self.stft_disp.nfft = nfft
-            #NOTE tau is not exatly equal to the width (sigma) of the gaussin window
+# NOTE tau is not exatly equal to the width (sigma) of the gaussin window
             self.message_out('nfft: %d  window: %.2gms'%(nfft, nfft*self.dt*1000), 1000)
             x, y, Z = self.stft_disp.__call__(xstart, xend, ystart, yend)
             self.stft_img.z = Z
@@ -418,8 +412,8 @@ class SpectraViewer(object):
 
 
     def calc_sig_power(self, tvec_f, fvec, df):
-        #cauclated a power of signal at given frequency fvec, evolving in time 
-        #BUG make it better?
+#cauclated a power of signal at given frequency fvec, evolving in time 
+#BUG make it better?
         T = time.time()
                 
         x = self.stft_disp.tvec
@@ -435,7 +429,7 @@ class SpectraViewer(object):
         f = np.interp(x, tvec_f, fvec)
         corr = np.exp((dt*1j*2*np.pi)*np.cumsum(np.single(f)))
 
-        #detrend 
+#detrend 
         y -= (y[-1]-y[0])/(x[-1]-x[0])*(x-x[0])+y[0]
 
         f_nq = .5/dt 
@@ -462,7 +456,7 @@ class SpectraViewer(object):
         it0 = tvec.searchsorted(t0)
 
         noise_level = np.median(spect)*2
-        #forward pass
+#forward pass
         for k in range(it0, tvec.size):
             try:
                 w = np.exp(-(fvec-F[-1])**2/(2*delta_f**2))    
@@ -474,11 +468,11 @@ class SpectraViewer(object):
             f = fvec[ifmax]
             A = -(spect[:, k]*w)[ifmax]
             
-            #fine tuning 
+# fine tuning 
             w = np.exp(-(fvec-f)**2/(2*delta_f**2))
             A, f = min_fine(fvec, -spect[:, k]*w)
 
-            #if it will lost the mode
+# if it will lost the mode
             if -A < noise_level:  f = F[-1]
 
             F.append(f)
@@ -486,18 +480,18 @@ class SpectraViewer(object):
         F = F[1:]
         F.reverse()
 
-        #backward pass
+#backward pass
         for k in range(it0-1, -1, -1):
             w = np.exp(-(fvec-F[-1])**2/(2*delta_f**2))    
             ifmax = np.argmax(spect[:, k]*w)
             f = fvec[ifmax]
             A = -(spect[:, k]*w)[ifmax]
             
-            #fine tuning 
+# fine tuning 
             w = np.exp(-(fvec-f)**2/(2*delta_f**2))    
             A, f = min_fine(fvec, -spect[:, k]*w)
                     
-            #if it will lost the mode
+# if it will lost the mode
             if -A < noise_level:  f = F[-1]
 
             F.append(f)
@@ -519,7 +513,7 @@ class SpectraViewer(object):
         
         QApplication.setOverrideCursor(Qt.WaitCursor)
         
-        # trace the mode
+# trace the mode
         if  event.button == 1 and event.dblclick: #left button, double click
             
             self.mode_traced = True
@@ -541,7 +535,7 @@ class SpectraViewer(object):
                     
                 self.fig.canvas.draw()   
             
-        # remove the trace of the the mode
+# remove the trace of the the mode
         elif  event.button == 3 and event.dblclick: #   right button, double click
 
             self.mode_traced = False
@@ -562,7 +556,7 @@ class SpectraViewer(object):
                 curr_xlim = self.ax.get_xlim()
                 curr_ylim = self.ax.get_ylim()
 
-                #mouse was released out of the window
+# mouse was released out of the window
                 if event.xdata is None:
                     event.xdata = float(event.x)/self.stft_disp.width *np.diff(curr_xlim)+curr_xlim[0]
                     event.ydata = float(event.y)/self.stft_disp.height*np.diff(curr_ylim)+curr_ylim[0]
@@ -597,7 +591,7 @@ class SpectraViewer(object):
                     f = self.stft_img.z[iy, ix]
                     self.message_out('t: %.5fs f: %.3gkHz val:%.2e'%(x, y/1e3, f), 1000)
 
-            #select only a single mode number
+# select only a single mode number
             if self.phase_analysis:
                 
                 if hasattr(self, 'orig_z') and not self.orig_z is None: #draw original image
@@ -625,7 +619,7 @@ class SpectraViewer(object):
         QApplication.setOverrideCursor(Qt.WaitCursor)
     
         if event.inaxes == self.ax:
-            #  zoom by mouse wheel
+#   zoom by mouse wheel
             curr_xlim = self.ax.get_xlim()
             curr_ylim = self.ax.get_ylim()
             new_width = (curr_xlim[1]-curr_xlim[0])*factor**event.step
@@ -640,7 +634,7 @@ class SpectraViewer(object):
             self.ax.set_xlim([event.xdata- new_width*(1-relx), event.xdata+ new_width*relx])
 
         elif self.show_raw and event.inaxes == self.uax:
-            #  zoom by mouse wheel in upper plot 
+#   zoom by mouse wheel in upper plot 
             curr_xlim = self.uax.get_xlim()
             new_width = (curr_xlim[1]-curr_xlim[0])*factor**event.step
 
@@ -680,7 +674,7 @@ class STFTImage():
         self.N_mode = np.arange(N_min, N_max+1, dtype='int8'), N[::-1]
 
     def prepare(self, xstart, xend, ystart, yend, z):
-        #show spectrogram
+#show spectrogram
   
         if self.phase_analysis:  #phase core
             self.prepare_colorbar()
@@ -717,7 +711,7 @@ class STFTImage():
             z = np.abs(z)
    
         if typ == 'log' and z.size > 1:
-            #transformation by log
+# transformation by log
             ind = np.random.randint(0, z.size-1, size=10000)
             vmin = mquantiles(z.flat[ind], .5)[0]
             z_norm = np.tan(np.pi/2.000001*self.gamma)*np.nanmean(z)
@@ -730,7 +724,7 @@ class STFTImage():
 
         
     def update_image(self, xstart, xend, ystart, yend, z):
-        #update spectrogram image
+#update spectrogram image
         self.z = z
         z = self.GammaTransform(self.z)
         t2 = time.time()
@@ -769,7 +763,7 @@ class STFTImage():
             iy1, iy2 = np.int_((np.array((xstart, xend))-E[0])/(E[1]-E[0])*z.shape[1])
             ix1, ix2 = np.int_((np.array((ystart, yend))-E[2])/(E[3]-E[2])*z.shape[0])
  
-            #choose optimal value to use the whole colorbar range efficiently 
+# choose optimal value to use the whole colorbar range efficiently 
             vmax1 = mquantiles(z[ix1:ix2, iy1:iy2].max(0), 0.95)[0]
             vmax2 = mquantiles(z[ix1:ix2, iy1:iy2].max(1), 0.95)[0]
             vmax = min(vmax1, vmax2)
@@ -777,7 +771,7 @@ class STFTImage():
             self.im.set_clim(0, vmax)
         self.ax.figure.canvas.draw_idle()
         
-        
+
 class DataPlot():
 
     def __init__(self, ax=None, **kwarg):
@@ -797,7 +791,7 @@ class DataPlot():
         self.update_plot(tmin, tmax)
         
     def update_plot(self, xstart, xend, xnew=None, ynew=None):
-        #dims = self.ax.axesPatch.get_window_extent().bounds
+#dims = self.ax.axesPatch.get_window_extent().bounds
         
         xlim =  self.ax.get_xlim()
         if xstart == xlim[0] and xend == xlim[1]:
@@ -815,7 +809,7 @@ class DataPlot():
             
         istart, iend = self.x.searchsorted((xstart, xend))
         
-        #random sampling
+#random sampling
         random.seed(0)
         ind = np.linspace(istart+1, iend-2, width*20)+np.random.rand(width*20)*2-1
         ind = np.int_(np.unique(np.round(ind)))
@@ -860,8 +854,8 @@ class STFTDisplay():
         self.method = method
         self.dt = (self.tvec[-1]-self.tvec[0])/(self.tvec.size-1)
 
-        #fast guess of the lowest dt (tvec can have variable sampling frequency!), 
-        #but 5% error is there due to a single precision!!!
+#fast guess of the lowest dt (tvec can have variable sampling frequency!), 
+#but 5% error is there due to a single precision!!!
 
         self.window = win
         self.output = {}
@@ -869,7 +863,7 @@ class STFTDisplay():
      
 
     def __call__(self, xstart, xend, ystart, yend):
-        #compute the signal transformation
+#compute the signal transformation
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
         t = time.time()
@@ -897,7 +891,7 @@ class STFTDisplay():
             A, fv, tv = sstft(self.tvec, self.signal, self.nfft, xstart, xend, ystart, 
                            yend, self.width, self.height, zoom=4)
 
-        #correction of the phase for the balooning coils
+#correction of the phase for the balooning coils
         if hasattr(self, 'phase_correction') and self.phase_analysis:
  
             correction = [np.interp(fv, self.phase_correction[:, i*2], self.phase_correction[:, i*2+1])\
@@ -907,7 +901,7 @@ class STFTDisplay():
        
         logger.info( 'FFT done in:  %5.2fs', (time.time() - t))
          
-        #mode number estimation
+#mode number estimation
         if self.phase_analysis:
             absA = np.abs(A)
             A/= absA; angA = A
@@ -917,7 +911,7 @@ class STFTDisplay():
 
             cmplxPhi = np.complex64(Phi[None, :]**n[:, None])
             
-            ##go throught all mode numbers and find the one which gives the closest values of angles in all coils
+# #go throught all mode numbers and find the one which gives the closest values of angles in all coils
             ang_norms = np.tensordot(angA, np.conj(cmplxPhi)/len(Phi), [2, 1])
             ang_norms = np.abs(ang_norms) #best value of 'n' will give ang_norms closest to circle abs(x) = 1
   
@@ -941,7 +935,7 @@ class STFTDisplay():
     
             
     def set_yticks(self):
-        #plot yticks in Hz, kHz, MHz
+#plot yticks in Hz, kHz, MHz
              
         yticks = self.im_ax.get_yticks()
         
@@ -959,13 +953,13 @@ class STFTDisplay():
 
 
     def ax_update(self, ax=None, fine_resolution=False, force_update=False):
-        #called when xlim or ylim was changed or window was resized 
+#called when xlim or ylim was changed or window was resized 
         if self.prevent_update: return 
         ax = self.im_ax
 
         ax.set_autoscale_on(False) # Otherwise, infinite loop
 
-        #Get the number of points from the number of pixels in the window
+#Get the number of points from the number of pixels in the window
         dims = ax.get_window_extent().bounds
 
         width  = int(dims[2] + 0.5) 
@@ -977,17 +971,17 @@ class STFTDisplay():
         self.width  = width
         self.height = height
 
-        #increase resolution
+#increase resolution
         if fine_resolution and self.method != 'sparse':
             self.width  *= 2
             self.height *= 2
 
-        #Get the range for the new area
+#Get the range for the new area
         xstart, ystart, xdelta, ydelta = ax.viewLim.bounds
         xend = xstart + xdelta
         yend = ystart + ydelta
      
-        #set margins given by time and frequency
+#set margins given by time and frequency
         if xstart < self.tvec[0] or xend > self.tvec[-1]:
             xstart = max(xstart, self.tvec[0] )
             xend   = min(xend  , self.tvec[-1])
@@ -1004,14 +998,14 @@ class STFTDisplay():
 
         self.set_yticks()
 
-        # Update the image object with our new data and extent
+# Update the image object with our new data and extent
         extent = self.image.im.get_extent()
         if self.data_plot is not None:
             self.data_plot.update_plot(xstart, xend)
         
         do_not_update = False
         if not force_update:
-            #skip when nothing important was changed
+# skip when nothing important was changed
             if self.method == 'time' and ystart >= extent[2] and \
                 yend <= extent[3] and xstart==extent[0] and xend==extent[1]:
                 do_not_update = True 
@@ -1039,7 +1033,7 @@ class STFTDisplay():
 class RadialViewer:
 
     initialized = False
-    #plot radial profile of the aplitude and phase of the diagnostic
+# plot radial profile of the aplitude and phase of the diagnostic
 
     def __init__(self, parent, fig, n_harm, rho_lbl):
 
@@ -1077,7 +1071,7 @@ class RadialViewer:
         self.m = 1  #mode m-number 
 
         self.plot2_theta, = self.ax2.plot([], [], 'kx-', zorder=99, label=r'Ideal m=%d mode'%self.m)
-        #self.plot1_map_ampl, = self.ax1.plot([], [], 'k:')  #mapping correction factor
+#self.plot1_map_ampl, = self.ax1.plot([], [], 'k:')  #mapping correction factor
 
         self.leg1 = self.ax1.legend(loc='best', fancybox=True, prop={'size':12})
         self.leg1.get_frame().set_alpha(0.7)
@@ -1198,7 +1192,7 @@ class RadialViewer:
             win = get_window('hann', len(self.cross_signal[1][ind]), fftbins=False)   
             fdata0 = np.fft.rfft( self.cross_signal[1][ind]*win, nfft)[1:]
             
-        #=================   use a stupid and robust method to get the amplitudes
+#=================   use a stupid and robust method to get the amplitudes
         fvec = np.linspace(0, .5*nfft/(self.t_range[1]-self.t_range[0]), nfft//2+1, endpoint=False)
         
         if0 = fvec[1:].searchsorted(np.mean(self.f_range))
@@ -1236,7 +1230,7 @@ class RadialViewer:
 
             fft_signoise.append(np.median(np.abs(fdata))*normalization)
 
-        #absolute value of the perturbation 
+#absolute value of the perturbation 
         fft_signoise = np.array(fft_signoise)
 
         self.amplitude = []
@@ -1244,20 +1238,20 @@ class RadialViewer:
             
             if self.cross_signal is None:
                 A = np.array([np.linalg.norm(fs)/np.sum(win) for fs in fft_sig_n[n]])
-                #substract contribution of the background random noise 
+# substract contribution of the background random noise 
                 self.amplitude.append(np.sqrt(np.maximum(0, A**2-fft_signoise**2)))
             else:
                 X = fdata0[ind_f[n]]/np.linalg.norm(fdata0[ind_f[n]])
                 A = np.array([np.abs(np.vdot(X, fs))/np.sum(win) for fs in fft_sig_n[n]])
                 self.amplitude.append(A)
 
-        #measure a cross phase with respect to the strongest signal
+#measure a cross phase with respect to the strongest signal
         imax = np.argmax(self.amplitude[0]/(fft_signoise+np.nanmean(fft_signoise)*1e-6))      
                 
         sig_mean = np.array([np.mean(sig) for _, sig in self.data])
         corrupted = (fft_signoise == 0)|(np.abs(self.rho)>=1.2)|(sig_mean<=0)
         
-        #=================   use a advaced but more sensitive method. Only well coherent modes can be analyzed 
+#=================   use a advaced but more sensitive method. Only well coherent modes can be analyzed 
 
         tvec = self.data[infft][0]
         self.tvec = np.linspace(tvec[0], tvec[-1], tvec.size) #equally spaced vector!!
@@ -1279,13 +1273,13 @@ class RadialViewer:
         df = f_nq/(nfft//2+1)
         ifmin = int(max(1, round(self.f_range[0]/df)))
         ifmax = int(min(len(cross_signal)//2+1, round(self.f_range[1]/df)))
-        #sharp rectangular window in fourier space
+#sharp rectangular window in fourier space
     
         fcross_signal[:ifmin] = 0
         fcross_signal[ifmax:] = 0
         cross_signal_2 = np.fft.irfft(fcross_signal)[:len(cross_tvec)]
         
-        #get an envelope
+#get an envelope
         from scipy.signal import argrelmax
         i = argrelmax( np.abs(cross_signal_2), mode='wrap')[0][1:-1]
         try:
@@ -1295,11 +1289,11 @@ class RadialViewer:
         
         cross_signal= np.copy(cross_signal_2)
 
-        #normalize the aplitude
+#normalize the aplitude
         b, a = butter(3, f0/f_nq*.5, 'lowpass')
         if not np.any(np.abs(np.roots(a))>=1):   envelope = filtfilt(b, a, envelope, padtype='even', padlen=padlen)
         cross_signal/= envelope[:len(cross_signal)]
-        #change timebase
+#change timebase
         cross_signal = np.interp(self.tvec, cross_tvec, cross_signal)
         cross_signal-= np.mean(cross_signal)
         cross_signal/= np.std(cross_signal)*np.sqrt(2)
@@ -1308,19 +1302,19 @@ class RadialViewer:
         
         nfft = next_fast_len(cross_signal.size)
 
-        #get a 90 degrees shifted complex part 
+#get a 90 degrees shifted complex part 
         cmplx_sig = hilbert(cross_signal, nfft)[:cross_signal.size]
 
         self.amplitude2 = np.zeros((self.n_harm, len(self.data)))
         self.phi2       = np.zeros((self.n_harm, len(self.data)))
-        #demodulate signal and find the first component
+#demodulate signal and find the first component
         win = get_window('hann', self.tvec.size, fftbins=False)   #remove troubles with boundary conditions
         
         complex_harm = np.zeros((self.n_harm, self.tvec.size), dtype='complex')
         complex_harm[0] = cmplx_sig
         for i in range(1, self.n_harm):
             complex_harm[i] = complex_harm[i-1]*cmplx_sig
-        #make it more othogonal
+#make it more othogonal
         complex_harm, _ = np.linalg.qr(complex_harm.T)
                 
         self.retro = np.zeros((self.tvec.size, len(self.data)))
@@ -1330,38 +1324,38 @@ class RadialViewer:
         for j, (tvec_, sig) in enumerate(self.data):
             if len(tvec_) != self.tvec.size: 
                 sig = np.interp(self.tvec, tvec_, sig)            
-            #perform a least squares fit of the orthonormal complex prototype to the measured signal 
+# perform a least squares fit of the orthonormal complex prototype to the measured signal 
             self.offset[j] = sig.mean()
             harm = np.dot(win*(sig-self.offset[j]), np.conj(complex_harm))/norm
         
             self.amplitude2[:, j] = np.abs(harm)
             self.phi2[:, j] = np.angle(harm)
-            #retrofit of the measured signal 
+# retrofit of the measured signal 
             self.retro[:, j] = np.dot(complex_harm, harm*np.sqrt(len(win))).real
             self.retro[:, j] += self.offset[j]
             self.error[j] = np.std(sig-self.retro[:, j])
                 
-        #map poloidal theta of the diagnostic to the theta_star (WARNING theta star from CLISTE is not very accurate!!)
+#map poloidal theta of the diagnostic to the theta_star (WARNING theta star from CLISTE is not very accurate!!)
         theta_star0 = np.zeros_like(self.theta0)
         theta0 = np.unwrap(self.theta0, discont=1.5*np.pi)
         for i, (t0, t, ts) in enumerate(zip(theta0, self.mag_data[2], self.mag_data[3])):
             theta_star0[i] = np.interp(t0, np.r_[t-2*np.pi, t, t+2*np.pi], np.r_[ts-2*np.pi, ts, ts+2*np.pi])*self.m #use periodicity 
         theta_star0 -= np.nanmean(theta_star0)
       
-        #make a nice plot of phi, if possible  without 2pi jumps
+#make a nice plot of phi, if possible  without 2pi jumps
         ind = ~corrupted&(np.abs(self.rho)<1)
         
         try:
             phi = np.copy(self.phi2[0][ind])
-            #keep  pi jumps sign consistent with theta_star0
+# keep  pi jumps sign consistent with theta_star0
             phi = np.unwrap(phi-theta_star0[ind])+theta_star0[ind]
 
-            #rought shift with respect to the strongest
+# rought shift with respect to the strongest
             phi -= np.median((phi-theta_star0[ind])[self.amplitude[0][ind]> mquantiles(self.amplitude[0][ind], .9)/2]) 
-            #shift with respect to theta_star0, ignoring pi jumps 
+# shift with respect to theta_star0, ignoring pi jumps 
             weights = self.amplitude[0][ind]*(1-np.abs(self.rho[ind]))
             phi-= np.average((phi-theta_star0[ind]+np.pi/2)%np.pi - np.pi/2, weights=weights)
-            #shift it by k*pi with respect to the strongest channels
+# shift it by k*pi with respect to the strongest channels
             phi -= np.pi*round(np.average((phi-theta_star0[ind]), weights=weights)/np.pi)
         except:
             print( 'phi, weights', phi, weights, self.phi2[0][ind], ind, self.amplitude[0][ind])
@@ -1372,18 +1366,18 @@ class RadialViewer:
         self.offset[corrupted] = np.nan
         self.phi2[0][corrupted] = np.nan 
 
-        #plot amplitude
+#plot amplitude
         for n in range(self.n_harm):
             self.amplitude[n][corrupted] = np.nan
-            #self.plot1[n].set_data(self.rho, self.amplitude[n])
+# self.plot1[n].set_data(self.rho, self.amplitude[n])
             plotline, caplines, barlinecols =  self.plot1_[n]
-            # Replot the data first
+#  Replot the data first
             x, y = self.rho, self.amplitude2[n]
             plotline.set_data(x, y)
             yerr = np.array([np.std(sig)/np.sqrt(len(tvec_)/2.) for tvec_, sig in self.data])
-            # Find the ending points of the errorbars
+#  Find the ending points of the errorbars
             error_positions = (x, y-yerr), (x, y+yerr)
-            # Update the error bars
+#  Update the error bars
             barlinecols[0].set_segments(zip(zip(x, y-yerr), zip(x, y+yerr)))
             
         for n in range(self.n_harm, len(self.plot1_)):
@@ -1397,10 +1391,10 @@ class RadialViewer:
 
         self.plt_harm0.set_data(self.rho, self.offset)
 
-        #plot a phase pof ECE diag
+#plot a phase pof ECE diag
         self.plot2_theta.set_data(self.rho, theta_star0)
         
-        #plot a phase of the first harmonic
+#plot a phase of the first harmonic
         n = 0
         self.plot2_[n].set_data(self.rho, self.phi2[n])
         c = self.plot2_s[n].get_edgecolor()
@@ -1415,7 +1409,7 @@ class RadialViewer:
             ymax = max(ymax, max(self.amplitude[n][ii]))
             ymax = max(ymax, max(self.amplitude2[n][ii]))
             
-        #plot expected positions of the resonance surfaces 
+#plot expected positions of the resonance surfaces 
         for i, name in enumerate(self.q_surf_names):
             self.plot_qsurf1[i].set_xdata(self.qsurfs[i])
             self.plot_qsurf2[i].set_xdata(self.qsurfs[i]) 
@@ -1504,7 +1498,7 @@ class Diag2DMapping(object):
         self.sxr_emiss = None
 
         self.cid = self.fig.canvas.mpl_connect('scroll_event', self.MouseWheelInteraction)
-        self.cid2 = fig.canvas.mpl_connect('key_press_event',  self.onKeyPress)
+        self.cid2 = fig.canvas.mpl_connect('key_press_event', self.onKeyPress)
         self.cid3 = fig.canvas.mpl_connect('key_release_event', self.onKeyRelease)
     
     def init_from_rad_prof( self, radial_view, shot, use_LFS_data, phase_locked ):
@@ -1515,7 +1509,7 @@ class Diag2DMapping(object):
         self.Phi0 = radial_view.Phi0#position of ECE measurements
 
         self.phase_locked = phase_locked
-        #BUG use just LFS measurements, troubles with mapping of the others from the HFS !!!
+#BUG use just LFS measurements, troubles with mapping of the others from the HFS !!!
         
         ind = np.argsort(np.abs(rho))
    
@@ -1574,7 +1568,7 @@ class Diag2DMapping(object):
         try:
 
             paths = ['Emissivity_%d.npz'%self.shot, 
-                     os.path.expanduser('~/tomography/tmp/Emissivity_%d.npz'%self.shot),  ]
+                     os.path.expanduser('~/tomography/tmp/Emissivity_%d.npz'%self.shot), ]
             for path in paths:
                 if os.path.isfile(path):
                     break
@@ -1595,7 +1589,7 @@ class Diag2DMapping(object):
         except Exception as e:
             self.sxr_emiss = None
 
-        #set back the m-number!
+#set back the m-number!
         self.m = radial_view.m
         
     def prepare(self):
@@ -1609,14 +1603,14 @@ class Diag2DMapping(object):
             self.cmap.set_under('w')
 
         dT = 1/np.array(self.f_range)[::-1]
-        #select a time interval used for mapping on theta_star
+#select a time interval used for mapping on theta_star
         i_start = self.tvec.searchsorted(self.tvec[self.tvec.size//2])#-0.5*mean(dT))
         self.t_start = self.tvec[i_start]
         r0 = self.retro[i_start]
         ind_tend = slice(*self.tvec.searchsorted(self.t_start+dT))
         i_end = ind_tend.start+np.argmin(np.sum((self.retro[ind_tend]-r0[None, :])**2, 1))
         
-        #second pass to get a m-th minimum more accurately
+#second pass to get a m-th minimum more accurately
         dT = (self.tvec[i_end]-self.t_start)*np.abs(self.m)
         dT = dT*np.array((1-0.5/np.abs(self.m), 1+0.5/np.abs(self.m)))
         ind_tend = slice(*self.tvec.searchsorted(self.t_start+dT))
@@ -1626,17 +1620,17 @@ class Diag2DMapping(object):
         self.mode_Te = self.retro[ind_t]
         self.f0 = 1/(self.tvec[ind_t][-1]-self.tvec[ind_t][0])*np.abs(self.m)
 
-        #position of the measurements in the theta star coordinates
+#position of the measurements in the theta star coordinates
         self.thetaStar0 = [np.interp(t0, t, ts) for t0, t, ts in zip(self.theta0, self.theta, self.theta_star)]
         self.thetaStar0 = (np.array(self.thetaStar0) + np.pi)%(2*np.pi) - np.pi
 
-        #angular shift due to the time 
+#angular shift due to the time 
         self.phi = np.linspace(0, 2*np.pi, len(self.mode_Te), endpoint=True)
         self.initialized = True
         
         if self.phase_locked:
 
-            #compensate the phase shift of the Te profile in a different timepoints
+# compensate the phase shift of the Te profile in a different timepoints
             if hasattr(self, 'rmax'):
                 imax = np.argmin(bp.abs(self.rho-self.rmax))  #preselected position
             else:
@@ -1667,7 +1661,7 @@ class Diag2DMapping(object):
         mode_Te[0] = self.mode_Te[:, 0].mean()  #fill the core by zero aplitude mode
         shift_phi = self.shift_phi + self.phi0
         
-        #iterate over radial positions of the measurements
+#iterate over radial positions of the measurements
         for i, (t0, te, t) in enumerate(zip(self.thetaStar0, self.mode_Te.T, self.theta_star)):
             mode_Te[i+1] = np.interp((np.sign(self.m)*(t-t0)+shift_phi)%(2*np.pi), self.phi, te)
 
@@ -1679,10 +1673,10 @@ class Diag2DMapping(object):
     
     def clear_contours(self, ax=None):
         
-        #use self.ax if no other ax is provided
+#use self.ax if no other ax is provided
         if ax is None: ax = self.ax
         
-        #remove contours from a previous plotting 
+#remove contours from a previous plotting 
         for element in ('Te_contourf', 'Te_contour'):
             if hasattr(ax, element):
                 for coll in getattr(ax, element).collections:
@@ -1694,7 +1688,7 @@ class Diag2DMapping(object):
 
         if not self.initialized: return 
        
-        #use self.ax if no other ax is provided
+#use self.ax if no other ax is provided
         if ax is None: ax = self.ax
         self.clear_contours(ax=ax)
         self.shift_phase(self.shift_phi)
@@ -1767,7 +1761,7 @@ class Diag2DMapping(object):
                 collections += (ax.Te_contour.collections, )
 
             if update_cax:
-                #BUG update colorbar by creating a new one :( 
+# BUG update colorbar by creating a new one :( 
                 self.cbar_ax.cla()
                 cb = self.fig.colorbar(ax.Te_contourf, cax=self.cbar_ax, extend='both')
                 tick_locator = MaxNLocator(nbins=7)
@@ -1825,7 +1819,7 @@ class Diag2DMapping(object):
         self.prepare()
         self.update()
 
-        
+
 class GetInfoThread(QThread):
     
     finished = pyqtSignal(str)
@@ -1880,7 +1874,7 @@ class MainGUI(QMainWindow):
         elif self.tokamak != "AUG":
             raise Exception("tokamak %s is not supported yet"%self.tokamak)
         
-        #correction of the error in the plasma or diagnostic  position
+#correction of the error in the plasma or diagnostic  position
         self.dR_corr = 0
         self.dZ_corr = 0        
         self.m_numbers = np.r_[-4:0, 1:8]
@@ -1890,7 +1884,7 @@ class MainGUI(QMainWindow):
         current_path = os.getcwd()
         os.chdir(path)
 
-        #read a modules for data loading 
+#read a modules for data loading 
         filelist = os.listdir('loaders_'+self.tokamak)  
         filelist = [file[:-3] for file in filelist if file.endswith('.py')] 
         data_rutines = __import__('loaders_'+self.tokamak, fromlist=filelist)
@@ -1935,11 +1929,11 @@ class MainGUI(QMainWindow):
         self.SpecWin.t_range = (tmin, tmax)
 
         self.main_tab.currentChanged.connect(self.updatePanels)
-        #try to load data if specified over commadline
+#try to load data if specified over commadline
         self.change_diagnostics()
         self.change_signal()
         
-        #try to load data if specified over commadline
+#try to load data if specified over commadline
 
         self.change_diagnostics_phase()
         self.change_signal_phase()
@@ -1949,12 +1943,12 @@ class MainGUI(QMainWindow):
     def __del__(self, event=None):
         if hasattr(self, 'roto_tomo'):
             del self.roto_tomo
-            #self.roto_tomo.__del__(event)
+# self.roto_tomo.__del__(event)
  
     def updatePanels(self, panel_ind):
         new_panel = self.tables_names[panel_ind]
         prew_panel = self.tables_names[self.curr_tab]
-        #TODO write it in more efficient way 
+#TODO write it in more efficient way 
         self.curr_tab = panel_ind
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
@@ -1962,7 +1956,7 @@ class MainGUI(QMainWindow):
         tau = self.stau.value()/self.SpecWin.sdpi
         
         self.rho = None
-        #default values
+#default values
         selected_trange = self.SpecWin.t_range
         selected_frange = self.SpecWin.f_range
 
@@ -2066,7 +2060,7 @@ class MainGUI(QMainWindow):
                         pass  #if nothing has changed, just continue 
                 elif self.shot is not None:
   
-                    #update also tomography
+# update also tomography
                     try:
                         self.roto_tomo.prepare_tomo(self.tokamak, self.shot, tmin, tmax, fmin, fmax, self.eqm, tvec0, sig0)
                     except:
@@ -2078,7 +2072,7 @@ class MainGUI(QMainWindow):
 
                     if self.roto_tomo.showTe:
                         logger.info('prepare ECE')
-                        #update also 2D Te 
+# update also 2D Te 
                         curr_tab = self.curr_tab
                         self.updatePanels(self.tables_names.index('2D Te'))
                         self.curr_tab = curr_tab
@@ -2100,7 +2094,7 @@ class MainGUI(QMainWindow):
         
         fine_resolution = False
         if self.curr_tab == 0:
-            #increase the resolution before saving
+# increase the resolution before saving
             self.SpecWin.stft_disp.ax_update(self.SpecWin.stft_disp.im_ax, \
                             fine_resolution=fine_resolution, force_update=True)
  
@@ -2109,7 +2103,7 @@ class MainGUI(QMainWindow):
             pre = 'spectrum'
 
         if self.curr_tab == 1:
-            #increase the resolution before saving
+# increase the resolution before saving
             self.SpecWin_phase.stft_disp.ax_update(self.SpecWin_phase.stft_disp.im_ax, 
                                              fine_resolution=fine_resolution, force_update=True)
             
@@ -2134,7 +2128,7 @@ class MainGUI(QMainWindow):
         else:
             save_gui = QFileDialog(self)
             save_gui.setDefaultSuffix( '.pdf' )
-            #save_gui.setConfirmOverwrite(True )
+# save_gui.setConfirmOverwrite(True )
 
             file_choices =  "PDF (*.pdf);;EPS (*.eps);;SVG (*.svg)"
             selected_filter = u''
@@ -2370,7 +2364,7 @@ class MainGUI(QMainWindow):
 
         self.statusBar().showMessage('Loading equilibrium ...', 5000 )
 
-        #initialise equilibrium, save some time later! 
+#initialise equilibrium, save some time later! 
         init_equlibrium()
 
     def shot_phase_changed(self):
@@ -2399,7 +2393,7 @@ class MainGUI(QMainWindow):
 
         
     def dRdZ_changed(self):
-        #change correction of horizontal and vertical position of the magnetic equilibrium
+#change correction of horizontal and vertical position of the magnetic equilibrium
 
         try:
             dR = self.QLinedR.text()
@@ -2557,7 +2551,7 @@ class MainGUI(QMainWindow):
         self.statusBar().showMessage('Loading ...', 1000 )
         
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        #http://stackoverflow.com/questions/8218900/how-can-i-change-the-cursor-shape-with-pyqt
+#http://stackoverflow.com/questions/8218900/how-can-i-change-the-cursor-shape-with-pyqt
         
         T = time.time()
         try:
@@ -2632,7 +2626,7 @@ class MainGUI(QMainWindow):
             QMessageBox.warning(self, "Window not selected", "You must select the area for analysis\n in the spectrogram by a left mouse button ", QMessageBox.Ok)
             return 
         
-        #do not load data again, if is not necessary 
+#do not load data again, if is not necessary 
         if  not hasattr(self, 'data_loader_radial') or self.data_loader.__class__.__name__ == self.data_loader_radial.__class__.__name__:
             self.data_loader_radial  = self.data_loader
         
@@ -2640,7 +2634,7 @@ class MainGUI(QMainWindow):
 
             if self.diag_group is None: return 
 
-            #load data and if diag_group is "all"m it will load everything 
+# load data and if diag_group is "all"m it will load everything 
             rho, theta_tg, R, Z, data = [], [], [], [], []
             group = self.diag_group
             if self.diag in ['ECE']:
@@ -2660,7 +2654,7 @@ class MainGUI(QMainWindow):
             except:
                 Phi = 0
             
-            #get a smooth calibration for the stationary profile 
+# get a smooth calibration for the stationary profile 
             if self.diag == 'ECE' and hasattr(self.data_loader, 'get_Te0'):
                 out = self.data_loader.get_Te0(tmin, tmax, self.dR_corr+1e-4, self.dZ_corr)
                 if not out is None:  #tha case whan CEC and IDA are not avalible 
@@ -2744,7 +2738,7 @@ class MainGUI(QMainWindow):
 
             QMessageBox.warning(self, "Loading problem", "Check if the signal exist", QMessageBox.Ok)
         self.statusBar().showMessage('')
-        #option to set mode range from config file 
+#option to set mode range from config file 
         if self.mode_range is None:
             mode_range = self.balooning_coils_mode_range
         else:
@@ -2780,18 +2774,18 @@ class MainGUI(QMainWindow):
 
         
     def on_about(self):
-        #msg = """ This is a tool for the preparation of the input signals for the tomography. 
+#msg = """ This is a tool for the preparation of the input signals for the tomography. 
        
-        #Basic data processing 
-        #*** Selecting proper time interval
-        #*** Averadging by box car method and downsampling
-        #*** Removing of the corupted channels
+#Basic data processing 
+#*** Selecting proper time interval
+#*** Averadging by box car method and downsampling
+#*** Removing of the corupted channels
         
-        #Advaced data processing 
-        #*** Tool for design of the FIR filter
-        #*** Compressed coding by complex SVD
-        #*** Tool for verification of the results
-        #"""
+#Advaced data processing 
+#*** Tool for design of the FIR filter
+#*** Compressed coding by complex SVD
+#*** Tool for verification of the results
+#"""
         msg = 'Simple universal tool to visualize a spectral information, \n in case of troubles contact todstrci@ipp.mpg.de'
         
         QMessageBox.about(self, "About this tool", msg.strip())
@@ -2816,12 +2810,12 @@ class MainGUI(QMainWindow):
 
     
     def on_pick(self, event):
-        # The event received here is of the type
-        # matplotlib.backend_bases.PickEvent
-        #
-        # It carries lots of information, of which we're using
-        # only a small amount here.
-        # 
+# The event received here is of the type
+# matplotlib.backend_bases.PickEvent
+#
+# It carries lots of information, of which we're using
+# only a small amount here.
+# 
         box_points = event.artist.get_bbox().get_points()
         msg = "You've clicked on a bar with coords:\n %s" % box_points
         
@@ -2877,11 +2871,11 @@ class MainGUI(QMainWindow):
                     self.statusBar().showMessage, show_raw=self.show_raw, allow_selector=True, 
                         fig= self.fig_spec, cmap=self.spect_cmap)
 
-        # Bind the 'pick' event for clicking on one of the bars
+# Bind the 'pick' event for clicking on one of the bars
 
         self.canvas.mpl_connect('pick_event', self.on_pick)
 
-        # Create the navigation toolbar, tied to the canvas
+# Create the navigation toolbar, tied to the canvas
 
         self.mpl_toolbar = NavigationToolbar(self.canvas, self.cWidget)
         
@@ -2927,9 +2921,7 @@ class MainGUI(QMainWindow):
         self.sgamma.valueChanged.connect(self.SpecWin.apply_slider)
         self.stau.valueChanged.connect(self.SpecWin.apply_slider)
         
-        #
-        # Layout with box sizers
-        # 
+# Layout with box sizers
 
         hboxUp = QHBoxLayout()
         hboxDown = QHBoxLayout()        
@@ -3039,7 +3031,6 @@ class MainGUI(QMainWindow):
         self.QLinedR = QLineEdit(self.cWidget)
         self.QLinedZ = QLineEdit(self.cWidget)
         
-#        self.load_config()
         self.QLinedR.setText(str(self.dR_corr))
         self.QLinedZ.setText(str(self.dZ_corr))
 
@@ -3052,9 +3043,8 @@ class MainGUI(QMainWindow):
         self.QLinedR.editingFinished.connect(self.dRdZ_changed)
         self.QLinedZ.editingFinished.connect(self.dRdZ_changed)
 
-        #
-        # Layout with box sizers
-        # 
+# Layout with box sizers
+
         hboxUp = QHBoxLayout()
         hboxDown = QHBoxLayout()        
 
@@ -3106,13 +3096,11 @@ class MainGUI(QMainWindow):
 
         self.fig_phase.patch.set_facecolor((c.red()/255., c.green()/255., c.blue()/255.))
         
-        # Create the mpl Figure and FigCanvas objects. 
-        #        
-        # Since we have only one plot, we can use add_axes 
-        # instead of add_subplot, but then the subplot
-        # configuration tool in the navigation toolbar wouldn't
-        # work.
-        
+# Create the mpl Figure and FigCanvas objects.        
+# Since we have only one plot, we can use add_axes 
+# instead of add_subplot, but then the subplot
+# configuration tool in the navigation toolbar wouldn't work
+
         self.stau_phase = QSlider(Qt.Horizontal)
         self.sgamma_phase = QSlider(Qt.Horizontal)
         self.method_phase  = QComboBox(self.cWidget)
@@ -3120,11 +3108,11 @@ class MainGUI(QMainWindow):
                         , self.method_phase, self.statusBar().showMessage, show_raw=False, cmap=self.spect_cmap, 
                         allow_selector=True, fig= self.fig_phase, phase_analysis=True, show_colorbar=True)
 
-        # Bind the 'pick' event for clicking on one of the bars
+# Bind the 'pick' event for clicking on one of the bars
 
         self.canvas_phase.mpl_connect('pick_event', self.on_pick)
 
-        # Create the navigation toolbar, tied to the canvas
+# Create the navigation toolbar, tied to the canvas
 
         self.mpl_toolbar_phase = NavigationToolbar(self.canvas_phase, self.cWidget)
         
@@ -3176,7 +3164,7 @@ class MainGUI(QMainWindow):
         self.sgamma_phase.valueChanged.connect(self.SpecWin_phase.apply_slider)
         self.stau_phase.valueChanged.connect(self.SpecWin_phase.apply_slider)
 
-        # Layout with box sizers
+# Layout with box sizers
  
         hboxUp = QHBoxLayout()
         hboxDown = QHBoxLayout()        
@@ -3259,7 +3247,7 @@ class MainGUI(QMainWindow):
 
         self.canvas_2Dmap.mpl_connect('pick_event', self.on_pick)
 
-        # Create the navigation toolbar, tied to the canvas
+# Create the navigation toolbar, tied to the canvas
 
         self.mpl_toolbar_2D = NavigationToolbar(self.canvas_2Dmap, self.cWidget)
         self.mpl_toolbar_2D.setMaximumWidth(150)
@@ -3286,7 +3274,7 @@ class MainGUI(QMainWindow):
         self.tomo_limit.setToolTip('Set a lower limit for the Te plot')
         self.tomo_limit.setFixedWidth(50)
 
-        # Layout with box sizers
+# Layout with box sizers
 
         hboxC = QHBoxLayout()
         hboxL = QHBoxLayout()
@@ -3364,7 +3352,7 @@ class MainGUI(QMainWindow):
 
         self.rototomo_canvas.mpl_connect('pick_event', self.on_pick)
         
-        # Create the navigation toolbar, tied to the canvas
+# Create the navigation toolbar, tied to the canvas
 
         self.mpl_toolbar_rototomo = NavigationToolbar(self.rototomo_canvas, self.cWidget)
         items = 'Home', 'Pan', 'Zoom'
@@ -3422,7 +3410,7 @@ class MainGUI(QMainWindow):
         self.retrofit_button = QPushButton('Retrofit', self)
         self.retrofit_button.setFixedWidth(130)
 
-        # Layout with box sizers
+# Layout with box sizers
  
         vbox1 = QVBoxLayout()
         vbox1.setAlignment( Qt.AlignTop)
@@ -3432,7 +3420,7 @@ class MainGUI(QMainWindow):
         ModeFrame.setLayout(vbox1_up)
 
         for l, w, frame in [(label_m, self.rototomo_m_num, vbox1_up), 
-                    (label_n,    self.rototomo_n_num, vbox1_up), 
+                    (label_n,   self.rototomo_n_num, vbox1_up), 
                     (label_bcg, self.rototomo_plot_bcg, vbox1), 
                     (label_TeOver, self.rototomo_TeOver, vbox1), 
                     (label_mag_flx, self.rototomo_mag_flx, vbox1)]:
@@ -3443,7 +3431,7 @@ class MainGUI(QMainWindow):
             subbbox.setAlignment(w, Qt.AlignRight)
             frame.addLayout(subbbox)
 
-        for l, w in [(label_lim,  self.rototomo_limit), 
+        for l, w in [(label_lim, self.rototomo_limit), 
                     (label_reg,  self.rototomo_reg)]:
             subvbox = QVBoxLayout()
             subvbox.addWidget(l)
@@ -3458,7 +3446,7 @@ class MainGUI(QMainWindow):
         outer_vbox.addWidget(self.rototomo_button)
         outer_vbox.addWidget(self.retrofit_button)
         outer_vbox.addWidget(self.mpl_toolbar_rototomo)
-        outer_vbox.setAlignment( self.mpl_toolbar_rototomo, Qt.AlignLeft)
+        outer_vbox.setAlignment(self.mpl_toolbar_rototomo, Qt.AlignLeft)
 
         self.horizontalLayout_rototomo.addLayout(outer_vbox )
         self.horizontalLayout_rototomo.addWidget(self.rototomo_canvas)
@@ -3581,7 +3569,7 @@ class MainGUI(QMainWindow):
             self.tokamak = config.get('basic', 'tokamak')
             self.mds_server = config.get('basic', 'mds_server')
         except:
-            #backward compatibility 
+# backward compatibility 
             self.mds_server = None
             self.tokamak = 'AUG'
         logger.info('TOKAMAK = %s' %self.tokamak)
@@ -3657,7 +3645,7 @@ if __name__ == '__main__':
 
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("plastique"))
-    #set window icon
+# set window icon
     app.setWindowIcon(QIcon(path+os.sep+'icon.png'))
     
     if os.name == 'nt':
