@@ -1,6 +1,6 @@
 from .loader import * 
 
-logger = logging.getLogger('pyspecview.bolo')
+logger = logging.getLogger('specview.bolo')
 logger.setLevel(logging.INFO)
 
 

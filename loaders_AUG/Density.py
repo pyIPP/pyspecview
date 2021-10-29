@@ -1,7 +1,7 @@
 from .loader import * 
 from scipy.signal import argrelmin
 
-logger = logging.getLogger('pyspecview.density')
+logger = logging.getLogger('specview.density')
 logger.setLevel(logging.INFO)
 
 

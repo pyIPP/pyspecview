@@ -1,5 +1,12 @@
 #!/usr/bin/env python
 
+"""GUI for analysing AUG spectra from shotfiles
+
+"""
+__author__  = 'T. Odstrcil, G. Tardini (Tel. 1898)'
+__version__ = '0.0.1'
+__date__    = '29.10.2021'
+
 import sys, os, random, time, argparse, logging
 import traceback
 import matplotlib
@@ -7,9 +14,8 @@ import matplotlib
 fmt = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s: %(message)s', '%H:%M:%S')
 hnd = logging.StreamHandler()
 hnd.setFormatter(fmt)
-logger = logging.getLogger('pyspecview')
+logger = logging.getLogger('specview')
 logger.addHandler(hnd)
-#logger.setLevel(logging.DEBUG)
 logger.setLevel(logging.INFO)
 
 try:
@@ -19,42 +25,18 @@ try:
     import configparser
     from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT
-    matplotlib.rcParams['backend'] = 'Qt5Agg' 
-
+    matplotlib.rcParams['backend'] = 'Qt5Agg'
 except:
     from PyQt4.QtCore import *
     from PyQt4.QtGui import *
     import ConfigParser as configparser
     from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT
-    matplotlib.rcParams['backend'] = 'Qt4Agg' 
-
-if matplotlib.compare_versions(matplotlib.__version__, '1.9.9'):
-# http://matplotlib.org/users/dflt_style_changes.html
-    params = {'legend.fontsize': 'large', 
-            'axes.labelsize': 'large', 
-            'axes.titlesize': 'large', 
-            'xtick.labelsize' :'medium', 
-            'ytick.labelsize': 'medium', 
-            'font.size':12, 
-            'mathtext.fontset': 'cm', 
-            'mathtext.rm': 'serif', 
-            'grid.color': 'k', 
-            'grid.linestyle': ':', 
-            'grid.linewidth': 0.5, 
-            'lines.linewidth'   : 1.0, 
-            'lines.dashed_pattern' : (6, 6), 
-            'lines.dashdot_pattern' : (3, 5, 1, 5), 
-            'lines.dotted_pattern' : (1, 3), 
-            'lines.scale_dashes': False, 
-            'errorbar.capsize':3, 
-            'mathtext.fontset': 'cm', 
-            'mathtext.rm' : 'serif' }
-    matplotlib.rcParams.update(params)
+    matplotlib.rcParams['backend'] = 'Qt4Agg'
 
 from matplotlib.figure import Figure
-from matplotlib.widgets import Slider, RadioButtons, RectangleSelector
-from matplotlib.ticker import NullFormatter, ScalarFormatter, MaxNLocator, AutoMinorLocator
+from matplotlib.widgets import RectangleSelector
+from matplotlib.ticker import NullFormatter, MaxNLocator, AutoMinorLocator
 from matplotlib.widgets import MultiCursor
 import matplotlib.pylab as plt
 
@@ -77,6 +59,16 @@ from sstft import sstft
 
 random_seed = 10
 font_size = 10
+
+SV_HEADER = """
+        --------------------------------
+        ---- SPECVIEW version %s ----
+        --------------------------------
+
+Contacts: giovanni.tardini@ipp.mpg.de odstrcilt@fusion.gat.com
+""" %__version__
+
+print(SV_HEADER)
 
 
 class colorize:
@@ -169,7 +161,6 @@ class SpectraViewer(object):
             self.uax = self.fig.add_axes([0.11, 0.85, 0.87, 0.13])
             self.uax.xaxis.set_major_formatter(NullFormatter())
             self.uax.yaxis.set_major_formatter(NullFormatter())
-        
         elif show_colorbar:
             self.fig.subplots_adjust(right=0.9)
             self.cax = self.fig.add_axes([0.92, 0.1, 0.02, 0.85])
@@ -181,8 +172,7 @@ class SpectraViewer(object):
 
         self.ax.set_xlabel('Time [s]', fontsize=font_size)
         self.ax.set_ylabel('Frequency [Hz]', fontsize=font_size)
-        
- 
+
         for label in (self.ax.get_xticklabels() + self.ax.get_yticklabels()):
             label.set_fontsize(font_size) # Size here overrides font_prop
 

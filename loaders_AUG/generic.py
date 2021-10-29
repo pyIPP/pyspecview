@@ -1,6 +1,6 @@
 from .loader import * 
 
-logger = logging.getLogger('pyspecview.gen')
+logger = logging.getLogger('specview.gen')
 logger.setLevel(logging.INFO)
 
 #simple interface to load genetic signal 

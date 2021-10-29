@@ -1,7 +1,7 @@
 from .loader import * 
 import os, logging
 
-logger = logging.getLogger('pyspecview.sece')
+logger = logging.getLogger('specview.sece')
 
 '''
 Created on Dec 10, 2016

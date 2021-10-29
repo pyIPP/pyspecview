@@ -1,6 +1,6 @@
 from .loader import * 
 
-logger = logging.getLogger('pyspecview.elm_c')
+logger = logging.getLogger('specview.elm_c')
 logger.setLevel(logging.INFO)
 
 shotfiles = 'MHI', 'MHA', 'MHB', 'MHC', 'MHD', 'MHE', 'MHF', 'MHG', 'MHH'

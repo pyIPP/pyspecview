@@ -1,7 +1,7 @@
 from .loader import * 
 from scipy.interpolate import interp1d
 
-logger = logging.getLogger('pyspecview.ece')
+logger = logging.getLogger('specview.ece')
 logger.setLevel(logging.INFO)
 
 

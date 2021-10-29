@@ -3,8 +3,8 @@ import os, logging
 import traceback
 import aug_sfutils as sf
 
-logger = logging.getLogger('pyspecview.loader')
-logger.setLevel(logging.DEBUG)
+logger = logging.getLogger('specview.loader')
+logger.setLevel(logging.INFO)
 
 shot_path = '/afs/ipp-garching.mpg.de/augd/shots/'
 

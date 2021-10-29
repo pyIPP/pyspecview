@@ -1,6 +1,6 @@
 from .loader import * 
 
-logger = logging.getLogger('pyspecview.mirnov')
+logger = logging.getLogger('specview.mirnov')
 logger.setLevel(logging.INFO)
 
 shotfiles = 'MHI', 'MHA', 'MHB', 'MHC', 'MHD', 'MHE', 'MHF', 'MHG', 'MHH', 'MTR'
