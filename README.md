@@ -15,6 +15,8 @@ this short manual was prepared:
        for a coherent MHD modes with sufficient signal level.     
     extra)  double clicking will trace a mode, still in the development phase 
     
+![image](https://user-images.githubusercontent.com/32073690/197647117-ffd1acea-816e-40d7-b762-6c959dfd6f57.png)
+
 ## Cross-phaseogram panel
     1) set discharge and signal 
     2) select time and frequency like in the Spectrogram panel
