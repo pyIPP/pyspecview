@@ -1,5 +1,9 @@
+# Introduction
 The control of the GUI is simple very intuitive but to use the full ability of this tool, 
 this short manual was prepared:
+
+## Supported Machines
+DIII-D, NSTX, ASDEX Upgrade
 
 ## How to start the program
     Execute command 'pyspecview' in the linux clusters toks01-06 or toki01-07. 
@@ -15,7 +19,7 @@ this short manual was prepared:
        for a coherent MHD modes with sufficient signal level.     
     extra)  double clicking will trace a mode, still in the development phase 
     
-![image](https://user-images.githubusercontent.com/32073690/197647117-ffd1acea-816e-40d7-b762-6c959dfd6f57.png)
+ <img src="https://user-images.githubusercontent.com/32073690/197647117-ffd1acea-816e-40d7-b762-6c959dfd6f57.png"   height="800"  align="middle">
 
 ## Cross-phaseogram panel
     1) set discharge and signal 
@@ -39,6 +43,9 @@ this short manual was prepared:
     (the difference can also be introduced by the fact that no ray-tracing 
     (and cold resonance for ECE resonance are used)
     
+ <img src="https://user-images.githubusercontent.com/32073690/197647365-f83b29cf-2c35-4496-8d58-b27a164d99e3.png"   height="800"  align="middle">
+
+
 ## 2D Te
     1) the same procedure as for Radial profile. The phase and amplitude is then
     mapped on the 2D coordinates in a real space
@@ -47,6 +54,10 @@ this short manual was prepared:
     4) Scale slider set a lower limit of the colorbar
     5) Substract option switches between the absolute temperature and the mean subtracted value. 
     NOTE 1: Only LFS measurements are used! 
+    
+    
+<img src="https://user-images.githubusercontent.com/32073690/197678699-5799041e-4c20-4827-ab57-501c6b3a1730.png"   height="800"  align="middle">
+
  
 ## 2D SXR
     The tomographic code will reconstruct stationary emissivity and several harmonics of the selected mode.
