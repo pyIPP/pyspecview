@@ -83,13 +83,5 @@ DIII-D, NSTX, ASDEX Upgrade
     All data, spectrogram, profiles, etc. are stored by File/Save data
     
 
-    
-## Install:
-    module purge 
-    module load python27/basic qt py27-pyqt fftw py27-pyfftw ffmpeg git
-    git clone https://github.com/pyIPP/pyspecview.git
-    cd ./pyspecviewer
-    python ./pyspecview.py
-
-
+ 
     
