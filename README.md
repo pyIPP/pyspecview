@@ -56,7 +56,7 @@ DIII-D, NSTX, ASDEX Upgrade
     NOTE 1: Only LFS measurements are used! 
     
     
-<img src="https://user-images.githubusercontent.com/32073690/197678699-5799041e-4c20-4827-ab57-501c6b3a1730.png"   height="800"  align="middle">
+<img src="https://user-images.githubusercontent.com/32073690/198147512-2f9136ec-4172-45e4-95a9-4eb182dd85ed.png"   height="800"  align="middle">
 
  
 ## 2D SXR
