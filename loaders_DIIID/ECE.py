@@ -60,7 +60,6 @@ class loader_ECE(loader):
     units = 'eV'
     
     #can improve performace over very slow networks
-    slow_network=False
 
     def __init__(self,*args, **kargs):
         
@@ -89,12 +88,7 @@ class loader_ECE(loader):
         tag='\TECEF'
         TDIcall= tag+"01"
 
-        if self.slow_network:    
-        #alternative, but slow!!!!! why???   
-            a,b,c = self.MDSconn.get( r'_t=dim_of('+TDIcall+'); [size(_t), _t[0], _t[size(_t)-1]]' ).data()
-            self.tvec = linspace(b/1e3,c/1e3,int(a))
-        else:
-            self.tvec = None
+        self.tvec = None
             
         if self.shot < 109400:
             self.nchs = 32
@@ -112,7 +106,7 @@ class loader_ECE(loader):
 
         # get position settings
         self.z = self.MDSconn.get(subnodes_z).data()
-        self.Phi  = self.MDSconn.get(subnodes_phi).data()#deg
+        self.Phi  =  21.#81. #from diagnostic webpage #self.MDSconn.get(subnodes_phi).data()#deg
         self.MDSconn.closeTree(self.tree, self.shot)
 
         if self.freq is None or len(self.freq)<2:
@@ -138,23 +132,15 @@ class loader_ECE(loader):
             imin,imax = self.tvec.searchsorted([tmin,tmax])
             imax+= 1
             ind = slice(imin,imax)
-            #print 'imin,imax', imin,imax
 
         #use catch if possible 
         for n in atleast_1d(nch):
             if n in self.data_dict:
-                Te, ind_ = self.data_dict[n]
-                if  ind_.start <= imin and  ind_.stop >= imax:
-                    output[n] = Te[imin-ind_.start:imax-ind_.start]
-        
-        
-        
+                output[n] = self.data_dict[n][imin:imax]
+                
         TDIcall="_x=\TECEF%02d"
 
-        if self.slow_network:
-            #load only short part of the signal(it is slow, but can be useful when the internet access is slower)
-            TDIcall="("+TDIcall+")[%d:%d:%d]"%(imin,imax,1)
-                        
+    
             
         #single signal loading
         if size(nch) == 1:
@@ -176,15 +162,9 @@ class loader_ECE(loader):
 
             self.MDSconn.closeTree(self.tree,self.shot)
 
-            
             ind = slice(imin,imax)
-            
-            if self.slow_network:
-                self.data_dict[nch] = Te, ind
-                return [self.tvec[ind], Te]
-            else:
-                self.data_dict[nch] = Te, slice(0, len(Te))
-                return [self.tvec[ind], Te[ind]]
+            self.data_dict[nch] = Te
+            return [self.tvec[ind], Te[ind]]
                  
 
             
@@ -193,8 +173,8 @@ class loader_ECE(loader):
         load_nch = [n for n in nch if not n in output]
         
         if len(load_nch) > 0:
-                    #fast parallel fetch
-            print( '\n fast parallel fetch...')
+            logger.info( 'fast parallel fetch..', (time.time() - t))
+
             numTasks = 8
             
             t = T()
@@ -212,13 +192,12 @@ class loader_ECE(loader):
             out = []
             nconn = len(args)  #brutal force
             pool = Pool()
-            #out = pool.map(mds_load,args)
             for o in pool.map(mds_load,args):
                 out.extend(o)
             pool.close()
             pool.join()
 
-            print(( 'data loaded in %.2f'%( T()-t)))
+            #print(( 'data loaded in %.2f'%( T()-t)))
             if self.tvec is None:
                 self.tvec = out[-1]
                 self.tvec /= 1.e3
@@ -230,16 +209,11 @@ class loader_ECE(loader):
             for n, Te in zip(load_nch, out ):
                 if len(Te) == 0: Te =  self.tvec*0
                 Te*= 1e3 #convert to eV units
-                if self.slow_network:
-                    output[n] = Te
-                    self.data_dict[n] = Te, ind
-                else:
-                    output[n] = Te[ind]
-                    self.data_dict[n] = Te, slice(0, len(Te))
+                output[n] = Te[ind]
+                self.data_dict[n] = Te
         
         #just for testing 
         #tvec = spaced_vector(self.tvec[0],self.tvec[-1],(self.tvec[-1]-self.tvec[0])/(len(self.tvec)-1))
-        #print 'self.tvec[ind]' ,self.tvec[ind].shape,self.tvec.shape, ind, self.tvec.shape, tmin,tmax
         return [[self.tvec[ind], output[n]] for n in nch]
      
         
@@ -394,11 +368,11 @@ def main():
     MDSconn = mds.Connection(mds_server )
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
-    print(( eqm.Open(175900,diag='EFIT01' )))
+    eqm.Open(178924,diag='EFIT01' )
     MDSconn2 = mds.Connection(mds_server )
 
 
-    ece = loader_ECE(175900,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
+    ece = loader_ECE(178924,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
     #cd 
     #ece.get_RZ_theta( 3,range(1,40),dR=0,dZ=0)
     #ece.get_Te0(2,3)
@@ -429,7 +403,7 @@ def main():
     
     #data_ = ece.get_signal("", ece.get_names(ece.groups[0]), tmin=2, tmax = 2.1)
     #T =T()
-    data = ece.get_signal("",27, tmin=3.09, tmax = 3.1)
+    data = ece.get_signal("",27, tmin=1, tmax = 5)
     tvec, sig = data
     plot(tvec,sig)
     xlim(tvec[0],tvec[-1])

@@ -1,8 +1,17 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 import sys, os, random, time, argparse, logging
 import traceback
 import matplotlib  
+ 
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+import configparser
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT
+matplotlib.rcParams['backend'] = 'Qt5Agg' 
 
 fmt = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s: %(message)s', '%H:%M:%S')
 hnd = logging.StreamHandler()
@@ -12,26 +21,9 @@ logger.addHandler(hnd)
 logger.setLevel(logging.DEBUG)
 #logger.setLevel(logging.INFO)
 
-try:
-    from PyQt5.QtCore import *
-    from PyQt5.QtGui import *
-    from PyQt5.QtWidgets import *
-    import configparser
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-    from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT
-    matplotlib.rcParams['backend'] = 'Qt5Agg' 
-
-except:
-    from PyQt4.QtCore import *
-    from PyQt4.QtGui import *
-    import ConfigParser as configparser
-    from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
-    from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT
-    matplotlib.rcParams['backend'] = 'Qt4Agg' 
-
-if matplotlib.compare_versions(matplotlib.__version__, '1.9.9'):
+ 
 # http://matplotlib.org/users/dflt_style_changes.html
-    params = {'legend.fontsize': 'large', 
+params = {'legend.fontsize': 'large', 
             'axes.labelsize': 'large', 
             'axes.titlesize': 'large', 
             'xtick.labelsize' :'medium', 
@@ -50,11 +42,11 @@ if matplotlib.compare_versions(matplotlib.__version__, '1.9.9'):
             'errorbar.capsize':3, 
             'mathtext.fontset': 'cm', 
             'mathtext.rm' : 'serif' }
-    matplotlib.rcParams.update(params)
+matplotlib.rcParams.update(params)
 
 from matplotlib.figure import Figure
 from matplotlib.widgets import Slider, RadioButtons, RectangleSelector
-from matplotlib.ticker import NullFormatter, ScalarFormatter, MaxNLocator, AutoMinorLocator
+from matplotlib.ticker import NullFormatter, ScalarFormatter, MaxNLocator, AutoMinorLocator, FixedLocator
 from matplotlib.widgets import MultiCursor
 import matplotlib.pylab as plt
 
@@ -78,8 +70,23 @@ from sstft import sstft
 random_seed = 10
 font_size = 10
 
-class colorize:
+ 
 
+ 
+#prevents killing the GUI whenexception is raised
+def excepthook(exc_type, exc_value, exc_tb):
+    # Note: sys.__excepthook__(...) would not work here.
+    # We need to use print_exception(...):
+    traceback.print_exception(exc_type, exc_value, exc_tb)
+
+ 
+
+ 
+sys.excepthook = excepthook
+
+
+
+class colorize:
     def __init__( self, hue, invert=True):
 
         # hue is a list of hue values for which the colors will be evaluated
@@ -233,7 +240,8 @@ class SpectraViewer(object):
         self.plt_trace, = self.ax.plot([], [], 'gray', zorder=99)
 
         c  = 1-np.array(plt.cm.get_cmap( cmap)(0))[:3] #inverse of the lowest color in the colormap
-        self.plt_plasma_freq, = self.ax.plot([], [], c=c, zorder=99, lw=.5)
+        self.plt_plasma_freq_n1, = self.ax.plot([], [], c=c, zorder=99, lw=.5)
+        self.plt_plasma_freq_n2, = self.ax.plot([], [], c=c, zorder=99, lw=.5,ls='--')
 
         if allow_selector:
             rectprops = dict(facecolor='gray', edgecolor='black', alpha=0.5, fill=True, zorder=99)
@@ -243,7 +251,28 @@ class SpectraViewer(object):
                                        minspanx=5, minspany=5, rectprops=rectprops, 
                                        spancoords='pixels')
         
+    def __del__(self):
+       pass
+
+    def reset(self):
+        #clear axis, remove images from the previous discharge
+        if not self.initialized:
+           return 
+
+        self.initialized=False
+
+        for artist in self.ax.get_images():
+            artist.remove()
+            del artist
+        self.ax.figure.canvas.draw_idle()
+  
+        if self.show_raw:
+            for artist in self.uax.lines:
+                artist.remove()
+            self.uax.figure.canvas.draw_idle()
             
+        
+       
     def init_plot(self, data, window=None, tmin=None, tmax=None, 
                   fmin0=-np.infty, fmax0=np.infty, description='', mode_range=None, mode_num_lbl='' ):
         
@@ -276,10 +305,15 @@ class SpectraViewer(object):
 
         self.plt_trace.set_data([], [])
 
-        self.plt_plasma_freq.set_visible(False)
+        self.plt_plasma_freq_n1.set_visible(False)
+        self.plt_plasma_freq_n2.set_visible(False)
+     
         if 'freq' in data:
-            self.plt_plasma_freq.set_data(data['freq_tvec'], data['freq'])
-            self.plt_plasma_freq.set_visible(True)
+            self.plt_plasma_freq_n1.set_data(data['freq_tvec'], data['freq'])
+            self.plt_plasma_freq_n2.set_data(data['freq_tvec'], data['freq']*2)
+            self.plt_plasma_freq_n1.set_visible(True)
+            self.plt_plasma_freq_n2.set_visible(True)
+
    
         if self.show_raw:
 
@@ -306,7 +340,6 @@ class SpectraViewer(object):
                             colorbar_ax=self.cax, method=self.DFT_backend)
     
         try:
-            logger.debug('%s %s', tmin.dtype, tmax.dtype)
             x, y, Z = self.stft_disp.__call__(tmin, tmax, fmin0, fmax0)
             fmax0 = min(fmax0, y[-1])
             fmin0 = max(fmin0, y[0])
@@ -320,6 +353,7 @@ class SpectraViewer(object):
             self.ax.set_xlim(tmin, tmax)
             logger.error('time range or frequency range is too small')
             raise
+
         self.ax.set_ylim(y[0], y[-1])
         self.ax.set_xlim(tmin, tmax)
         self.stft_img.prepare(x[0], x[-1], y[0], y[-1], Z)
@@ -583,20 +617,25 @@ class SpectraViewer(object):
 
                 if self.phase_analysis:
                     ix = int(round((x-xstart)/(xend-xstart)*(self.stft_img.z[1].shape[1]-1)))
-                    iy = int(round((y-ystart)/(yend-ystart)*(self.stft_img.z[1].shape[0]-1)))                 
-                    f = self.stft_img.z[1].T[ix, iy]
-                    n = self.stft_img.N_mode[0][self.stft_img.N_mode[1]==f]
-                    self.message_out('t: %.5fs f: %.3gkHz, mode num.:%d'%(x, y/1e3, n), 1000)
-
+                    iy = int(round((y-ystart)/(yend-ystart)*(self.stft_img.z[1].shape[0]-1))) 
+                    try:
+                        f = self.stft_img.z[1].T[ix, iy]
+                        n = self.stft_img.N_mode[0][self.stft_img.N_mode[1]==f]
+                        self.message_out('t: %.5fs f: %.3gkHz, mode num.:%d'%(x, y/1e3, n), 1000)
+                    except:
+                        pass
                 else:
                     ix = min(max(0, (x-xstart)/(xend-xstart)), 1)
                     ix = int(round(ix*(self.stft_img.z.shape[1]-1)))
                     
                     iy = min(max(0, (y-ystart)/(yend-ystart)), 1)
                     iy = int(round(iy*(self.stft_img.z.shape[0]-1)))
-                    f = self.stft_img.z[iy, ix]
-                    self.message_out('t: %.5fs f: %.3gkHz val:%.2e'%(x, y/1e3, f), 1000)
-
+                    try:
+                        f = self.stft_img.z[iy, ix]
+                        self.message_out('t: %.5fs f: %.3gkHz val:%.2e'%(x, y/1e3, f), 1000)
+                    except:
+                        pass
+                    
             #select only a single mode number
             if self.phase_analysis:
                 
@@ -605,7 +644,13 @@ class SpectraViewer(object):
                     self.orig_z = None
 
                 if self.cax == event.inaxes and event.name  == 'button_press_event':
-                    n = self.stft_img.N_mode[1][int(event.ydata*len(self.stft_img.N_mode[0]))]
+                    #for older matplotlib
+                    if all(np.array(self.cax.get_ylim()) == np.array((0.,1.))):
+                        n = self.stft_img.N_mode[1][int(event.ydata*len(self.stft_img.N_mode[0]))]
+                    else: #new matploltib
+                        n_ = int(round(event.ydata))
+                        n = self.stft_img.N_mode[1][self.stft_img.N_mode[0]==n_]
+               
                     self.orig_z = np.copy(self.stft_img.z[0]), np.copy(self.stft_img.z[1])
                     self.stft_img.z[0][self.stft_img.z[1] != n] = 0
                     self.stft_img.update_image(xstart, xend, ystart, yend, self.stft_img.z)  
@@ -686,7 +731,7 @@ class STFTImage():
             self.prepare_colorbar()
 
         self.im = self.ax.imshow(np.zeros((2, 2)), origin='lower', extent=(xstart, xend, ystart, 
-                   yend), aspect='auto', cmap=self.cmap, interpolation='gaussian')#
+                   yend), aspect='auto', cmap=self.cmap, interpolation='gaussian', rasterized=True)#
         
         self.update_image(xstart, xend, ystart, yend, z)
 
@@ -747,8 +792,7 @@ class STFTImage():
             self.im.set_data(z)
         except:
             logger.error(  'error self.im.set_data(z)')
-            print( shape(z))
-            print( z)
+  
         self.im.set_extent((xstart, xend, ystart, yend))
  
         t3 = time.time()
@@ -782,7 +826,9 @@ class DataPlot():
 
     def __init__(self, ax=None, **kwarg):
         self.kwarg = kwarg
-        self.ax = ax
+        self.ax_raw = ax
+        self.tmin = -np.infty
+        self.tmax = np.infty
 
     def prepare(self, data, tmin, tmax):
         self.x = data['tvec']
@@ -793,17 +839,21 @@ class DataPlot():
             self.y = data['signal'][0]
 
             
-        self.data_plot, = self.ax.plot([], [], antialiased=True, **self.kwarg)
+        self.data_timetrace, = self.ax_raw.plot([], [], antialiased=True, **self.kwarg)
         self.update_plot(tmin, tmax)
         
     def update_plot(self, xstart, xend, xnew=None, ynew=None):
         #dims = self.ax.axesPatch.get_window_extent().bounds
-        
-        xlim =  self.ax.get_xlim()
-        if xstart == xlim[0] and xend == xlim[1]:
+         
+        xlim =  self.ax_raw.get_xlim()
+
+        if xstart == self.tmin and xend == self.tmax and xnew is None and ynew is None:
             return
+
+        self.tmin = xstart
+        self.tmax = xend
         
-        dims = self.ax.get_window_extent().bounds
+        dims = self.ax_raw.get_window_extent().bounds
 
         width = int(dims[2] + 0.5)
         
@@ -827,9 +877,9 @@ class DataPlot():
             logger.error('update_plot error %s %d %d %d', str(e), len(self.x), len(ind), len(self.y))
             x , y = [0, ], [0, ]
             
-        self.data_plot.set_data(x, y)
-        self.ax.set_xlim(xstart, xend)
-        self.ax.set_ylim(np.amin(y), np.amax(y))
+        self.data_timetrace.set_data(x, y)
+        self.ax_raw.set_xlim(xstart, xend)
+        self.ax_raw.set_ylim(np.amin(y), np.amax(y))
 
 
 class STFTDisplay():
@@ -943,6 +993,7 @@ class STFTDisplay():
     def set_yticks(self):
         #plot yticks in Hz, kHz, MHz
              
+        self.im_ax.yaxis.set_major_locator(MaxNLocator(6))
         yticks = self.im_ax.get_yticks()
         
         if yticks.max() < 1e3:
@@ -953,7 +1004,10 @@ class STFTDisplay():
             unit, fact = 'MHz', 1e6
             
         ndig = max(0, int(np.ceil(-np.log10(np.mean(np.diff(yticks)))) + np.log10(fact)))
- 
+        
+        # fixing yticks with matplotlib.ticker "FixedLocator"
+        self.im_ax.yaxis.set_major_locator(FixedLocator(yticks))
+
         self.im_ax.set_yticklabels([('%.'+str(ndig)+'f')%f for f in yticks/fact]) 
         self.im_ax.set_ylabel('Frequency [%s]'%unit, fontsize=font_size)
 
@@ -991,8 +1045,9 @@ class STFTDisplay():
         if xstart < self.tvec[0] or xend > self.tvec[-1]:
             xstart = max(xstart, self.tvec[0] )
             xend   = min(xend  , self.tvec[-1])
-
-            ax.set_xlim(xstart, xend)
+            _xstart,_xend = ax.get_xlim()
+            if not (_xstart == xstart and _xend == xend):
+                ax.set_xlim(xstart, xend)
          
         ymin = -.5/self.dt if self.signal.dtype == 'csingle' else 0
         if ystart < ymin or yend > .5/self.dt:
@@ -1444,6 +1499,7 @@ class Diag2DMapping(object):
     loaded = False
     n_theta = 10
     n_rho = 10
+    ECH_gyrotron_locations = {}
 
     def __init__(self, parent, fig, n_contour, remback_botton):
 
@@ -1453,6 +1509,7 @@ class Diag2DMapping(object):
         self.ax = self.fig.add_subplot(111)
         self.plot_ece_active, = self.ax.plot([], [], 'wo', zorder=100, markeredgecolor='k')
         self.plot_ece_ignored, = self.ax.plot([], [], 'o' , zorder=100, mfc='none', markeredgecolor='k')
+        self.ech_location, = self.ax.plot([], [], 'xk', zorder=100)
 
         X = np.zeros((1, self.n_rho))
         self.plot_mag_rho   = self.ax.plot(X, X, 'k--', lw=.5, zorder=99 , dashes=(5, 5))
@@ -1470,13 +1527,17 @@ class Diag2DMapping(object):
         elif self.parent.tokamak == "DIIID":
             from loaders_DIIID import map_equ
             gc_r, gc_z = map_equ.get_gc()
-            try:
-                for key in gc_r:
-                    self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
-            except:
-                logger.error('Loading of the  vessel shape failed!!')
-                logger.error( traceback.format_exc())
+        else:
+            gc_r, gc_z =  {},{}
+        
 
+
+        try:
+            for key in gc_r:
+                self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
+        except:
+            logger.error('Loading of the  vessel shape failed!!')
+            logger.error( traceback.format_exc())
 
         for label in (self.ax.get_xticklabels() + self.ax.get_yticklabels()):
             label.set_fontsize(font_size) # Size here overrides font_prop
@@ -1553,7 +1614,7 @@ class Diag2DMapping(object):
         self.ax.axis([self.isoflux_R[5].min(), self.isoflux_R[5].max(), 
                       self.isoflux_Z[5].min(), self.isoflux_Z[5].max()]) #BUG should not be fixed
   
-        t_range = radial_view.t_range
+        self.t_range = radial_view.t_range
         self.f_range = radial_view.f_range
         self.shot = shot
         
@@ -1595,6 +1656,27 @@ class Diag2DMapping(object):
         except Exception as e:
             #print(e)
             self.sxr_emiss = None
+         
+        #plot ECH heating locations, only for DIII-D
+        if self.shot not in self.ECH_gyrotron_locations:
+            self.ECH_gyrotron_locations[self.shot] = []
+            try:
+                print('Fetching ECH location')
+                MDSconn = self.parent.MDSconn
+                MDSconn.openTree('AOT', self.shot) 
+                for i in range(1,7):
+                   try:         
+                       RECH = MDSconn.get(r'_x=\AOT::TOP.TORAY.TORAY%d.PEAK:R'%i).data()
+                       ZECH = MDSconn.get(r'_x=\AOT::TOP.TORAY.TORAY%d.PEAK:Z'%i).data()
+                       time = MDSconn.get('dim_of(_x)').data() / 1e3
+                   except:
+                      continue
+    
+                   self.ECH_gyrotron_locations[self.shot].append([time, RECH, ZECH])
+            except Exception as e:
+                pass
+
+
 
         #set back the m-number!
         self.m = radial_view.m
@@ -1605,7 +1687,8 @@ class Diag2DMapping(object):
         if self.substract:
             self.cmap = 'seismic'
         else:
-            self.cmap =  plt.cm.get_cmap('nipy_spectral')
+            import copy
+            self.cmap =  copy.copy(plt.cm.get_cmap('nipy_spectral'))
             self.cmap._init()
             self.cmap.set_under('w')
 
@@ -1721,6 +1804,17 @@ class Diag2DMapping(object):
 
         levels=np.linspace(vmin, vmax, n_contour)
         
+
+        if self.shot in self.ECH_gyrotron_locations:
+            R,Z = [], []
+            for t,r,z in self.ECH_gyrotron_locations[self.shot]:
+                it = np.argmin(np.abs(t-np.mean(self.t_range)))
+                R.append(r[it])
+                Z.append(z[it])
+  
+            self.ech_location.set_data(R,Z)
+ 
+
         if update_mag:
             for i, p in enumerate(self.plot_mag_rho):
                 p.set_data(self.isoflux_R[i], self.isoflux_Z[i])
@@ -1730,7 +1824,8 @@ class Diag2DMapping(object):
         collections = (self.plot_description, )
         if self.sxr_emiss is not None and filled_contours:
             R, Z = np.meshgrid(self.sxr_r+self.dR, self.sxr_z+self.dZ)  #BUG!!!
-            n = (0, 1, 1, 2, 3, 3)[np.abs(self.m)]  #BUG just guess of the most common mode!! 
+            n = (0, 1, 1, 2, 3, 3)[np.abs(self.m)]  #BUG just guess of the most common mode!!
+            dT = 0
             if self.parent.tokamak == "AUG":
                 dT = (-40.5/360.)/self.f0*n/self.m  #BUG  toroidal shift between SXR and ECE
             if self.parent.tokamak == "DIIID":
@@ -1770,7 +1865,7 @@ class Diag2DMapping(object):
             if update_cax:
                 #BUG update colorbar by creating a new one :( 
                 self.cbar_ax.cla()
-                cb = self.fig.colorbar(ax.Te_contourf, cax=self.cbar_ax, extend='both')
+                cb = self.fig.colorbar(ax.Te_contourf, cax=self.cbar_ax )
                 tick_locator = MaxNLocator(nbins=7)
                 cb.locator = tick_locator
                 cb.update_ticks()
@@ -1790,8 +1885,12 @@ class Diag2DMapping(object):
             self.update(update_cax=False, update_mag=False)
 
     def onKeyPress(self, event):
+        steps = 36
         if 'control' == event.key:
             self.keyCtrl=True
+            steps = 360
+    
+
         if 'shift' == event.key:
             self.keyShift=True
             
@@ -1852,10 +1951,7 @@ class GetInfoThread(QThread):
 
 class MainGUI(QMainWindow):
 
-
     def __init__(self, shot=None, diag=None, group=None, signal=None, diag_phase=None, signal_phase=None, tmin=np.nan, tmax=np.nan, fmin=0, fmax=np.inf, parent=None ):
-
-
         QMainWindow.__init__(self, parent)
         
         self.setWindowTitle('Data preprocessing tool')
@@ -1874,12 +1970,21 @@ class MainGUI(QMainWindow):
         self.load_config()
         self.parent = parent
         self.MDSconn = None
-        if self.tokamak == "DIIID":
+        if self.tokamak == "AUG":
+            #import map_equ_20200306 as map_equ
+            #self.eqm = map_equ.equ_map()
+            pass
+        elif self.tokamak == "DIIID":
             from loaders_DIIID import map_equ
             import MDSplus as mds
             self.MDSconn = mds.Connection(self.mds_server )
             self.eqm = map_equ.equ_map(self.MDSconn)
-        elif self.tokamak != "AUG":
+        elif self.tokamak == "NSTX":
+            from loaders_NSTX import map_equ
+            import MDSplus as mds
+            self.MDSconn = mds.Connection(self.mds_server )
+            self.eqm = map_equ.equ_map(self.MDSconn)
+        else:
             raise Exception("tokamak %s is not supported yet"%self.tokamak)
         
         #correction of the error in the plasma or diagnostic  position
@@ -1927,8 +2032,9 @@ class MainGUI(QMainWindow):
         self.create_phase_table()
         self.create_radialplot_table()
 
-        self.create_2Dmap_table()
-        self.create_rototomo_table()
+        if self.tokamak != 'NSTX':
+            self.create_2Dmap_table()
+            self.create_rototomo_table()
         
         if not self.shot is None:
             self.shot_changed(self.shot, init=True)
@@ -1951,7 +2057,7 @@ class MainGUI(QMainWindow):
     def __del__(self, event=None):
         if hasattr(self, 'roto_tomo'):
             del self.roto_tomo
-            #self.roto_tomo.__del__(event)
+      
  
     def updatePanels(self, panel_ind):
         new_panel = self.tables_names[panel_ind]
@@ -2264,7 +2370,7 @@ class MainGUI(QMainWindow):
             pass
         
         try:
-            if self.Te2Dmap.initialized:
+            if hasattr(self, Te2Dmap) and self.Te2Dmap.initialized:
                 out['Te2Dmap_R'] = self.Te2Dmap.Rmag_ece
                 out['Te2Dmap_Z'] = self.Te2Dmap.Zmag_ece
                 out['Te2DmapTe'] = self.Te2Dmap.shiftTe()
@@ -2291,7 +2397,7 @@ class MainGUI(QMainWindow):
         try:
             info = data_loader.signal_info(diag_group, signal, out['tvec'].mean())
         except Exception as e:
-            print( 'save_data3:', e)
+            print( 'save_data:', e)
             info = ''
       
         np.savez_compressed(path, description=description, info=info, **out)
@@ -2314,8 +2420,12 @@ class MainGUI(QMainWindow):
         self.shot_line.setText(str(self.shot))
 
         self.eqm_ready = False
-        if self.tokamak == 'DIIID':
+        if self.tokamak != 'AUG':
             self.eqm.Close()
+
+        self.SpecWin.reset()
+        self.SpecWin_phase.reset()
+
 
         self.cross_signal.setCurrentIndex( -1)
         self.cb_diagnostics.clear()
@@ -2340,9 +2450,8 @@ class MainGUI(QMainWindow):
 
 
         def init_equlibrium():
-
             self.eqm_ready = True
-            print( 'Initialise equlibrium')
+            print( 'Initialise equilibrium ', self.eq_diag)
 
             if self.tokamak == 'AUG':
                 import aug_sfutils as sf
@@ -2361,11 +2470,18 @@ class MainGUI(QMainWindow):
                         print( """standard eq. do not exist!!! use real time equilibrium""")
                         if not self.eqm.Open(self.shot, diag='EFITRT01'):
                             aelf.eqm_ready = False
-                if self.eqm_ready:
-                    self.eqm._read_scalars()
-                    self.eqm._read_profiles()
-                    self.eqm._read_pfm()
-                    self.eqm.read_ssq()
+            elif self.tokamak == 'NSTX':
+                   if not self.eqm.Open(self.shot, diag='EFIT02', exp=self.eq_exp):
+                       print( """EFIT02 was not found, try EFIT01""")
+                       if not self.eqm.Open(self.shot, diag='EFIT01'):
+                           eqm_ready = False
+                            
+            if self.eqm_ready and self.tokamak in ['DIIID','NSTX']:
+                self.eqm._read_scalars()
+                self.eqm._read_profiles()
+                self.eqm._read_pfm()
+                self.eqm.read_ssq()
+                            
 
         self.statusBar().showMessage('Loading equilibrium ...', 5000 )
 
@@ -2579,7 +2695,7 @@ class MainGUI(QMainWindow):
         data = {'tvec':tvec, 'signal':sig}
         
         logger.info(  'data loaded in %5.2fs', (time.time()-T))
-        print(self.diag_group, self.signal)
+     
 
         if self.show_plasma_freq and self.data_loader.radial_profile and self.eqm_ready:
             try:
@@ -2589,8 +2705,18 @@ class MainGUI(QMainWindow):
             except Exception as e:
                 print( traceback.format_exc())
                 data['freq_tvec'] = data['freq'] = np.nan
-                return                 
-
+        
+        #for NSTX, plot frequency of the modes on q = 1 to q = 4
+        if self.show_plasma_freq and hasattr(self.data_loader,'get_plasma_freq_q') and self.eqm_ready:
+            try:
+                Q = 1,2,3,4
+                data['freq_tvec'], data['freq'] = self.data_loader.get_plasma_freq_q(Q)
+            except Exception as e:
+                print( traceback.format_exc())
+                data['freq_tvec'] = data['freq'] = np.nan
+             
+            
+        
         if  self.SpecWin.initialized:
             self.SpecWin.init_plot(data, tmin=xlims[0], tmax=xlims[1], fmin0=ylims[0], 
                             fmax0=ylims[1], description=description)
@@ -2741,6 +2867,9 @@ class MainGUI(QMainWindow):
             print( traceback.format_exc())
 
             QMessageBox.warning(self, "Loading problem", "Check if the signal exist", QMessageBox.Ok)
+            return 
+        
+        
         self.statusBar().showMessage('')
         #option to set mode range from config file 
         if self.mode_range is None:
@@ -2758,6 +2887,18 @@ class MainGUI(QMainWindow):
        
         phase_corr = self.data_loader_phase.get_phase_corrections( self.signal_phase)
         data = {'tvec':tvec, 'signal':sig, 'Phi':phi, 'phase_correction':phase_corr}
+  
+
+        #for NSTX, plot frequency of the modes on q = 1 to q = 4
+        if self.show_plasma_freq and hasattr(self.data_loader,'get_plasma_freq_q') and self.eqm_ready:
+            try:
+                Q = 1,2,3,4
+                data['freq_tvec'], data['freq'] = self.data_loader.get_plasma_freq_q(Q)
+            except Exception as e:
+                print( traceback.format_exc())
+                data['freq_tvec'] = data['freq'] = np.nan
+            
+        
         try:
             description = self.data_loader_phase.get_description(   self.signal_phase , '')
         except:
@@ -2890,15 +3031,15 @@ class MainGUI(QMainWindow):
 
         self.cb_diagnostics  = QComboBox(self.cWidget)
         self.cb_diagnostics.setToolTip('Select diagnotics')
-        self.cb_diagnostics.setFixedWidth(80)
+        self.cb_diagnostics.setFixedWidth(100)
 
         self.cb_sig_group  = QComboBox(self.cWidget)
         self.cb_sig_group.setToolTip('Select signal group')
-        self.cb_sig_group.setFixedWidth(80)
+        self.cb_sig_group.setFixedWidth(100)
 
         self.cb_signal  = QComboBox(self.cWidget)
         self.cb_signal.setToolTip('Select signal for the spectrogram')
-        self.cb_signal.setFixedWidth(100)
+        self.cb_signal.setFixedWidth(80)
 
         label1 = QLabel('Shot:')
         label2 = QLabel('Diag:')
@@ -3466,7 +3607,7 @@ class MainGUI(QMainWindow):
                         self.rototomo_n_num, self.rototomo_plot_bcg, 
                         self.rototomo_TeOver, self.rototomo_mag_flx, self.rototomo_limit, 
                         self.rototomo_reg, self.rtomo_n_harm, self.rtomo_n_svd, 
-                        self.rho_lbl )
+                        self.eqm, self.rho_lbl )
 
         self.rototomo_m_num.currentIndexChanged.connect(self.roto_tomo.update_node_m_number)
         self.rototomo_n_num.currentIndexChanged.connect(self.roto_tomo.update_node_n_number)                    
@@ -3563,16 +3704,29 @@ class MainGUI(QMainWindow):
             action.setCheckable(True)
         return action
     
-
+ 
     def load_config(self):
         
         config = configparser.RawConfigParser()
         
         cfg_path = os.path.expanduser('~/pyspecviewer.cfg')
+        
+        #if the personal cfg file does not exust, copy one from the code directory
         if not os.path.isfile(cfg_path):
+            #any better way how to distinguis in betwen different instalations? 
+            if os.path.exists('/fusion/projects/codes/pyspecview'):
+                tok_name = 'DIIID'
+            elif os.path.exists('/afs/ipp-garching.mpg.de/'):
+                tok_name = 'AUG'
+            elif os.path.exists('/p/'):
+                tok_name = 'NSTX'
+            else:
+                tok_name = 'DIIID'
+                print('Local installation of pySpecview - DIII-D?')
+                
             from shutil import copyfile
             path = os.path.dirname(os.path.realpath(__file__))
-            copyfile( path+os.sep+'pyspecviewer.cfg', cfg_path )
+            copyfile( path+os.sep+'pyspecviewer_'+tok_name+'.cfg', cfg_path)
   
         config.read(cfg_path)
     
@@ -3658,12 +3812,15 @@ if __name__ == '__main__':
         new_font = app.font()
         new_font.setPointSize(  12 )
         app.setFont( new_font )
-
-    form = MainGUI(args.shot, args.diag, args.group, args.sig, args.diag_phase, args.signal_phase, args.tmin, args.tmax, args.fmin, args.fmax )
+    try:
+        form = MainGUI(args.shot, args.diag, args.group, args.sig, args.diag_phase, args.signal_phase, args.tmin, args.tmax, args.fmin, args.fmax )
     
-    if args.save_fig:
-        form.curr_tab = 1
-        form.save_plot(no_gui=True)
-    else:
-        form.show()
-        app.exec_()
+        if args.save_fig:
+            form.curr_tab = 1
+            form.save_plot(no_gui=True)
+        else:
+            form.show()
+            app.exec_()
+    except Exception as e:
+       print(e)
+       exit()

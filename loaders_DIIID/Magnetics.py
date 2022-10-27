@@ -1,4 +1,7 @@
 from loaders_DIIID.loader import * 
+#from loader import * 
+
+
 import os
 from multiprocessing import  Pool
 
@@ -16,12 +19,15 @@ def mds_load(par):
     (mds_server, shot,  TDI) = par
     MDSconn = mds.Connection(mds_server )
     #print TDI
-    data = MDSconn.get('_x='+TDI).data()
-    
-    if len(data) > 1:
-        tvec = MDSconn.get('dim_of(_x)').data()
-    else:
-        tvec = data
+    try:
+        data = MDSconn.get('_x='+TDI).data()
+        
+        if len(data) > 1:
+            tvec = MDSconn.get('dim_of(_x)').data()
+        else:
+            tvec = data
+    except:
+        return [] ,[]
     
     return tvec,data
 
@@ -103,7 +109,7 @@ BpDot_probes_R0 = {
 
 
 class loader_Magnetics(loader):
-    mode_range = (-6,5)
+    mode_range = (-5,4)
 
     tor_mode_num = True
     pol_mode_num = True
@@ -232,68 +238,42 @@ class loader_Magnetics(loader):
         
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
-        
-        
-        
-        #if not group in self.tvec:
-            #self.tvec = {}
-        
+
         if size(names) == 1: names = (names, )
         names_to_load = []
-        
-        #if group not in self.catch: 
-            #self.catch['group'] = {}
-            #self.tvec['group']  = {}
 
         for n in names:
             if not n in self.catch:
                 names_to_load.append(n)
                 
-
-        
-        TDIcall = 'PTDATA2("%s",%d)'
-        
-        #load data in paraell 
-        t = T()
-        server = self.MDSconn.hostspec
-        args = []
-        for s in names_to_load:
-
-            args.append((server, self.shot, TDIcall%(s,self.shot)))
-            #args.append((server, self.shot, 'dim_of(_x)'))  #timevectors can be different for each coil
-
-                        
-        #args = [(server, self.shot, TDIcall%(s,self.shot)) for s in names_to_load]
-        print( '\n fast parallel fetch...')
-
-        #if not group in self.tvec:        #load tvec if necessary
-        #args+= [(server, self.shot,'dim_of(_x)'),] [(server, self.shot, TDIcall%(s,self.shot)) for s in names_to_load]
-        #args = array_split(args,  len(names_to_load))
-        #nconn = len(args)  #brutal force
-        pool = Pool()
-        out = pool.map(mds_load,args)
-        pool.close()
-        pool.join()
-    
-        print(( 'data loaded in %.2f'%( T()-t)))
-        
-
-        #if not group in self.tvec: 
-            #self.tvec[group][] = out[-1]
-            #self.tvec[group]/= 1e3  #
+        if len(names_to_load):
             
-        #tvec = self.tvec[group]
-        
-        #for n,sig in zip(names_to_load, out):
-            #print n,not all(sig == sig[0]), shape(sig)
-            #self.active[n] = not all(sig == sig[0])
-            ##if len(sig) < 2 : raise Exception('Signal %s was not found'%n) 
-            #self.catch[n] = sig
-        
+            TDIcall = 'PTDATA2("%s",%d)'
+            
+            #load data in paraell 
+            t = T()
+            server = self.MDSconn.hostspec
+            args = []
+            for s in names_to_load:
+                args.append((server, self.shot, TDIcall%(s,self.shot)))
+                            
+            print( '\nParallel fetch...')
+            pool = Pool()
+            out = pool.map(mds_load,args)
+            pool.close()
+            pool.join()
+            
+        else:
+            out = []
+
         for n, (tvec, sig) in zip(names_to_load, out):
-            self.active[n] = not all(sig == sig[0])
-            #print n,not all(sig == sig[0]), shape(sig)
+            if len(tvec) == 0:
+                print('Signal %s was not found'%n)
+                self.active[n] = False
+                continue
             
+            self.active[n] = not all(sig == sig[0])
+             
             #------------------------------ SPECIAL FIX FOR SIGN ERROR DURING 2011 STARTUP
             name_inv=['MPI66M067E','MPI66M097E','MPI66M127E','MPI66M157E', 
                 'MPI66M247E','MPI66M277E','MPI66M307E','MPI66M340E'  ]
@@ -301,65 +281,98 @@ class loader_Magnetics(loader):
                 sig*= -1
  
             if self.active[n]:
-
-                #if len(sig) < 2 : raise Exception('Signal %s was not found'%n)
-                #if len(sig) != len(tvec) : raise Exception('signal length do not match length of group timevec'%n)
+                sig = self.remove_elms(tvec, sig)
                 tvec/= 1e3 #s
-                
                 self.catch[n] = tvec,sig
         
         data = []
         for n in names:
             if self.active[n]:
                 tvec, sig = self.catch[n]
-                #print tvec.shape, sig.shape
                 imin,imax = tvec.searchsorted([tmin,tmax])
-                #print imin,imax,tvec[0],  tvec[-1], std(sig)
                 ind = slice(imin,imax+1)
                 tvec, sig = tvec[ind], sig[ind] 
                 data.append((tvec, sig))
-            
-        #print tvec.shape, [self.catch[n].shape for n in names]
-        
-        
-        #data = vstack([self.catch['group'][n][ind] for n in names]).T
-        #tvec = tvec[ind]
-        
+
         if len(data) == 1:
-            print(( data[0][0].shape, data[0][1].shape ))
-            #if not self.active[names[0]]:
-                #raise Exception('Broken coil, use another one')
             return data[0]
         
         
         if len(data) == 0:
             raise Exception('Broken coils, use another one')
             
-        #print tvec.shape, shape(data)
+       
         return data
 
     
 
+    def remove_elms(self, tvec, signal):
+        if not hasattr(self,'elm_start'):
+            try:
+                #load ELMs from Tom Osborns MDS+ tree
+                self.MDSconn.openTree('PEDESTAL', self.shot)
+                
+                #TDI = r'\PEDESTAL::TOP.ELM:ELMDANAME'
+                #fname = self.MDSconn.get(TDI).data()
+                
+                TDI = r'\PEDESTAL::TOP.ELM:ELMSTART'
+                elm_val = self.MDSconn.get(r'_x=\PEDESTAL::TOP.ELM:ELMSTART').data()
+                elm_start = self.MDSconn.get(r'dim_of(_x)').data()
+                TDI = r'\PEDESTAL::TOP.ELM:ELMEND'
+                elm_end = self.MDSconn.get('dim_of('+TDI+')').data()
+                TDI = r'\PEDESTAL::TOP.ELM:ELMPEAK'
+                elm_peak = self.MDSconn.get('dim_of('+TDI+')').data()
+                
+                
+        
+                #estimate size of the ELM
+                area = (elm_end-elm_start)*elm_val
+                ind = area > 1e15  #BUG hardcoded value
+                
+                self.elm_start = elm_start[ind]
+                self.elm_peak = elm_peak[ind]
+                self.elm_end = elm_end[ind]
+                self.elm_val = elm_val[ind]
+                
+                
+
+                #self.MDSconn.openTree('SPECTROSCOPY', self.shot)
+                #TDI = '_x=\\SPECTROSCOPY::'+ fname
+                #filterscope = self.MDSconn.get(TDI).data()
+                #filterscope_t = self.MDSconn.get('dim_of(_x)').data()
+ 
+            except Exception as e:
+                print('ELM detection issue: ', e)
+                return signal
+     
+        
+        valid = (self.elm_start > tvec[0])&(self.elm_start < tvec[-1])
+        
+        #delete also 0.1ms before and after due to uncertainties in elm time
+        ind_start = tvec.searchsorted(self.elm_start[valid]-0.1)
+        ind_end = tvec.searchsorted(self.elm_peak[valid]+0.1)
+        
+ 
+        corrected_signal = copy(signal)
+        for i1,i2 in zip(ind_start, ind_end):
+            corrected_signal[i1:i2] = signal[i1:i2].mean(0)
+            
+            
+        #plot(tvec, signal)
+        #plot(tvec, corrected_signal)
+        #plot(filterscope_t,filterscope/1e15 )
+        #plot(c_[self.elm_start, self.elm_peak, self.elm_end].flatten(), c_[0*self.elm_val,self.elm_val/1e15,self.elm_val*0].flatten())        
+        #show()
+
+        return corrected_signal
+            
+    
         
         
     def get_names_phase(self):
         return ('Toroidal','Poloidal')
         
-            
-    
-    #def get_signal_phase(self,name,calib=False,tmin=None,tmax=None,rem_elms=True):
-        #if name in self.tor_num_names:
-            #coils = self.tor_num_names[name]
-        #elif name == 'Poloidal':
-            #coils = self.names['Poloidal']
-
-            
-        #tvec, data = self.get_signal(name, coils,calib=calib,tmin=tmin,tmax=tmax)
-        
-
-        #return tvec,data
-    
-    
+ 
     
         
     def get_signal_phase(self,name,calib=False,tmin=None,tmax=None,rem_elms=True):
@@ -391,32 +404,32 @@ class loader_Magnetics(loader):
 
         phi_tor = []
         for ic,c in enumerate(self.tor_num_names[name]):
-            if self.active[c]:
+            if c in self.active and self.active[c]:
                 phi_tor.append(self.tor_num_phi[name][ic])
         
         
         return deg2rad(phi_tor)
             
     def get_theta_pol(self,name,tshot = 4 ,rhop=.2 ):
-        
-        if name != 'Poloidal': #ugly trick to enabel poloidal and toroidal modes numbes determination
-            return self.get_phi_tor(name)
+
         
         try:
             magr,magz, theta0, theta_star = self.mag_theta_star( tshot,rhop )
         except:
             print( 'Error: get_theta_pol: mag_theta_star do not work!')
+            print( traceback.format_exc())
             theta0     = linspace(-pi,pi,10)
             theta_star = linspace(-pi,pi,10)
-
             
+            
+        self.eqm.read_ssq()
         R0 = interp(tshot, self.eqm.t_eq, self.eqm.ssq['Rmag'])
         Z0 = interp(tshot, self.eqm.t_eq, self.eqm.ssq['Zmag'])
         theta = [] 
 
         for n in self.pol_num_names[name]:
             R,Z, Phi, Tilt, L, W = BpDot_probes_322[n]
-            print(( n, name, self.active[n]))
+            #print(( n, name, self.active[n]))
             if self.active[n]:
                 theta.append(arctan2(Z-Z0, R-R0 ))
     
@@ -452,7 +465,7 @@ def main():\
 
  
     mds_server = "localhost"
-    mds_server = "atlas.gat.com"
+    #mds_server = "atlas.gat.com"
 
     import MDSplus as mds
     MDSconn = mds.Connection(mds_server )
@@ -462,15 +475,15 @@ def main():\
     #diags = MDSconn.get('getnci(".SX*:*","node_name")')
     
     
-    from .map_equ import equ_map
+    from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
-    eqm.Open(163303,diag='EFIT01' )
-    sxr = loader_Magnetics(163303,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
+    eqm.Open(175860,diag='EFIT01' )
+    coils = loader_Magnetics(175860,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
     
-    g = sxr.groups[0]
-    print(( sxr.groups))
-    n = sxr.get_names(g)
-    data1 = sxr.get_signal(  g,n,tmin=-infty, tmax=infty,calib=True)
+    g = coils.groups[0]
+    print(( coils.groups))
+    n = coils.get_names(g)
+    data1 = coils.get_signal(  g,n,tmin=-infty, tmax=infty,calib=True)
     data = array([d for t,d in data1])
 
     tvec = data1[0][0]

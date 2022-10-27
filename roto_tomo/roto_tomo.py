@@ -12,10 +12,12 @@ from scipy.linalg import eigh
 from scipy.stats.mstats import mquantiles
 from multiprocessing import Process,Queue
 from copy import deepcopy
-try:
+try: #only for AUG
     import aug_sfutils as sf
 except:
     pass
+
+
 try:
     from PyQt5.QtCore import *
     from PyQt5.QtGui import *
@@ -47,26 +49,23 @@ cdict = {
 }
 my_cmap = colors.LinearSegmentedColormap('my_colormap', cdict, 1024)
 
+tomo_local_path = '~/tomography/'
 loc_dir = os.path.dirname(os.path.abspath(__file__))
 
-#AUG
-tomo_code_path = '$PYTOMO/'
-#afs/ipp-garching.mpg.de/home/t/todstrci/pytomo_orig'
-tomo_local_path = '~/tomography/'
+if os.path.exists('$PYTOMO'):  #AUG
+    tomo_code_path = '$PYTOMO/'
+#afs/ipp-garching.mpg.de/home/t/todstrci/pytomo_orig/'
+elif os.path.exists('/fusion/projects/codes/pytomo/'): #DIII-D
+     tomo_code_path = '/fusion/projects/codes/pytomo/'
+else:  #local instalation
+     tomo_code_path = tomo_local_path
 
-#local
-#tomo_code_path = '/home/tomas/tomography/'
-#tomo_local_path = '/home/tomas/tomography'
-
-##DIIID
-#tomo_code_path = '/fusion/projects/codes/pytomo/'
-#tomo_local_path = '/home/$USER/tomography'
-
+ 
 
 
 tomo_code_path  = os.path.expanduser(os.path.expandvars(tomo_code_path))
 tomo_local_path = os.path.expanduser(os.path.expandvars(tomo_local_path))
-print('tomography path:', tomo_code_path)
+
 sys.path.append(tomo_code_path)
 
 #load some modules from pytomo 
@@ -176,7 +175,11 @@ class DataSettingWindow(QMainWindow):
         self.Edit_wrongDetectors.setToolTip('Insert wrong detectors, use ":" for the intervals - 1,,3,5:40,...')
         self.Edit_wrongDetectors.editingFinished.connect(self.dets_list_edited)
 
-      
+        if not hasattr(self.tomo,'tvec'):
+            QMessageBox.warning(self.parent,"No data",
+                    "Data wre not loaded! Missing fast SXR?",QMessageBox.Ok)
+            return
+            
         tvec = self.tomo.tvec
         data = self.tomo.signals
         self.nch = data.shape[1]
@@ -302,10 +305,10 @@ class DataSettingWindow(QMainWindow):
         if wrong_dets_str.strip() != '':
             
             try:
-                dets_list = eval('r_['+str(wrong_dets_str)+']')
+                dets_list = eval('np.r_['+str(wrong_dets_str)+']')
                 wrong_dets_pref = np.array(np.int_(dets_list)-1, ndmin=1)
             except:
-                QMessageBox.warning(self,"Input problem",
+                QMessageBox.warning(self.parent,"Input problem",
                     "Wrong detectors are in bad format, use ...,10,11,13:15,...",QMessageBox.Ok)
                 raise
         elif init:     # do not remove on init
@@ -893,7 +896,7 @@ class Roto_tomo:
     loaded = False
 
     def __init__(self, parent, fig,m_num,n_num,add_back, TeOver,show_flux, plot_limit,
-                 reg, n_harm,n_svd, rho_lbl):
+                 reg, n_harm,n_svd,map_equ,rho_lbl):
         
         self.m_num = m_num
         self.n_num = n_num
@@ -902,7 +905,9 @@ class Roto_tomo:
         self.slider_lim = plot_limit
         self.slider_reg = reg
         self.add_back = add_back
+        self.map_equ = map_equ
         self.rho_lbl = rho_lbl
+        
         
         self.parent = parent
         self.fig = fig
@@ -950,12 +955,8 @@ class Roto_tomo:
         elif self.parent.tokamak == 'DIIID':
             from loaders_DIIID import map_equ
             gc_r, gc_z = map_equ.get_gc()
-            try:
-                for key in gc_r:
-                    self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
-            except:
-                logger.error('Loading of the  vessel shape failed!!')
-                logger.error( traceback.format_exc())
+            for key in gc_r.keys():
+               self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
 
         for label in (self.ax.get_xticklabels() + self.ax.get_yticklabels()):
             label.set_fontsize(self.font_size) # Size here overrides font_prop
@@ -1011,15 +1012,12 @@ class Roto_tomo:
 
         if tok_lbl == 'AUG':
             magr, magz= sf.rhoTheta2rz(eqm, self.rhop,theta_in,t0,coord_in=self.rho_lbl)
-            self.magr = magr[0]
-            self.magz = magz[0]
             self.rho = sf.rho2rho(eqm, self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
         elif tok_lbl == 'DIIID':
             magr, magz= eqm.rhoTheta2rz(self.rhop,theta_in,t0,coord_in=self.rho_lbl)
-            self.magr = magr[0]
-            self.magz = magz[0]
             self.rho = eqm.rho2rho(self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
-            
+        self.magr = magr[0]
+        self.magz = magz[0]
         
         #set view to contain rho = 0.7 contour 
         ir = np.argmin(np.abs(self.rhop - 0.5))
@@ -1045,15 +1043,16 @@ class Roto_tomo:
 
         if not hasattr(config, 'wrong_dets_pref'):
             config.wrong_dets_pref = input_parameters['wrong_dets']
+        
 
         if tok_lbl == 'DIIID':
             import geometry.DIIID as Tok
             diag = 'SXR fast'
-            diag_path = '%s%s' %(tomo_local_path, 'geometry/DIIID/SXR')
+            diag_path = tomo_local_path+ 'geometry/DIIID/SXR'
         elif tok_lbl == 'AUG':
             import geometry.ASDEX as Tok
             diag = 'SXR_fast'
-            diag_path = '%s%s' %(tomo_local_path, 'geometry/ASDEX/SXR')
+            diag_path = tomo_local_path+ 'geometry/ASDEX/SXR'
         else:
             raise Exception('Support of the tokamak %s was not implemented' %tok_lbl)
 
@@ -1066,7 +1065,7 @@ class Roto_tomo:
         except:
             import traceback
             print( traceback.format_exc())
-            QMessageBox.warning(self,"Load SXR data issue", "Fast SXR data probably do not exist",QMessageBox.Ok)
+            QMessageBox.warning(self.parent,"Load SXR data issue", "Fast SXR data probably do not exist",QMessageBox.Ok)
             return 
         
         self.xgridc = (self.tok.xgrid+self.tok.dx/2)/self.tok.norm  #centers of the pixels
@@ -1108,8 +1107,8 @@ class Roto_tomo:
         #add correction for finite DAS IIR
 
         if tok_lbl == 'AUG':
-            slow_das = np.loadtxt('%s/slow_sxr_diag.txt' %loc_dir)
-            fast_das = np.loadtxt('%s/fast_sxr_das.txt'  %loc_dir)
+            slow_das = np.loadtxt(loc_dir+'/slow_sxr_diag.txt' )
+            fast_das = np.loadtxt(loc_dir+'/fast_sxr_das.txt'  )
             SampFreq =  self.tok.SampFreq#[dets]
             #amplitude reduction of DAS IIR
             self.A[  SampFreq == 5e5] = np.interp(self.F0*np.arange(1,n_harm_max),slow_das[:,0],slow_das[:,1])
@@ -1579,6 +1578,7 @@ class Roto_tomo:
             return anim_obj
         
         self.fig.canvas.draw_idle()
+    
  
  
     def MouseWheelInteraction(self,event):
@@ -1595,19 +1595,24 @@ class Roto_tomo:
 
         
     def onKeyPress(self,event):
+        step = 36
         if 'control' == event.key:
             self.keyCtrl=True
+            step = 360
         if 'shift' == event.key:
             self.keyShift=True
-        
-        if 'left' == event.key:
-            self.shift_phase(self.shift_phi-2*np.pi/36)
-            self.update( update_mag=False)
 
-            
-        if 'right' == event.key:
-            self.shift_phase(self.shift_phi+2*np.pi/36)
-            self.update( update_mag=False)
+        sign = None
+        if 'left' == event.key:
+            sign = -1
+
+        elif 'right' == event.key:
+            sign = 1
+
+        if sign is not None:
+            self.shift_phi+= sign*2*np.pi/step
+            self.shift_phase(self.shift_phi)
+            self.update(update_mag=False)
             
 
     def onKeyRelease(self,event):
@@ -1627,7 +1632,7 @@ class Roto_tomo:
             self.hsolvers = []
             self.initialized = False
             if plt.fignum_exists('Retrofit'):
-                plt.close(figure('Retrofit'))
+                plt.close(plt.figure('Retrofit'))
             
             import gc
             gc.collect()

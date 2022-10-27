@@ -2,7 +2,7 @@
 from numpy import *
 import sys, os, random
 from scipy.interpolate import interp1d
-import traceback
+import traceback, time
 
 #shot_path = '/afs/ipp-garching.mpg.de/augd/shots/'
 
@@ -21,17 +21,13 @@ class loader(object):
     tor_mode_num = False
     n_mode_range = None
     radial_profile=False
+    qprofile_profile=False    
     units = 'a.u.'
     #plasma_freq=None
 
     def __init__(self,shot,exp=None,ed=0,eqm=None,rho_lbl='rho_pol',MDSconn=None):
         
-        #use DD library on AUG
-        if MDSconn is None:
-            import dd  
-            self.dd = dd.shotfile() 
-        else:
-            self.MDSconn = MDSconn
+        self.MDSconn = MDSconn
             
             
         self.eqm = eqm
@@ -60,7 +56,8 @@ class loader(object):
         #print 'tmin tmax',self.tmin,self.tmax 
         #print self.eqm.t_eq, self.eqm.diag
         
-             
+
+    
     def get_signal_groups(self):
         return  self.groups
             
@@ -144,9 +141,11 @@ class loader(object):
     def get_rho(self,time,R_start,z_start,Phi_start=None, R_end=None,z_end=None,Phi_end=None, dR=0,dZ=0):
         #get rho_pol/rho_tor for points, R2, and Z2 must be specified for LOSs
         
+        #get_rho(self.diag_group, (self.signal, ), 
+                                    #np.mean(xlims), dR=self.dR_corr, dZ=self.dZ_corr)[0]
         
 
-        
+        print(time, self.tmax, self.tmin)
         n_points = size(R_start)
         time = max(min(time, self.tmax), self.tmin)
 
@@ -166,11 +165,7 @@ class loader(object):
 
         Start = array((R_start*cos(Phi_start),R_start*sin(Phi_start), z_start))
         End   = array((R_end  *cos(Phi_end  ),R_end  *sin(Phi_end  ), z_end  ))
-        
-        
-        #import IPython
-        #IPython.embed()
-                
+    
         t = linspace(0,1,200)
         X,Y,Z = (End-Start)[:,:,None]*t[None,None,:]+Start[:,:,None]
         R = hypot(X,Y)
@@ -221,18 +216,29 @@ class loader(object):
         return rho_tg,theta_tg,R_tg,Z_tg
     
         
-    def get_q_surfs(self,time,qvalues):
+    def get_q_surfs(self,time,qvalues, rho_lbl=None):
         
+        if rho_lbl is None:
+            rho_lbl = self.rho_lbl
         rho = linspace(0,0.98,100)
-        q = self.eqm.getQuantity(rho, 'Qpsi', time,coord_in=self.rho_lbl)[0]
+        q = self.eqm.getQuantity(rho, 'Qpsi', time,coord_in=rho_lbl)
         #qvalues = asarray(qvalues)
         
         #print 'q_min = %.3f'%q.min()
+        #embed()
         
-        ind =  argmax((diff(abs(q))>0))
+        #ind = argmax((diff(abs(q))>0))
         #find outermost position of the resonance surface
-        rho_surf = interp( qvalues, abs(q)[ind:], rho[ind:],left=nan)
-        
+        #rho_surf = interp(qvalues, abs(q)[ind:], rho[ind:],left=nan)
+        #import IPython
+        #IPython.embed()
+        rho_surf = zeros((len(time), len(qvalues)))
+
+        for it,t in enumerate(time):
+            imin = argmin(q[it])
+            rho_surf[it] = interp(qvalues, q[it,imin:], rho[imin:],left=nan)
+               
+       
         return rho_surf
         
         
@@ -243,51 +249,64 @@ class loader(object):
         return ''
     
     def get_description(self,group,name):
-        return 'DIII-D '+str(self.shot)+' diag: '+str(group)+' sig: '+str(name)
+        return 'NSTX '+str(self.shot)+' diag: '+str(group)+' sig: '+str(name)
 
-        
-    def get_plasma_freq(self,rho):
-        return nan,nan
+    def get_plasma_freq_q(self,Qvalues, rho_lbl=None):
         
         
-        #import IPython
-        #IPython.embed()
+        if rho_lbl is None:
+            rho_lbl = self.rho_lbl
+        #tt = time.time()
+        #tvec = []
+        #rvec = []
+
+        #rhop = self.eqm.PSIN.T**.5
+        #q = abs(self.eqm.q)
+        t_eq = self.eqm.t_eq
                 
-        #import time
-        #t = time.time()
-        if not  hasattr(self,'plasma_freq'):
-            shotfiles = 'CEZ', 'COZ', 'CHZ'
-            self.openshotfile = ''
-            for s in shotfiles:
-                if self.dd.Open(s, self.shot):
-                    self.openshotfile = s
-                    break
-            #not CXRS shotfile avalible
-            if self.openshotfile == '':
-                self.plasma_freq = None
-                return [],[]
+        #rvec = zeros((len(t_eq), len(Qvalues)))
+        ##tvec = zeros((len(t_eq), len(Qvalues)))
+        
+        #for iq,qval in enumerate(Qvalues):
+            #for it,t in enumerate(t_eq):
+               #imin = argmin(q[:,it])
+               #rvec[it, iq] = interp(qval, q[imin:,it], rhop[imin:,it],left=nan)
+               
+        rvec = self.get_q_surfs(t_eq, Qvalues, rho_lbl=rho_lbl)
+     
+        return self.get_plasma_freq(rvec,tvec=t_eq, rho_lbl=rho_lbl)
             
-            #if not self.dd.Open('CEZ', self.shot):
-                #if not self.dd.Open('COZ', self.shot):
-                    #return [],[]
-            #self.openshotfile = 'CEZ'
-            names = self.dd.GetNames()
-            if 'R_time' in names:
-                R = self.dd.GetAreabase('R_time')
-                z = self.dd.GetAreabase('z_time') 
-            else:
-                R = self.dd.GetAreabase('R')[None]
-                z = self.dd.GetAreabase('z')[None]
+        
 
-            ind = R.mean(0)!= 0
-            R = R[:,ind]
-            z = z[:,ind]
+        
 
-            V = self.dd.GetSignalGroup('vrot')[:,ind]
-            T = self.dd.GetTimebase('vrot')
+        
+
+    def get_plasma_freq(self,rho,tvec=None,rho_lbl=None):
+        if rho_lbl is None:
+            rho_lbl = self.rho_lbl
+
+
+    
+        if not  hasattr(self,'plasma_freq'):
+   
+            tree = 'ACTIVESPEC'
+            chers_edition = 'CT1'
+            chers_signals = [  'VTS', 'RS', 'TIME']
+            TDI = [f'\\{tree}::TOP.CHERS.ANALYSIS.{chers_edition}:{sig}' for sig in chers_signals]
+            self.MDSconn.openTree(tree, self.shot)
+            V, R, T = [self.MDSconn.get(tdi).data() for tdi in TDI]
+            self.MDSconn.closeTree(tree, self.shot )
+
+ 
+            #use SI units!!
+            V *= 1e3 #m/s
+            R /= 100 #m
+            z = R*0
+    
 
             self.plasma_freq = V/(R*2*pi)
-            self.plasma_freq_rho = self.eqm.rz2rho(R,z,T, coord_out=self.rho_lbl)
+            self.plasma_freq_rho = self.eqm.rz2rho(R,z,T, coord_out=rho_lbl)
             r0 = interp(T,  self.eqm.t_eq, self.eqm.ssq['Rmag'] )
             self.plasma_freq_rho[R<r0[:,None]]*= -1
             self.plasma_freq_tvec =  T
@@ -296,156 +315,59 @@ class loader(object):
         if self.plasma_freq is None:
             #not CXRS shotfile avalible
             return [],[]
-            
-            
-        F = zeros_like(self.plasma_freq_tvec)
-        for it in range(len(F)):
-            sind = argsort(self.plasma_freq_rho[it])
-            F[it] = interp(abs(rho),self.plasma_freq_rho[it,sind], self.plasma_freq[it,sind]) 
-            #[interp(rho,f,r) for f,r in zip(self.plasma_freq,self.plasma_freq_rho)]
+                    
+
         
-        
-        #print 'get_plasma_freq',time.time()-t
-        plasma_freq_tvec = copy(self.plasma_freq_tvec)
-        
-        breaks = where(diff(self.plasma_freq_tvec) > 2* median(diff(self.plasma_freq_tvec)))[0]+1
-        plasma_freq_tvec = insert(plasma_freq_tvec, breaks,  plasma_freq_tvec[breaks])
-        F = insert(F, breaks, nan)
- 
-        return plasma_freq_tvec,F
-
-    #self.dd.Open('COZ', )
-
-
-class spaced_vector:
-    #fast equaly spaced vector object
-    def __init__(self,start,stop,step=1):
-        self.start = start
-        self.stop = stop
-        self.step = step
-        self.size = int((stop-start)/step)
-        self.shape = (self.size,) 
-    
-    def searchsorted(self,vals):
-        vals = asarray(vals)
-        vals = minimum(maximum(self.start,vals),self.stop)
-        return int_((vals-self.start)/self.step)
-    
-    def __getitem__(self, key):
-        #print 'key',key
-        if isinstance(key,slice):
-            #print 'get slide'
-            return self.__getslice__(key)
-        
-        key = array(key,copy=True)
-        key[key<0] += self.size
-        #print ',',key, self.size
-
-        return self.start+key*self.step
-
-    def __array__(self,data=None):
-        return arange(self.start, self.stop,self.step)
-    
-    def __getslice__(self, x1,x2=None):
- 
-        if isinstance(x1,slice):
-
-            start = 0 if x1.start is None else  x1.start
-            stop = self.size if x1.stop is None else x1.stop
-            step = 1 if x1.step is None else x1.step
+        if tvec is None:
+            out_tvec = copy(self.plasma_freq_tvec)
+            rho = ones_like(out_tvec)*rho
+            tvec = out_tvec
         else:
-            start = x1
-            stop = x2
-            step = 1
+            #out_tvec = linspace(tvec[0], tvec[-1], 1000)
+            out_tvec = unique(hstack((tvec.flatten(), self.plasma_freq_tvec)))
 
-        start,stop = self.__getitem__((start,stop))
-        step = step*self.step
+ 
+        F = zeros((len(out_tvec),rho.shape[1]))*nan
+        for it,t in enumerate(out_tvec):
+            it_f = argmin(abs(t-self.plasma_freq_tvec))
+            it_e = argmin(abs(t-tvec))
+            if abs(t-tvec[it_e]) > 0.05 or abs(t-self.plasma_freq_tvec[it_f]) > 0.05:
+                continue            
+            sind = argsort(self.plasma_freq_rho[it_f])
+            F[it] = interp(abs(rho[it_e]),self.plasma_freq_rho[it_f,sind], self.plasma_freq[it_f,sind]) 
+        #import IPython
+        #IPython.embed()
+            #embed()
+        out_tvec = tile(out_tvec, rho.shape[1])
+        F = F.T.flatten()
         
-        return spaced_vector(start,stop,step)
-        
-            
+        breaks = where(abs(diff(out_tvec)) > 2* median(abs(diff(out_tvec))))[0]+1
+        out_tvec = insert(out_tvec, breaks,  out_tvec[breaks])
+        F = insert(F, breaks, nan)
+
+                 
+        return out_tvec,F
+
+#import MDSplus
+##mdsserver='skylark.pppl.gov:8501'
+#mdsserver='localhost'
+
+#MDSconn = MDSplus.Connection(mdsserver)
+#print('connected')
+##TT = time()
+#shot =  121174
+#rho_coord = 'rho_tor'
+#print(shot)
+##print_line( '  * Fetching EFIT01 data ...')
+#from map_equ import equ_map
+#eqm = equ_map(MDSconn)
+#from matplotlib.pylab import *
+#eqm.Open(shot, 'LRDFIT09', exp='NSTX')
+##eqm._read_pfm()
+#eqm.read_ssq()
+#eqm._read_scalars()
+#eqm._read_profiles()
+#LOAD = loader(shot,eqm=eqm,rho_lbl=rho_coord,MDSconn=MDSconn)
+#plot(LOAD.get_plasma_freq_q([1,2,3,4], rho_lbl='rho_tor'))
 
 
-
-
-def main():
-    
-    #asarray(spaced_vector(1,5))
-    
-    
-    import IPython
-    IPython.embed()
-    
-    
-    import os
-    import os,sys
-    sys.path.append('/afs/ipp/home/t/todstrci/TRANSP/')
-    #import dd   
-    #from matplotlib.pylab import *
-    dd = dd.shotfile()
-
-    #sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib/')
-    from . import map_equ
-
-    #eqm = map_equ.equ_map(debug=False)
-    
-    #eqm.Open(31113,diag='IDE')
-    #print eqm.ssq 
-    #exit()
-    
-    #eq_diag = TRE
-##eq_ed = 45
-#eq_exp = RDA
-    shot = 30530
-
-    eqm = map_equ.equ_map(debug=True)
-    eqm.Open(shot, diag='EQI', exp='AUGD',ed=0)
-    
-    #eqm.ssq 
-    eqm.read_ssq()
-
-
-    L = loader(shot,exp='AUGD',ed=0,eqm= eqm,rho_lbl='rho_tor')
-    
-    #L.get_q_surfs(4.14, (1,1.5,2))
-
-    rho_grid = linspace(0.01,1,30)
-    magr,magz,theta,theta_star=L.mag_theta_star(2.9 , rho_grid,)
-    
-
-    exit()
-        
-    
-    u,i = eqm._get_nearest_index(3.23)
-    
-    R,Z = eqm.rho2rz(rho_grid, t_in=3, coord_in='rho_tor')
-        
-    
-    
-    for r,z in zip(R[0],Z[0]):        plot(r,z,'--')
-    #plot(eqm.r0[i], eqm.z0[i],'o')
-    plot(eqm.ssq['Rmag'][i],eqm.ssq['Zmag'][i],'x')
-    plot(magr.T, magz.T)  
-    axis('equal')
-    show()
-    #plot()
-    import IPython
-    IPython.embed()  
-    r = hypot(magr-magr[(0,)], magz-magz[(0,)])
-    dr = gradient(r)[0]/gradient(rho_grid)[:,None]
-    dt = gradient(theta_star)[1]/gradient(theta)[None]
-    J = dt*dr
-    contourf(J,linspace(0,3,50))
-    show()
-    
-    
-    import IPython
-    IPython.embed()      
-    
-    
-    
-    
-    
-if __name__ == "__main__":
-    main()
-    

@@ -8,84 +8,22 @@ from scipy.ndimage.interpolation import map_coordinates
 from scipy.interpolate import UnivariateSpline, interp1d, InterpolatedUnivariateSpline, LinearNDInterpolator
 import sys,os
 from scipy import integrate
-
-
-def get_gc(nshot=None):
-    ##shape of the vessel
-    try:
-        
-        program_path = os.path.abspath(__file__)
-        program_path = os.path.dirname(program_path)+os.sep
-        
-        R,Z = np.loadtxt(program_path+ 'd3d_elev_030_parseModified.dat').T
-    except:
-        
-        if nshot < 168847: #just guess of the shot number
-            Z = 0.000,0.964,0.968,1.001,1.019,1.077,1.070,1.096,1.113,1.138,1.147,1.165,1.217,\
-            1.217,1.162,1.162,1.163,1.165,1.166,1.166,1.169,1.172,1.176,1.183,1.183,1.185,\
-            1.188,1.191,1.196,1.202,1.208,1.214,1.221,1.231,1.238,1.244,1.254,1.278,1.290,\
-            1.331,1.347,1.348,1.348,1.348,1.348,1.348,1.348,1.310,1.310,1.292,1.095,1.077,\
-            1.077,1.040,0.993,0.709,0.519,0.389,0.400,0.222,0.133,0.044,-0.044,-0.133,-0.222,\
-            -0.400,-0.389,-0.973,-1.174,-1.211,-1.250,-1.250,-1.250,-1.329,-1.329,-1.363,\
-            -1.363,-1.363,-1.223,-1.223,-0.830,-0.800,-0.415,-0.400,-0.001,0.000
-            
-            R= 1.016,1.016,1.016,1.016,1.016,1.016,1.016,1.016,1.016,1.016,1.016,1.012,1.001,\
-            1.029,1.042,1.046,1.056,1.097,1.108,1.116,1.134,1.148,1.162,1.181,1.182,1.185,1.190,\
-            1.195,1.201,1.209,1.215,1.222,1.228,1.234,1.239,1.242,1.248,1.258,1.263,1.280,1.280,\
-            1.280,1.310,1.328,1.361,1.380,1.419,1.419,1.372,1.372,1.608,1.647,1.785,2.070,2.128,\
-            2.245,2.323,2.377,2.362,2.364,2.365,2.365,2.365,2.365,2.364,2.362,2.377,2.134,1.786,\
-            1.768,1.768,1.682,1.372,1.372,1.420,1.420,1.273,1.153,1.016,1.016,1.016,1.016,1.016,\
-            1.016,1.016,1.016
-        
-        else:#SAS diveror 
-            R = [1.016,1.016,1.016,1.016,1.016,1.016,1.016,1.016,1.016,1.016,
-            1.016,1.012,1.001,1.029,1.042,1.046,1.056,1.097,1.108,1.116,
-            1.134,1.148,1.162,1.181,1.182,1.185,1.19,1.195,1.201,1.209,  
-            1.215,1.222,1.228,1.234,1.239,1.242,1.248,1.258,1.263,1.28,
-            1.28,1.28,1.31,1.328,1.361,1.38,1.419,1.419,1.372,1.37167001,
-            1.37003005,1.36688006,1.36719,1.37178004,1.37223995,
-            1.38662004,1.38707995,1.40382004,1.41127002,1.41857004,
-            1.421,1.48662996,1.49730003,1.49761999,1.49744999,
-            1.49275005,1.49259996,1.49260998,1.49278998,1.49339998,
-            1.49469995,1.49621999,1.47981,1.48081994,1.48149002,
-            1.48645997,1.49094999,1.50304997,1.59696996,1.62549996,
-            1.63751996,1.64699996,1.785,2.07,2.128,
-            2.245,2.323,2.377,2.362,2.364,2.365,2.365,2.365,2.365,2.364,
-            2.362,2.377,2.134,1.786,1.768,1.768,1.682,1.372,1.372,1.42,
-            1.42,1.273,1.153,1.016,1.016,1.016,1.016,1.016,1.016,1.016,1.016]
-            Z = [0.0,0.964,0.968,1.001,1.019,1.077,1.070,1.096,1.113,1.138,1.147,
-            1.165,1.217,1.217,1.162,1.162,1.163,1.165,1.166,1.166,1.169,1.172,
-            1.176,1.183,1.183,1.185,1.188,1.191,1.196,1.202,1.208,1.214,1.221,
-            1.231,1.238,1.244,1.254,1.278,1.29,1.331,1.347,1.348,1.348,1.348,
-            1.348,1.348,1.348,1.310,1.310,1.29238,1.28268,1.25644,1.22955,
-            1.19576,1.19402,1.164870,1.16421,1.15696,1.1573,1.16132,1.164,
-            1.2405,1.23458004,1.23428,1.23174,1.2133,1.21061,1.2048,1.20213,
-            1.19641,1.1851,1.16069,1.124259,1.12256002,1.12137997,1.11692,
-            1.114390,1.11244,1.09489,1.0853,1.07988,1.077,1.077,1.04,0.993,
-            0.709,0.519,0.389,0.400,0.222,0.1330,0.044,-0.044,-0.133,-0.222,
-            -0.400,-0.389,-0.973,-1.174,-1.211,-1.25,-1.25,-1.25,-1.329,
-            -1.329,-1.363,-1.363,-1.363,-1.223,-1.223,-0.823,-0.80,-0.415,-0.400,-0.001,0.0]
-                            
-            
-
-    comp_r = {'vessel':R}
-    comp_z = {'vessel':Z}
-    return comp_r,comp_z
-    
+from IPython import embed
+ 
 
 class equ_map:
     source = 'MDS'
-
+    system = None
+    
 
     def __init__(self, connect, debug=False):
         
         self.eq_open = False
         self.debug = debug
         self.sf = connect
-        self.shot=np.infty
 
         
-    def Open(self, shot, diag='EFIT01', exp='DIII-D',ed=0):
+    def Open(self, shot, diag='EFIT01', exp='D3D',ed=0):
 
         """
         Input
@@ -99,26 +37,88 @@ class equ_map:
         ed:  int
             edition
         """
-        
         self.system = diag
-        self.gEQDSK = '\\'+self.system+'::TOP.RESULTS.gEQDSK.'
+        chi2_max = 200
+
+        if exp.upper() in ['D3D' ]:
+            gEQDSK = 'gEQDSK' 
+            aEQDSK = 'aEQDSK' 
+            self.time_scale = 1e-3
+        
+        elif exp.upper() in [ 'NSTX','NSTXU']:
+            gEQDSK = 'gEQDSK' 
+            aEQDSK = 'aEQDSK' 
+            self.time_scale = 1
+            if exp.upper() == 'NSTXU':
+                chi2_max = 400
+
+        elif exp.upper()=='CMOD':
+            gEQDSK = 'G_EQDSK'
+            aEQDSK = 'A_EQDSK'
+            self.time_scale = 1
+
+            
+        else:
+            raise Exception('Tokamak %s was not implemented yet'%exp)
+  
+
+        if diag.upper() == 'ANALYSIS' and exp == 'CMOD':
+            root = '\\analysis::TOP.EFIT.RESULTS.'
+        else:
+            root = '\\'+diag+'::TOP.RESULTS.'
+            
+        self.gEQDSK = root+gEQDSK+'.'
+        self.aEQDSK = root+aEQDSK+'.'
+
+        self.comment = ''
         try:
+
             self.sf.openTree(diag,shot)
             self.shot = shot
             self.diag = diag
-            # R, z of PFM cartesian grid
-            self.Rmesh = self.sf.get(self.gEQDSK+'R').data()
-            self.Zmesh = self.sf.get(self.gEQDSK+'Z').data()
-            # Time grid of equilibrium shotfile
 
-            self.comment  = self.sf.get('\\'+diag+'::TOP.COMMENTS').data()
-        
-            t_eq  = np.atleast_1d(self.sf.get(self.gEQDSK+'GTIME').data()/1000)
-            atimes = self.sf.get('\\'+diag+'::TOP.RESULTS.aEQDSK.ATIME').data()/1000
-            chi2 = self.sf.get('\\'+diag+'::TOP.RESULTS.aEQDSK.CHISQ').data()
-            chi2_max = 200
-            self.valid = ~np.in1d(t_eq,atimes[chi2 > chi2_max])&(t_eq>0)
-            self.t_eq = t_eq[self.valid]
+            
+            # R, z of PFM cartesian grid
+            self.Rmesh = self.sf.get(self.gEQDSK+'R').data()[0]
+            self.Zmesh = self.sf.get(self.gEQDSK+'Z').data()[0]
+            # Time grid of equilibrium shotfile
+            self.t_eq  = np.atleast_1d(self.sf.get(self.gEQDSK+'GTIME').data()*self.time_scale)
+            #self.valid = np.ones_like(self.t_eq,dtype='bool')
+            try:
+                self.comment  = self.sf.get('\\'+diag+'::TOP.COMMENTS').data()
+            except:
+                pass
+            
+            try:
+                atimes = self.sf.get(self.aEQDSK+'ATIME').data()*self.time_scale
+                chi2  = self.sf.get(self.aEQDSK+'CHISQ').data()
+                error = self.sf.get(self.aEQDSK+'ERROR').data()
+                
+                try:
+                    chi2  = self.sf.get(self.aEQDSK+'CHISQTOT').data()
+                except:
+                    pass
+                #print(chi2)
+                self.valid = self.t_eq > 0
+ 
+                valid = np.isfinite(chi2)
+                valid[valid] &= (chi2[valid]>0)&(chi2[valid] < chi2_max) &(error[valid] < 0.01)
+                
+                nearest_ind = interp1d(atimes[valid],np.where(valid)[0],
+                                kind='nearest', fill_value='extrapolate')(self.t_eq)
+                self.valid &= np.abs(self.t_eq-atimes[np.int_(nearest_ind)]) < 1e-3
+                #self.valid &= np.in1d(self.t_eq,atimes[valid])&(self.t_eq>0)
+                
+                ip = self.sf.get(self.gEQDSK+'CPASMA').data() 
+                self.valid[self.valid] &= np.abs(ip[self.valid]) > np.abs(ip[self.valid]).max()/100 
+                self.t_eq = self.t_eq[self.valid]
+                #embed()
+
+            except:
+                #embed()
+                print('aEQDSK loading issue')
+                 
+                
             if len(self.t_eq) < 2: raise Exception('too few valid timepoints in equlibrium')
             self.eq_open = True
 
@@ -131,10 +131,7 @@ class equ_map:
     def __del__(self):
         self.Close()
         
-    def get_gc(self):
-        return get_gc(self.shot)
-    
-    
+        
     def Close(self):
 
         """
@@ -151,8 +148,12 @@ class equ_map:
             del self.psi0
         if hasattr(self, 'ssq'):
             del self.ssq
+            
         self.eq_open = False
-
+        try:
+            self.MDSconn.closeTree(self.system, self.shot)
+        except:
+            pass
 
 
     def _read_pfm(self):
@@ -168,9 +169,13 @@ class equ_map:
             return
 
         if self.debug: print('Reading PFM matrix')
-
-        self.pfm = self.sf.get('\\'+self.system+'::TOP.RESULTS.gEQDSK.PSIRZ').data().T[:,:,self.valid]*2*np.pi
-    
+        #try:
+        self.pfm = self.sf.get(self.gEQDSK+'PSIRZ',timeout=-1).data().T[:,:,self.valid]*2*np.pi
+        #except:
+            #self.sf.openTree(self.diag,self.shot)
+            #self.pfm = self.sf.get(self.gEQDSK+'PSIRZ',timeout=-1).data().T[:,:,self.valid]*2*np.pi
+            
+            
 
     def read_ssq(self):
 
@@ -189,17 +194,27 @@ class equ_map:
         
         self.ssq['Rmag'] = self.sf.get(self.gEQDSK+'RMAXIS').data()[self.valid]
         self.ssq['Zmag'] = self.sf.get(self.gEQDSK+'ZMAXIS').data()[self.valid]
-        separatrix = self.sf.get(self.gEQDSK+'BDRY').data()[self.valid]
-        self.ssq['Zunt'] = separatrix[:,:,1].min(1)
-        self.ssq['Zoben'] = separatrix[:,:,1].max(1)
+        #separatrix_R = self.sf.get(self.gEQDSK+'RBDRY').data()[self.valid]
+        #separatrix_Z = self.sf.get(self.gEQDSK+'ZBDRY').data()[self.valid]
+        self.separatrixR = self.sf.get(self.gEQDSK+'RBDRY').data()[self.valid]
+        self.separatrixZ = self.sf.get(self.gEQDSK+'ZBDRY').data()[self.valid]
+        #self.volume = self.sf.get(self.gEQDSK+'VOLUME').data()[self.valid]
 
+        #plt.plot(separatrix_R.T,separatrix_Z.T)
+        #plt.show()
         
-        atimes = self.sf.get('\\'+self.system+'::TOP.RESULTS.aEQDSK.ATIME').data()/1000
-        self.ssq['chi2'] = np.interp(self.t_eq, atimes,self.sf.get('\\'+self.system+'::TOP.RESULTS.AEQDSK:CHISQ').data())
-        self.ssq['CONDNO'] = np.interp(self.t_eq, atimes,self.sf.get('\\'+self.system+'::TOP.RESULTS.AEQDSK:CONDNO').data())
-        self.ssq['ERROR'] = np.interp(self.t_eq, atimes,self.sf.get('\\'+self.system+'::TOP.RESULTS.AEQDSK:ERROR').data())
-        self.ssq['TERROR'] = np.interp(self.t_eq, atimes,self.sf.get('\\'+self.system+'::TOP.RESULTS.AEQDSK:TERROR').data())
- 
+
+        #self.ssq['Zunt'] = separatrix[:,:,1].min(1)
+        #self.ssq['Zoben'] = separatrix[:,:,1].max(1)
+
+        try:
+            atimes = self.sf.get(self.aEQDSK+'ATIME').data()*self.time_scale
+            self.ssq['chi2'] = np.interp(self.t_eq, atimes,self.sf.get(self.aEQDSK+'CHISQ').data())
+            self.ssq['CONDNO'] = np.interp(self.t_eq, atimes,self.sf.get(self.aEQDSK+'CONDNO').data())
+            self.ssq['ERROR'] = np.interp(self.t_eq, atimes,self.sf.get(self.aEQDSK+'ERROR').data())
+            self.ssq['TERROR'] = np.interp(self.t_eq, atimes,self.sf.get(self.aEQDSK+'TERROR').data())
+        except:
+            pass
 
     def _read_scalars(self):
 
@@ -226,7 +241,7 @@ class equ_map:
         self.ip = self.sf.get(self.gEQDSK+'CPASMA').data()[self.valid]
         self.orientation = 1#np.sign(np.mean(self.Ip))  #current orientation
         self.Bt = self.sf.get(self.gEQDSK+'BCENTR').data()[self.valid]
-        self.R0 = self.sf.get(self.gEQDSK+'RZERO').data()[self.valid]
+        self.R0 = np.mean(self.sf.get(self.gEQDSK+'RZERO').data())#[self.valid]
         self.BR = self.Bt/self.R0
         
         
@@ -246,31 +261,46 @@ class equ_map:
 
         if self.debug: print('Reading Profiles')
 
-        nt = np.size(self.t_eq)
+        #nt = np.size(self.t_eq)
         self._read_scalars()
-        
+        from scipy.constants import mu_0
 
-        PSIN = self.sf.get(self.gEQDSK+'PSIN').data()
 
-    
+        self.PSIN = self.sf.get(self.gEQDSK+'PSIN').data()
+ 
+        ##try:
+            ##V0  = self.sf.get('\\'+self.system+'::TOP.RESULTS.aEQDSK.VOLUME').data()[self.valid,None]  
+        ##except:
+        V0 = 1#BUG!!! total volume of the plasma
+
+        #import IPython 
+        #IPython.embed()
 # Profiles
-        self.pf  = (np.outer(PSIN,(self.psix-self.psi0))+self.psi0)
+        self.pf = np.outer(np.max(self.PSIN,0),(self.psix-self.psi0))+self.psi0
+        q   = self.sf.get(self.gEQDSK+'QPSI').data()#[self.valid].T
+        vol  =  V0*self.sf.get(self.gEQDSK+'RHOVN').data()**2 #BUG it is wrong!!!
+        fpol  = self.sf.get(self.gEQDSK+'FPOL').data()/mu_0*2*np.pi
+    
+        if q.shape[0] == len(self.valid):
+            q =  q.T
+            vol =  vol.T
+            fpol = fpol.T
+ 
+        
+        self.q =  q[:,self.valid]
+        self.vol =  vol[:,self.valid]
+        self.fpol = fpol[:,self.valid]
+    
+        
         #self.ffp = self.sf.get(self.gEQDSK+'FFPRIM').data()[self.valid].T
         #self.ppp = self.sf.get(self.gEQDSK+'PPRIME').data()[self.valid].T
-        self.q   = self.sf.get(self.gEQDSK+'QPSI').data()[self.valid].T
-        #self.pres  = self.sf.get(self.gEQDSK+'PRES').data()[self.valid].T
-        #V0  = self.sf.get('\\'+self.system+'::TOP.RESULTS.aEQDSK.VOLUME').data()[self.valid].T
+#x        #self.pres  = self.sf.get(self.gEQDSK+'PRES').data()[self.valid].T
 
-        V0 = 1  #BUG!!! total volume of the plasma
-        self.vol  =  V0*self.sf.get(self.gEQDSK+'RHOVN').data()[self.valid].T**2
+        #self.vol  =  V0*self.sf.get(self.gEQDSK+'RHOVN').data()[self.valid].T**2
 
         #The toroidal flux PHI can be found by recognizing that the safety factor is the ratio of the differential toroidal and poloidal fluxes
         self.tf = integrate.cumtrapz(np.sign(self.ip)*np.sign(self.Bt)*self.q,self.pf,initial=0,axis=0)
-        
-        from scipy.constants import mu_0
-
-        self.fpol  = self.sf.get(self.gEQDSK+'FPOL').data()[self.valid].T/mu_0*2*np.pi
-
+        #embed()
 
     def _get_nearest_index(self, tarr):
 
@@ -294,9 +324,9 @@ class equ_map:
             time
         rho_in : float, ndarray
             radial coordinates, 1D (time constant) or 2D+ (time variable) of size (nt,nx,...)
-        coord_in:  str ['rho_pol', 'rho_tor' ,'rho_V', 'r_V', 'Psi','r_a']
+        coord_in:  str ['rho_pol', 'rho_tor' ,'rho_V', 'r_V', 'Psi','r_a','Psi_N']
             input coordinate label
-        coord_out: str ['rho_pol', 'rho_tor' ,'rho_V', 'r_V', 'Psi','r_a']
+        coord_out: str ['rho_pol', 'rho_tor' ,'rho_V', 'r_V', 'Psi','r_a','Psi_N']
             output coordinate label
         extrapolate: bool
             extrapolate rho_tor, r_V outside the separatrix
@@ -333,7 +363,7 @@ class equ_map:
         unique_idx, idx =  self._get_nearest_index(tarr)
 
             
-        if coord_in in ['rho_pol', 'Psi']:
+        if coord_in in ['rho_pol', 'Psi','Psi_N']:
             label_in = self.pf
         elif coord_in == 'rho_tor':
             label_in = self.tf
@@ -347,7 +377,7 @@ class equ_map:
             raise Exception('unsupported input coordinate')
 
 
-        if coord_out in ['rho_pol', 'Psi']:
+        if coord_out in ['rho_pol', 'Psi','Psi_N']:
             label_out = self.pf
         elif coord_out == 'rho_tor':
             label_out = self.tf
@@ -424,6 +454,7 @@ class equ_map:
             if coord_in == 'r_V' :
                 r0_in  = np.sqrt(sep_in/ (2*np.pi**2*R0[i]))
             if coord_out == 'r_V' :
+                #embed()
                 r0_out = np.sqrt(sep_out/(2*np.pi**2*R0[i]))
             if coord_in == 'RMNMP' :
                 r0_in  = np.sqrt(sep_in)
@@ -431,6 +462,9 @@ class equ_map:
                 r0_out = np.sqrt(sep_out)                
             if coord_in == 'Psi' :
                 rho_  = np.sqrt(np.maximum(0, (rho_ - self.psi0[i])/(self.psix[i] - self.psi0[i])))
+            if coord_in == 'Psi_N' :
+                rho_  = np.sqrt(np.maximum(0, rho_ ))
+                
 
 # Evaluate spline
 
@@ -446,6 +480,8 @@ class equ_map:
 
             if coord_out  == 'Psi':
                 rho_output[jt]  = rho_output[jt]**2*(self.psix[i] - self.psi0[i]) + self.psi0[i]
+            if coord_out == 'Psi_N' :
+                rho_output[jt]  = rho_output[jt]**2 
 
         
         return rho_output
@@ -586,23 +622,18 @@ class equ_map:
         dz = (self.Zmesh[-1] - self.Zmesh[0])/(len(self.Zmesh) - 1)
 
         nt_in = np.size(tarr)
-
-        if np.size(r_in, 0) == 1:
-            r_in = np.tile(r_in, (nt_in, 1))
-        if np.size(z_in, 0) == 1:
-            z_in = np.tile(z_in, (nt_in, 1))
-
         if r_in.shape!= z_in.shape:
-            raise Exception('Wrong shape of r_in or z_in')
-        
-        if np.size(r_in,0) != nt_in:
-            raise Exception('Wrong shape of r_in %s'%str(r_in.shape))
-        if np.size(z_in,0) != nt_in:
-            raise Exception('Wrong shape of z_in %s'%str(z_in.shape))
-        if np.shape(r_in) != np.shape(z_in):
             raise Exception( 'Not equal shape of z_in and r_in %s,%s'\
                             %(str(z_in.shape), str(z_in.shape)) )
 
+        if np.size(r_in,0) != nt_in and np.size(r_in,0) != 1:
+            r_in = r_in[None]
+            z_in = z_in[None]
+
+        if np.size(r_in, 0) == 1:
+            r_in = np.broadcast_to(r_in, (nt_in,)+r_in.shape[1:]) 
+            z_in = np.broadcast_to(z_in, (nt_in,)+z_in.shape[1:]) 
+ 
         self._read_pfm()
         Psi = np.empty((nt_in,)+r_in.shape[1:], dtype=np.single)
         
@@ -614,6 +645,7 @@ class equ_map:
         for i in unique_idx:
             jt = idx == i
             coords = np.array((r_in[jt], z_in[jt]))
+            #embed()
             index = ((coords.T - offset) / scaling).T
             Psi[jt] =  map_coordinates(self.pfm[:, :, i], index,
                                 mode='nearest',order=2, prefilter=True)
@@ -788,8 +820,6 @@ class equ_map:
 
         if not self.eq_open:
             return
-        self.sf.openTree(self.diag,self.shot)
-
 
         if t_in is None:
             t_in = self.t_eq
@@ -798,8 +828,13 @@ class equ_map:
         Psi = self.rho2rho(rho, t_in=t_in, coord_in=coord_in,
                           coord_out='Psi', extrapolate=True)
         nt = np.size(self.t_eq)
-
-        Qpsi = self.sf.get(self.gEQDSK+''+var_name).data()[self.valid].T
+        
+        if not hasattr(self,var_name):
+            print('Fetching ', var_name)
+            self.sf.openTree(self.diag,self.shot)
+            setattr(self,var_name,self.sf.get(self.gEQDSK+''+var_name).data()[self.valid].T)
+        
+        prof = getattr(self,var_name)
 
 
         var_out = np.zeros_like(Psi,dtype='single')
@@ -809,10 +844,10 @@ class equ_map:
             jt = idx == i
             sort_wh = np.argsort(self.pf[:, i])
             if var_name == 'Qpsi':
-                ii = Qpsi[sort_wh, i].nonzero()
-                s = InterpolatedUnivariateSpline(self.pf[sort_wh[ii], i], Qpsi[sort_wh[ii], i])
+                ii = prof[sort_wh, i].nonzero()
+                s = InterpolatedUnivariateSpline(self.pf[sort_wh[ii], i], prof[sort_wh[ii], i])
             else:
-                s = InterpolatedUnivariateSpline(self.pf[sort_wh, i], Qpsi[sort_wh, i])
+                s = InterpolatedUnivariateSpline(self.pf[sort_wh, i], prof[sort_wh, i])
             var_out[jt] = s(Psi[jt].flatten()).reshape(Psi[jt].shape)
 
         return var_out
@@ -958,7 +993,7 @@ class equ_map:
         line_r = np.empty((len(unique_idx), ntheta, n_line))
         line_z = np.empty((len(unique_idx), ntheta, n_line))
 
-        line_m = 1.4 # line length: 0.9 m
+        line_m = 1.6 # line length: 0.9 m
         t = np.linspace(0, 1, n_line)**.5*line_m
         c, s = np.cos(theta_in), np.sin(theta_in)
 
@@ -1098,11 +1133,11 @@ if __name__ == "__main__":
 
     from time import time
     
-    from .map_equ import equ_map,get_gc 
+    #from map_equ import equ_map,get_gc 
     import matplotlib.pylab as plt
     
     
-    mds_server = "atlas.gat.com"
+    mds_server = "skylark.pppl.gov:8501"
 
     import MDSplus as mds
     c = mds.Connection(mds_server )
@@ -1112,7 +1147,7 @@ if __name__ == "__main__":
     
     
     
-    eqm.Open(175699,diag='EFIT04')
+    eqm.Open(121165,diag='LRDFIT09', exp='NSTX')
     
     
     eqm._read_profiles()
@@ -1137,7 +1172,7 @@ if __name__ == "__main__":
     rho = np.linspace(0,2,101)
     
     R,Z = eqm.rho2rz( rho, t, all_lines=True)
-    print((len(R)))
+    print(len(R))
     for r,z,c in zip(R,Z,color):
         for rc,zc in zip(r,z):
             plt.plot(rc,zc,c)
@@ -1265,7 +1300,7 @@ if __name__ == "__main__":
 
 
     rgrid, zgrid, theta_star = eqm.mag_theta_star(3 )
-    print((rgrid.shape, theta_star.shape))
+    print(rgrid.shape, theta_star.shape)
     
     plt.figure()
     plt.pcolor(rgrid, zgrid,theta_star)

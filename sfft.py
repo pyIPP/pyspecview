@@ -70,7 +70,7 @@ def sfft(tvec, x,nfft,resolution=1000,window='hann',fmin=0,fmax=np.infty,
     
     
     sig[...,:len(x)] = x.T
-    sig[...,:len(x)] -= x.mean(0).T
+    sig[...,:len(x)] -= x.mean(0)[None].T
     sig[...,len(x):] = 0
 
     fft_forward()
