@@ -55,8 +55,9 @@ DIII-D, NSTX, ASDEX Upgrade
     5) Substract option switches between the absolute temperature and the mean subtracted value. 
     NOTE 1: Only LFS measurements are used! 
     
-    
-<img src="https://user-images.githubusercontent.com/32073690/198147512-2f9136ec-4172-45e4-95a9-4eb182dd85ed.png"   height="800"  align="middle">
+ Example of 2D Te profile of 3/2 NTM
+ 
+ <img src="https://user-images.githubusercontent.com/32073690/198147512-2f9136ec-4172-45e4-95a9-4eb182dd85ed.png"   height="800"  align="middle">
 
  
 ## 2D SXR
@@ -76,6 +77,9 @@ DIII-D, NSTX, ASDEX Upgrade
  
     NOTE: If there are two modes locked at the same frequency, it should be still possible to reconstruct them, but I have not tried, it can be tricky.  
  
+ Example of SXR profile from 2/2 mode overlapped by black contours of dTe
+ <img src="https://user-images.githubusercontent.com/32073690/198327865-eb159c3d-6c95-4eba-965d-5815f774a612.png"   height="800"  align="middle">
+
    
  
 ## General comments:
