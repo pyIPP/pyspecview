@@ -2469,7 +2469,7 @@ class MainGUI(QMainWindow):
                     if not self.eqm.Open(self.shot, diag='EFIT01'):
                         print( """standard eq. do not exist!!! use real time equilibrium""")
                         if not self.eqm.Open(self.shot, diag='EFITRT01'):
-                            aelf.eqm_ready = False
+                            self.eqm_ready = False
             elif self.tokamak == 'NSTX':
                    if not self.eqm.Open(self.shot, diag='EFIT02', exp=self.eq_exp):
                        print( """EFIT02 was not found, try EFIT01""")
