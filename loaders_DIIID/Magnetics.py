@@ -281,8 +281,9 @@ class loader_Magnetics(loader):
                 sig*= -1
  
             if self.active[n]:
-                sig = self.remove_elms(tvec, sig)
+
                 tvec/= 1e3 #s
+                sig = self.remove_elms(tvec, sig)
                 self.catch[n] = tvec,sig
         
         data = []
@@ -306,66 +307,6 @@ class loader_Magnetics(loader):
 
     
 
-    def remove_elms(self, tvec, signal):
-        if not hasattr(self,'elm_start'):
-            try:
-                #load ELMs from Tom Osborns MDS+ tree
-                self.MDSconn.openTree('PEDESTAL', self.shot)
-                
-                #TDI = r'\PEDESTAL::TOP.ELM:ELMDANAME'
-                #fname = self.MDSconn.get(TDI).data()
-                
-                TDI = r'\PEDESTAL::TOP.ELM:ELMSTART'
-                elm_val = self.MDSconn.get(r'_x=\PEDESTAL::TOP.ELM:ELMSTART').data()
-                elm_start = self.MDSconn.get(r'dim_of(_x)').data()
-                TDI = r'\PEDESTAL::TOP.ELM:ELMEND'
-                elm_end = self.MDSconn.get('dim_of('+TDI+')').data()
-                TDI = r'\PEDESTAL::TOP.ELM:ELMPEAK'
-                elm_peak = self.MDSconn.get('dim_of('+TDI+')').data()
-                
-                
-        
-                #estimate size of the ELM
-                area = (elm_end-elm_start)*elm_val
-                ind = area > 1e15  #BUG hardcoded value
-                
-                self.elm_start = elm_start[ind]
-                self.elm_peak = elm_peak[ind]
-                self.elm_end = elm_end[ind]
-                self.elm_val = elm_val[ind]
-                
-                
-
-                #self.MDSconn.openTree('SPECTROSCOPY', self.shot)
-                #TDI = '_x=\\SPECTROSCOPY::'+ fname
-                #filterscope = self.MDSconn.get(TDI).data()
-                #filterscope_t = self.MDSconn.get('dim_of(_x)').data()
- 
-            except Exception as e:
-                print('ELM detection issue: ', e)
-                return signal
-     
-        
-        valid = (self.elm_start > tvec[0])&(self.elm_start < tvec[-1])
-        
-        #delete also 0.1ms before and after due to uncertainties in elm time
-        ind_start = tvec.searchsorted(self.elm_start[valid]-0.1)
-        ind_end = tvec.searchsorted(self.elm_peak[valid]+0.1)
-        
- 
-        corrected_signal = copy(signal)
-        for i1,i2 in zip(ind_start, ind_end):
-            corrected_signal[i1:i2] = signal[i1:i2].mean(0)
-            
-            
-        #plot(tvec, signal)
-        #plot(tvec, corrected_signal)
-        #plot(filterscope_t,filterscope/1e15 )
-        #plot(c_[self.elm_start, self.elm_peak, self.elm_end].flatten(), c_[0*self.elm_val,self.elm_val/1e15,self.elm_val*0].flatten())        
-        #show()
-
-        return corrected_signal
-            
     
         
         

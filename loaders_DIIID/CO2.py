@@ -143,6 +143,9 @@ class loader_CO2(loader):
         tvec = hstack(self.tvec[indmin:indmax])
         sig  = hstack(self.cache[group][name][indmin:indmax])
         
+
+        sig = self.remove_elms(tvec, sig)
+        print('elms removed')
         
         
         ##tvec=np.linspace(0,5,100000000*5)
