@@ -247,11 +247,61 @@ class loader(object):
 
         
     def get_plasma_freq(self,rho):
-        return nan,nan
+        
+        #fetch rotation data from CER
+        if not hasattr(self,'plasma_freq'):
+            analysis_type = 'CERAUTO'
+            system = 'tangential'
+            path = 'CER.%s.%s.CHANNEL*'%(analysis_type,system)
+            self.MDSconn.openTree('IONS',self.shot)
+
+            nodes = self.MDSconn.get('getnci("'+path+'","path")')
+            lengths = self.MDSconn.get('getnci("'+path+':ROT","LENGTH")').data()
+            TDI = []
+            for node,length in zip(nodes,lengths):
+                if length == 0: continue
+                node = node.item()
+                try:
+                    node = node.decode()
+                except:
+                    pass
+                TDI.append(node+':R')
+                TDI.append(node+':Z')
+                TDI.append(node+':TIME')
+                TDI.append(node+':ROTC')
+                
+            TDI = array(TDI, dtype=object).reshape(-1,4)
+            TDI_list = '['+ ','.join(list(TDI.T.flatten())) +']'
+            
+            R,Z,T,Vtor = self.MDSconn.get(TDI_list).reshape(4,-1)
+            T /= 1e3
+            Vtor *= 1e3
+            self.plasma_freq_rho = self.eqm.rz2rho(R[:,None],Z[:,None],T, coord_out=self.rho_lbl)[:,0]
+    
+            self.plasma_freq = Vtor/(R*2*pi)
+            r0 = interp(T,  self.eqm.t_eq, self.eqm.ssq['Rmag'] )
+            self.plasma_freq_rho[R<r0]*= -1
+            self.plasma_freq_tvec =  T
+
+        
+        from scipy.interpolate import griddata
+        tvec = unique(self.plasma_freq_tvec)
+        freq=griddata((self.plasma_freq_tvec, self.plasma_freq_rho), self.plasma_freq,(tvec, rho*ones_like(tvec)))
+
+
+
+        #plasma_freq_tvec = copy(self.plasma_freq_tvec)
+        
+        #breaks = where(diff(self.plasma_freq_tvec) > 2* median(diff(self.plasma_freq_tvec)))[0]+1
+        #plasma_freq_tvec = insert(plasma_freq_tvec, breaks,  plasma_freq_tvec[breaks])
+        #F = insert(F, breaks, nan)
+ 
+        return tvec, np.abs(freq)
         
         
-        #import IPython
-        #IPython.embed()
+         
+        
+
                 
         #import time
         #t = time.time()
@@ -426,85 +476,33 @@ class spaced_vector:
         return spaced_vector(start,stop,step)
 
 
+from matplotlib.pylab import *
 
 
 def main():
     
-    #asarray(spaced_vector(1,5))
-    
-    
-    import IPython
-    IPython.embed()
-    
-    
-    import os
-    import os,sys
-    sys.path.append('/afs/ipp/home/t/todstrci/TRANSP/')
-    #import dd   
-    #from matplotlib.pylab import *
-    dd = dd.shotfile()
+ 
 
-    #sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib/')
-    from . import map_equ
+    shot = 175860
+    
+    
+    mds_server = "localhost"
+    #mds_server = "atlas.gat.com"
+    import MDSplus as mds
 
-    #eqm = map_equ.equ_map(debug=False)
-    
-    #eqm.Open(31113,diag='IDE')
-    #print eqm.ssq 
-    #exit()
-    
-    #eq_diag = TRE
-##eq_ed = 45
-#eq_exp = RDA
-    shot = 30530
+    MDSconn = mds.Connection(mds_server )
+    from map_equ import equ_map
+    eqm = equ_map(MDSconn,debug=False)
+    eqm.Open(shot,diag='EFIT01' )
+    MDSconn2 = mds.Connection(mds_server)
 
-    eqm = map_equ.equ_map(debug=True)
-    eqm.Open(shot, diag='EQI', exp='AUGD',ed=0)
     
-    #eqm.ssq 
-    eqm.read_ssq()
-
-
-    L = loader(shot,exp='AUGD',ed=0,eqm= eqm,rho_lbl='rho_tor')
-    
-    #L.get_q_surfs(4.14, (1,1.5,2))
-
-    rho_grid = linspace(0.01,1,30)
-    magr,magz,theta,theta_star=L.mag_theta_star(2.9 , rho_grid,)
-    
-
-    exit()
-        
-    
-    u,i = eqm._get_nearest_index(3.23)
-    
-    R,Z = eqm.rho2rz(rho_grid, t_in=3, coord_in='rho_tor')
-        
-    
-    
-    for r,z in zip(R[0],Z[0]):        plot(r,z,'--')
-    #plot(eqm.r0[i], eqm.z0[i],'o')
-    plot(eqm.ssq['Rmag'][i],eqm.ssq['Zmag'][i],'x')
-    plot(magr.T, magz.T)  
-    axis('equal')
-    show()
-    #plot()
-    import IPython
-    IPython.embed()  
-    r = hypot(magr-magr[(0,)], magz-magz[(0,)])
-    dr = gradient(r)[0]/gradient(rho_grid)[:,None]
-    dt = gradient(theta_star)[1]/gradient(theta)[None]
-    J = dt*dr
-    contourf(J,linspace(0,3,50))
+    ll = loader(shot,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2 )
+    t,f = ll.get_plasma_freq(0.5)
+    plot(t,f)
     show()
     
-    
-    import IPython
-    IPython.embed()      
-    
-    
-    
-    
+   
     
 if __name__ == "__main__":
     main()

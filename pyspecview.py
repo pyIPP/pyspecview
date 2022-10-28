@@ -241,7 +241,7 @@ class SpectraViewer(object):
 
         c  = 1-np.array(plt.cm.get_cmap( cmap)(0))[:3] #inverse of the lowest color in the colormap
         self.plt_plasma_freq_n1, = self.ax.plot([], [], c=c, zorder=99, lw=.5)
-        self.plt_plasma_freq_n2, = self.ax.plot([], [], c=c, zorder=99, lw=.5,ls='--')
+        #self.plt_plasma_freq_n2, = self.ax.plot([], [], c=c, zorder=99, lw=.5,ls='--')
 
         if allow_selector:
             rectprops = dict(facecolor='gray', edgecolor='black', alpha=0.5, fill=True, zorder=99)
@@ -306,13 +306,13 @@ class SpectraViewer(object):
         self.plt_trace.set_data([], [])
 
         self.plt_plasma_freq_n1.set_visible(False)
-        self.plt_plasma_freq_n2.set_visible(False)
+        #self.plt_plasma_freq_n2.set_visible(False)
      
         if 'freq' in data:
             self.plt_plasma_freq_n1.set_data(data['freq_tvec'], data['freq'])
-            self.plt_plasma_freq_n2.set_data(data['freq_tvec'], data['freq']*2)
+            #self.plt_plasma_freq_n2.set_data(data['freq_tvec'], data['freq']*2)
             self.plt_plasma_freq_n1.set_visible(True)
-            self.plt_plasma_freq_n2.set_visible(True)
+            #self.plt_plasma_freq_n2.set_visible(True)
 
    
         if self.show_raw:
@@ -2696,7 +2696,6 @@ class MainGUI(QMainWindow):
         
         logger.info(  'data loaded in %5.2fs', (time.time()-T))
      
-
         if self.show_plasma_freq and self.data_loader.radial_profile and self.eqm_ready:
             try:
                 rho = self.data_loader.get_rho(self.diag_group, (self.signal, ), 
