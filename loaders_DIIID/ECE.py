@@ -173,7 +173,7 @@ class loader_ECE(loader):
         load_nch = [n for n in nch if not n in output]
         
         if len(load_nch) > 0:
-            logger.info( 'fast parallel fetch..', (time.time() - t))
+            #logger.info( 'fast parallel fetch..', (time.time() - t))
 
             numTasks = 8
             
@@ -261,38 +261,39 @@ class loader_ECE(loader):
         
     def get_Te0(self,tmin,tmax,IDA=True,dR=0,dZ=0,R=None,Z=None):
         #load ziprofiles
-        #import IPython
-        #IPython.embed()
-        if not hasattr(self,'zipcache'):
-            TDIcall = '\ELECTRONS::TOP.PROFILE_FITS.ZIPFIT:'
+        try:
+            if not hasattr(self,'zipcache'):
+                TDIcall = '\ELECTRONS::TOP.PROFILE_FITS.ZIPFIT:'
 
-            self.MDSconn.openTree('ELECTRONS' ,self.shot)
-            ZipTe = self.MDSconn.get('_x='+TDIcall+'ETEMPFIT').data()
-            ZipNe = self.MDSconn.get('_x='+TDIcall+'EDENSFIT').data()
-            ZipTe*= 1e3 #eV
-            ZipNe*= 1e19 #m^-3
-            zip_tvec = self.MDSconn.get('dim_of(_x,1)').data()
-            zip_tvec/= 1e3#s
-            zip_rho = self.MDSconn.get('dim_of(_x,0)').data()
-            zip_rho = self.eqm.rho2rho(zip_rho,zip_tvec,coord_in='rho_tor', coord_out=self.rho_lbl)
-            self.MDSconn.closeTree('ELECTRONS',self.shot)
-            self.zipcache = zip_tvec,zip_rho, ZipTe, ZipNe
+                self.MDSconn.openTree('ELECTRONS' ,self.shot)
+                ZipTe = self.MDSconn.get('_x='+TDIcall+'ETEMPFIT').data()
+                ZipNe = self.MDSconn.get('_x='+TDIcall+'EDENSFIT').data()
+                ZipTe*= 1e3 #eV
+                ZipNe*= 1e19 #m^-3
+                zip_tvec = self.MDSconn.get('dim_of(_x,1)').data()
+                zip_tvec/= 1e3#s
+                zip_rho = self.MDSconn.get('dim_of(_x,0)').data()
+                zip_rho = self.eqm.rho2rho(zip_rho,zip_tvec,coord_in='rho_tor', coord_out=self.rho_lbl)
+                self.MDSconn.closeTree('ELECTRONS',self.shot)
+                self.zipcache = zip_tvec,zip_rho, ZipTe, ZipNe
+                
+            zip_tvec,zip_rho,ZipTe, ZipNe = self.zipcache
             
-        zip_tvec,zip_rho,ZipTe, ZipNe = self.zipcache
-        
-        imin,imax = zip_tvec.searchsorted((tmin,tmax))
-        Te = median(ZipTe[imin:imax+1], 0)
-        zip_rho = mean(zip_rho[imin:imax+1], 0)
-        time = (tmin+tmax)/2
-        
-        if R is None and Z is None:
-            rho = self.get_rho('',self.names,time,dR=dR,dZ=dZ)[0]
-        else:
-            rho = self.eqm.rz2rho(R,Z,time,self.rho_lbl)
-        #import IPython
-        #IPython.embed()
-        
-        Te_ece = interp(abs(rho), zip_rho,Te )
+            imin,imax = zip_tvec.searchsorted((tmin,tmax))
+            Te = median(ZipTe[imin:imax+1], 0)
+            zip_rho = mean(zip_rho[imin:imax+1], 0)
+            time = (tmin+tmax)/2
+            
+            if R is None and Z is None:
+                rho = self.get_rho('',self.names,time,dR=dR,dZ=dZ)[0]
+            else:
+                rho = self.eqm.rz2rho(R,Z,time,self.rho_lbl)
+    
+            
+            Te_ece = interp(abs(rho), zip_rho,Te )
+        except Exception as e:
+            print('Zipfit error', e)
+            return 
         
         return rho,Te_ece
         

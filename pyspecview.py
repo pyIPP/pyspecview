@@ -260,14 +260,20 @@ class SpectraViewer(object):
            return 
 
         self.initialized=False
+    
+        self.dR_corr = 0
+        self.dZ_corr = 0  
+        #set mode number back to one
+        self.radial_m_num.setCurrentIndex(np.where(self.m_numbers == 1)[0])
 
-        for artist in self.ax.get_images():
+
+        for artist in self.ax.get_images()+self.ax.lines+self.ax.artists:
             artist.remove()
             del artist
         self.ax.figure.canvas.draw_idle()
   
         if self.show_raw:
-            for artist in self.uax.lines:
+            for artist in self.uax.lines+self.uax.artists:
                 artist.remove()
             self.uax.figure.canvas.draw_idle()
             
@@ -2463,6 +2469,17 @@ class MainGUI(QMainWindow):
                         self.eqm_ready = False
 
             elif self.tokamak == 'DIIID':
+                 try:
+                    self.MDSconn.openTree('D3D', shot)
+                    self.BRIEF = self.MDSconn.get(r'\D3D::TOP.COMMENTS:BRIEF').data()
+                    self.CONFIG = self.MDSconn.get(r'\D3D::TOP.COMMENTS:CONFIG').data()
+                    self.MDSconn.closeTree('D3D', shot)
+                    if not isinstance(self.BRIEF,str):
+                        self.BRIEF = self.BRIEF.decode()
+                    print('Experiment name: ', self.BRIEF)
+                except:
+                    pass
+                
                 if not self.eqm.Open(self.shot, diag=self.eq_diag, exp=self.eq_exp, ed=self.eq_ed):
                     print( """Equlibrium shotfile: diag=%s, exp=%s, ed=%d do not exist!!!
                     standard shotfile will be used"""%(self.eq_diag, self.eq_exp, self.eq_ed))
