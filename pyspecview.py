@@ -2469,7 +2469,7 @@ class MainGUI(QMainWindow):
                         self.eqm_ready = False
 
             elif self.tokamak == 'DIIID':
-                 try:
+                try:
                     self.MDSconn.openTree('D3D', shot)
                     self.BRIEF = self.MDSconn.get(r'\D3D::TOP.COMMENTS:BRIEF').data()
                     self.CONFIG = self.MDSconn.get(r'\D3D::TOP.COMMENTS:CONFIG').data()
