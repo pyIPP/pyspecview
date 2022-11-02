@@ -3505,14 +3505,14 @@ class MainGUI(QMainWindow):
         self.rototomo_canvas.setToolTip('Use a mouse wheel to rotate the mode, \n Ctrl+wheel for a fine shift')
         
         self.rototomo_limit = QSlider(Qt.Horizontal)
-        self.rototomo_limit.setRange(0, 100)
+        self.rototomo_limit.setRange(1, 100)
         self.rototomo_limit.setValue(100)
         self.rototomo_limit.setTracking(True)
         self.rototomo_limit.setTickPosition(QSlider.NoTicks)
         self.rototomo_limit.setSingleStep(.05)
            
         self.rototomo_reg = QSlider(Qt.Horizontal)
-        self.rototomo_reg.setRange(0, 100)
+        self.rototomo_reg.setRange(1, 100)
         self.rototomo_reg.setValue(70)
         self.rototomo_reg.setTracking(True)
         self.rototomo_reg.setTickPosition(QSlider.NoTicks)
@@ -3623,7 +3623,7 @@ class MainGUI(QMainWindow):
                         self.rototomo_n_num, self.rototomo_plot_bcg, 
                         self.rototomo_TeOver, self.rototomo_mag_flx, self.rototomo_limit, 
                         self.rototomo_reg, self.rtomo_n_harm, self.rtomo_n_svd, 
-                        self.eqm, self.rho_lbl )
+                        self.eqm, self.rho_lbl, self.rtomo_show_contours)
 
         self.rototomo_m_num.currentIndexChanged.connect(self.roto_tomo.update_node_m_number)
         self.rototomo_n_num.currentIndexChanged.connect(self.roto_tomo.update_node_n_number)                    
@@ -3746,15 +3746,9 @@ class MainGUI(QMainWindow):
   
         config.read(cfg_path)
     
-        try:
-            self.tokamak = config.get('basic', 'tokamak')
-            self.mds_server = config.get('basic', 'mds_server')
-        except:
-            #backward compatibility 
-            self.mds_server = None
-            self.tokamak = 'AUG'
-        print('TOKAMAK = %s' %self.tokamak)
- 
+        self.tokamak = config.get('basic', 'tokamak', fallback = 'AUG')
+        self.mds_server = config.get('basic', 'mds_server', fallback = None)
+
         self.spect_cmap = config.get('spectrogram', 'spect_cmap')
         self.win_fun = config.get('spectrogram', 'win_fun')
         self.show_plasma_freq = config.get('spectrogram', 'show_plasma_freq').strip() == 'True'
@@ -3772,27 +3766,20 @@ class MainGUI(QMainWindow):
 
         self.use_LFS_data = config.get('Diag2DMapping', 'use_LFS').strip() == 'True'
         self.phase_locked_tomo = config.get('Diag2DMapping', 'phase_locked').strip() == 'True'
-        try:
-            self.rtomo_n_svd  =  int(config.get('roto_tomo', 'n_svd' ))
-            self.rtomo_n_harm =  int(config.get('roto_tomo', 'n_harm'))
-        except:
-            self.rtomo_n_svd = 4
-            self.rtomo_n_harm = 5
+        self.rtomo_n_svd  =  int(config.get('roto_tomo', 'n_svd', fallback=4))
+        self.rtomo_n_harm =  int(config.get('roto_tomo', 'n_harm', fallback = 5))
+        self.rtomo_show_contours =  config.get('roto_tomo', 'show_contours', fallback = 'False') == 'True'
+
+ 
             
         try:
-            self.balooning_coils_mode_range =  int_(config.get('spectrogram', 'balooning_coils_mode_range').split(', '))
+            self.balooning_coils_mode_range =  np.int_(config.get('spectrogram', 'balooning_coils_mode_range').split(','))
         except:
             self.balooning_coils_mode_range = None
-
-        try:
-            self.mode_range = int_(config.get('spectrogram', 'mode_range').split(', '))
-        except:
-            self.mode_range = -6, 5
-
-        try:
-            self.rho_pol_mode = float(config.get('spectrogram', 'rho_pol_mode'))
-        except:
-            self.rho_pol_mode = 0.2
+ 
+        self.mode_range = np.int_(config.get('spectrogram', 'mode_range', fallback='-6,5').split(','))
+        self.rho_pol_mode = float(config.get('spectrogram', 'rho_pol_mode', fallback = 0.2))
+       
 
 
 if __name__ == '__main__':
@@ -3828,15 +3815,15 @@ if __name__ == '__main__':
         new_font = app.font()
         new_font.setPointSize(  12 )
         app.setFont( new_font )
-    try:
-        form = MainGUI(args.shot, args.diag, args.group, args.sig, args.diag_phase, args.signal_phase, args.tmin, args.tmax, args.fmin, args.fmax )
-    
-        if args.save_fig:
-            form.curr_tab = 1
-            form.save_plot(no_gui=True)
-        else:
-            form.show()
-            app.exec_()
-    except Exception as e:
-       print(e)
-       exit()
+    #try:
+    form = MainGUI(args.shot, args.diag, args.group, args.sig, args.diag_phase, args.signal_phase, args.tmin, args.tmax, args.fmin, args.fmax )
+
+    if args.save_fig:
+        form.curr_tab = 1
+        form.save_plot(no_gui=True)
+    else:
+        form.show()
+        app.exec_()
+    #except Exception as e:
+       #print(e)
+       #exit()
