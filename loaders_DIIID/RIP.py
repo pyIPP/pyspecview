@@ -9,6 +9,7 @@ def check(shot):
 
 
 class loader_RIP(loader):
+    radial_profile=True
 
     def __init__(self,*args, **kargs):
         

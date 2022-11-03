@@ -263,6 +263,7 @@ class loader_ECE(loader):
         #load ziprofiles
         try:
             if not hasattr(self,'zipcache'):
+                self.zipcache = []
                 TDIcall = '\ELECTRONS::TOP.PROFILE_FITS.ZIPFIT:'
 
                 self.MDSconn.openTree('ELECTRONS' ,self.shot)
@@ -276,7 +277,10 @@ class loader_ECE(loader):
                 zip_rho = self.eqm.rho2rho(zip_rho,zip_tvec,coord_in='rho_tor', coord_out=self.rho_lbl)
                 self.MDSconn.closeTree('ELECTRONS',self.shot)
                 self.zipcache = zip_tvec,zip_rho, ZipTe, ZipNe
-                
+            
+            if self.zipcache is []:
+                return
+            
             zip_tvec,zip_rho,ZipTe, ZipNe = self.zipcache
             
             imin,imax = zip_tvec.searchsorted((tmin,tmax))

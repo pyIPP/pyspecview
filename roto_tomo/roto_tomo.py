@@ -1669,7 +1669,7 @@ class Roto_tomo:
                 h.qin.close()
                 h.qout.close()
                 del h  #release memory 
-            print('solvers are closed')
+            #print('solvers are closed')
             self.hsolvers = []
             self.initialized = False
             if plt.fignum_exists('Retrofit'):

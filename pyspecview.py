@@ -77,6 +77,7 @@ font_size = 10
 def excepthook(exc_type, exc_value, exc_tb):
     # Note: sys.__excepthook__(...) would not work here.
     # We need to use print_exception(...):
+    print('Something went wrong. Sent error message odstrcilt@fusion.gat.com')
     traceback.print_exception(exc_type, exc_value, exc_tb)
 
  
@@ -263,8 +264,6 @@ class SpectraViewer(object):
     
         self.dR_corr = 0
         self.dZ_corr = 0  
-        #set mode number back to one
-        self.radial_m_num.setCurrentIndex(np.where(self.m_numbers == 1)[0])
 
 
         for artist in self.ax.get_images()+self.ax.lines+self.ax.artists:
@@ -2432,6 +2431,8 @@ class MainGUI(QMainWindow):
         self.SpecWin.reset()
         self.SpecWin_phase.reset()
 
+        #set mode number back to one
+        self.radial_m_num.setCurrentIndex(np.where(self.m_numbers == 1)[0])
 
         self.cross_signal.setCurrentIndex( -1)
         self.cb_diagnostics.clear()
