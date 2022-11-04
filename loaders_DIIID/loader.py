@@ -414,7 +414,7 @@ class loader(object):
  
         corrected_signal = copy(signal)
         for i1,i2 in zip(ind_start, ind_end):
-            corrected_signal[i1:i2] = signal[i1:i2].mean(0)
+            corrected_signal[i1:i2] = np.linspace(signal[i1], signal[i2], i2-i1)
             
             
         #plot(tvec, signal)
