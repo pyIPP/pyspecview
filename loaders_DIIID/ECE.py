@@ -188,7 +188,6 @@ class loader_ECE(loader):
             self.data_dict[nch] = Te
 
             ind = slice(imin,imax)
-            print(ind, tmin,tmax, )
             return [self.tvec[ind], Te[ind]]
                  
 
@@ -229,7 +228,6 @@ class loader_ECE(loader):
             
             for n, Te in zip(load_nch, out ):
                 
-                embed()
                 if len(Te) == 0: 
                     Te =  np.zeros_like(self.tvec, dtype='single')
                 else:
