@@ -1,5 +1,5 @@
 from loaders_DIIID.loader import * 
-from loader import * 
+#from loader import * 
 
 import os
 from multiprocessing import  Pool
