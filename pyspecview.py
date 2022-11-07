@@ -2778,6 +2778,9 @@ class MainGUI(QMainWindow):
             self.data_loader_radial  = self.data_loader
         
         if update:
+            
+            
+            T = time.time()
 
             if self.diag_group is None: return 
 
@@ -2835,6 +2838,9 @@ class MainGUI(QMainWindow):
           
             self.radial_view.set_data(self.diag, rho, theta_tg, data, R, Z, Phi, mag_data, magr, magz, theta_star, rho_qsurfs, units)
             self.radial_view.group = self.diag_group
+            
+            logger.info(  'data loaded in %5.2fs', (time.time()-T))
+
 
         if not self.signal_radial is None:
             cross_sig = self.data_loader_radial.get_signal(self.diag_group_radial, 
