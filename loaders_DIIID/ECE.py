@@ -1,4 +1,6 @@
 from loaders_DIIID.loader import * 
+#from loader import * 
+
 import os
 from multiprocessing import  Pool
 import MDSplus as mds
@@ -25,34 +27,19 @@ from time import time as T
 
 
 
-#def mds_load((mds_server,tree, shot,  TDI)):
-    #MDSconn = mds.Connection(mds_server )
-    #MDSconn.openTree(tree, shot)
-    #data = MDSconn.get(TDI).data()
-    #MDSconn.closeTree(tree, shot)
-
-    #print mds_server,tree, shot,  TDI
-
-    #return data
 
 def mds_load(tmp):
-    (mds_server,tree, shot,  TDI) = tmp
+    mds_server, shot,  TDI = tmp
     MDSconn = mds.Connection(mds_server )
-    MDSconn.openTree(tree, shot)
     data = []
     for tdi in TDI:
         try:
             data.append(MDSconn.get(tdi).data())
         except:
             data.append([])
-            
-    MDSconn.closeTree(tree, shot)
-
-    #print mds_server,tree, shot,  TDI
-
     return data
 
-
+from IPython import embed
 class loader_ECE(loader):
     
 
@@ -84,7 +71,13 @@ class loader_ECE(loader):
         subnodes_freq = nodes + 'FREQ'
         subnodes_lofreq = nodes + 'LOFREQ' #Also not yet used - but may be something folks will want later.
         subnodes_valid = nodec +  'VALIDF'
-            
+        subnodes_channels = nodec +  'ECPTNAMF'
+        calid_cc1f = nodec +  'CC1F'
+        calid_cc2f = nodec +  'CC2F'
+        calid_cc3f = nodec +  'CC3F'
+        calid_adosf = nodec +  'ADOSF'
+
+        
         tag='\TECEF'
         TDIcall= tag+"01"
 
@@ -103,10 +96,17 @@ class loader_ECE(loader):
         self.freq = self.MDSconn.get(subnodes_freq).data()*1e9
         
         self.valid = bool_(self.MDSconn.get(subnodes_valid))
-
+        self.channels = self.MDSconn.get( subnodes_channels  )
+        
+        #calibration factors
+        self.cc1f = self.MDSconn.get(calid_cc1f)
+        self.cc2f = self.MDSconn.get(calid_cc2f)
+        self.cc3f = self.MDSconn.get(calid_cc3f)
+        self.adosf= self.MDSconn.get(calid_adosf)
+ 
         # get position settings
         self.z = self.MDSconn.get(subnodes_z).data()
-        self.Phi  =  21.#81. #from diagnostic webpage #self.MDSconn.get(subnodes_phi).data()#deg
+        self.Phi  =  21.#81.60 #from diagnostic webpage #self.MDSconn.get(subnodes_phi).data()#deg
         self.MDSconn.closeTree(self.tree, self.shot)
 
         if self.freq is None or len(self.freq)<2:
@@ -114,8 +114,13 @@ class loader_ECE(loader):
        
         #BUG!!!1   which channels are turned off? 
         self.freq = self.freq[:self.nchs]
-
-        
+        self.channels = self.channels[:self.nchs]
+        #raw_ch_name = self.channels[nch-1]
+        try:
+            self.channels = [ch.decode for ch in self.channels]
+        except:
+            pass
+    
     def get_signal(self,group, names,calib=False,tmin=None,tmax=None):
         #RAW DATA?
     
@@ -138,7 +143,7 @@ class loader_ECE(loader):
             if n in self.data_dict:
                 output[n] = self.data_dict[n][imin:imax]
                 
-        TDIcall="_x=\TECEF%02d"
+        #TDIcall="_x=\TECEF%02d"
 
     
             
@@ -149,21 +154,40 @@ class loader_ECE(loader):
             if len(output) == 1:
                 return [self.tvec[imin:imax],output[nch]] 
                 
-            t = T()
+    
+            Te = self.MDSconn.get(f'_x=PTDATA2("{self.channels[nch-1]}", {self.shot}, 4)').data()
 
-            self.MDSconn.openTree(self.tree,self.shot)
-            Te = self.MDSconn.get(TDIcall%nch).data()
-            Te*= 1e3 #eV
+            C1 = self.cc1f[nch-1]
+            C2 = self.cc2f[nch-1]
+            C3 = self.cc3f[nch-1]
+            adosf = self.adosf[nch-1]
+            
+            
+            #Te_calib = Te*(C1/np.sqrt(1.-C2*Te**2)+C3*Te**3)+adosf
+            Te_calib = np.copy(Te)
+            Te_calib *= C1*1e3 #eV
+            if C2 != 0:
+                Te_calib /= np.sqrt(1.-C2*Te**2)
+            if C3 != 0:
+                Te_calib += (C3*1e3)*Te**4
+            if adosf != 0:
+                Te_calib += adosf*1e3
+
+                
+            #BUG https://diii-d.gat.com/diii-d/ECE#pointnames
+            #Ask if ther are any issues with timing in th new discharges 
+   
+            
             if self.tvec is None:
-                self.tvec = self.MDSconn.get('dim_of(_x)').data()
-                self.tvec /= 1e3 #s
+                tmin,tmax = self.MDSconn.get('_t=dim_of(_x); [_t[0], _t[size(_t)-1]]').data()/1e3 #s
+                self.tvec = linspace(tmin,tmax,len(Te))
                 imin,imax = self.tvec.searchsorted([tmin,tmax])
                 imax+= 1
 
-            self.MDSconn.closeTree(self.tree,self.shot)
+ 
+            self.data_dict[nch] = Te
 
             ind = slice(imin,imax)
-            self.data_dict[nch] = Te
             return [self.tvec[ind], Te[ind]]
                  
 
@@ -177,20 +201,19 @@ class loader_ECE(loader):
 
             numTasks = 8
             
-            t = T()
+            #t = T()
             server = self.MDSconn.hostspec
-            
-            TDI = [TDIcall%n for n in load_nch]
+            TDI = [f'PTDATA2("{self.channels[nch-1]}", {self.shot}, 4)' for nch in load_nch]
+
+            #TDI = [TDIcall%n for n in load_nch]
             if  self.tvec is None :  
-                TDI.append('dim_of(\\TECEF01)')
+                TDI.append(f'dim_of(PTDATA2("{self.channels[0]}", {self.shot}, 4))')
             
             TDI = array_split(TDI, numTasks)
 
- 
-            args = [(server,self.tree, self.shot, tdi) for tdi in TDI]
+            args = [(server, self.shot, tdi) for tdi in TDI]
             
             out = []
-            nconn = len(args)  #brutal force
             pool = Pool()
             for o in pool.map(mds_load,args):
                 out.extend(o)
@@ -207,8 +230,29 @@ class loader_ECE(loader):
             ind = slice(imin,imax)
             
             for n, Te in zip(load_nch, out ):
-                if len(Te) == 0: Te =  self.tvec*0
-                Te*= 1e3 #convert to eV units
+                if len(Te) == 0: 
+                    Te =  self.tvec*0
+                else:
+                    Te*= self.cc1f[n-1]*1e3 #convert to eV units
+                
+                C1 = self.cc1f[n-1]
+                C2 = self.cc2f[n-1]
+                C3 = self.cc3f[n-1]
+                adosf = self.adosf[n-1]
+                                
+                if C2 == 0 and C3 == 0 and adosf == 0:
+                    Te *= C1*1e3 #eV
+                else:
+                    Te_ = np.copy(Te)
+                    Te *= C1*1e3 #eV
+                    if C2 != 0:
+                        Te /= np.sqrt(1.-C2*Te_**2)
+                    if C3 != 0:
+                        Te += (C3*1e3)*Te_**4
+                        
+                if adosf != 0:
+                    Te += adosf*1e3
+
                 output[n] = Te[ind]
                 self.data_dict[n] = Te
         
@@ -367,7 +411,7 @@ def main():
 
     
     mds_server = "localhost"
-    mds_server = "atlas.gat.com"
+    #mds_server = "atlas.gat.com"
     import MDSplus as mds
 
     MDSconn = mds.Connection(mds_server )
@@ -409,6 +453,9 @@ def main():
     #data_ = ece.get_signal("", ece.get_names(ece.groups[0]), tmin=2, tmax = 2.1)
     #T =T()
     data = ece.get_signal("",27, tmin=1, tmax = 5)
+    
+    exit()
+
     tvec, sig = data
     plot(tvec,sig)
     xlim(tvec[0],tvec[-1])
@@ -519,7 +566,6 @@ def main():
     import IPython
     IPython.embed()
     
-    exit()
     
     
     
