@@ -1,5 +1,5 @@
-from loaders_DIIID.loader import * 
-#from loader import * 
+#from loaders_DIIID.loader import * 
+from loader import * 
 
 import os
 from multiprocessing import  Pool
@@ -157,10 +157,10 @@ class loader_ECE(loader):
     
             Te = self.MDSconn.get(f'_x=PTDATA2("{self.channels[nch-1]}", {self.shot}, 4)').data()
 
-            C1 = self.cc1f[nch-1]
-            C2 = self.cc2f[nch-1]
-            C3 = self.cc3f[nch-1]
-            adosf = self.adosf[nch-1]
+            C1 = float(self.cc1f[nch-1])
+            C2 = float(self.cc2f[nch-1])
+            C3 = float(self.cc3f[nch-1])
+            adosf = float(self.adosf[nch-1])
             
             
             #Te_calib = Te*(C1/np.sqrt(1.-C2*Te**2)+C3*Te**3)+adosf
@@ -179,8 +179,8 @@ class loader_ECE(loader):
    
             
             if self.tvec is None:
-                tmin,tmax = self.MDSconn.get('_t=dim_of(_x); [_t[0], _t[size(_t)-1]]').data()/1e3 #s
-                self.tvec = linspace(tmin,tmax,len(Te))
+                tbeg,tend = self.MDSconn.get('_t=dim_of(_x); [_t[0], _t[size(_t)-1]]').data()/1e3 #s
+                self.tvec = np.linspace(tbeg,tend,len(Te))
                 imin,imax = self.tvec.searchsorted([tmin,tmax])
                 imax+= 1
 
@@ -188,6 +188,7 @@ class loader_ECE(loader):
             self.data_dict[nch] = Te
 
             ind = slice(imin,imax)
+            print(ind, tmin,tmax, )
             return [self.tvec[ind], Te[ind]]
                  
 
@@ -201,13 +202,10 @@ class loader_ECE(loader):
 
             numTasks = 8
             
-            #t = T()
             server = self.MDSconn.hostspec
             TDI = [f'PTDATA2("{self.channels[nch-1]}", {self.shot}, 4)' for nch in load_nch]
-
-            #TDI = [TDIcall%n for n in load_nch]
             if  self.tvec is None :  
-                TDI.append(f'dim_of(PTDATA2("{self.channels[0]}", {self.shot}, 4))')
+                TDI.append(f'dim_of('+TDI[-1]+')')
             
             TDI = array_split(TDI, numTasks)
 
@@ -230,28 +228,28 @@ class loader_ECE(loader):
             ind = slice(imin,imax)
             
             for n, Te in zip(load_nch, out ):
-                if len(Te) == 0: 
-                    Te =  self.tvec*0
-                else:
-                    Te*= self.cc1f[n-1]*1e3 #convert to eV units
                 
-                C1 = self.cc1f[n-1]
-                C2 = self.cc2f[n-1]
-                C3 = self.cc3f[n-1]
-                adosf = self.adosf[n-1]
-                                
-                if C2 == 0 and C3 == 0 and adosf == 0:
-                    Te *= C1*1e3 #eV
+                embed()
+                if len(Te) == 0: 
+                    Te =  np.zeros_like(self.tvec, dtype='single')
                 else:
-                    Te_ = np.copy(Te)
-                    Te *= C1*1e3 #eV
-                    if C2 != 0:
-                        Te /= np.sqrt(1.-C2*Te_**2)
-                    if C3 != 0:
-                        Te += (C3*1e3)*Te_**4
-                        
-                if adosf != 0:
-                    Te += adosf*1e3
+                    C1 = float(self.cc1f[n-1])
+                    C2 = float(self.cc2f[n-1])
+                    C3 = float(self.cc3f[n-1])
+                    adosf = float(self.adosf[n-1])
+                                    
+                    if C2 == 0 and C3 == 0 and adosf == 0:
+                        Te *= C1*1e3 #eV
+                    else:
+                        Te_ = np.copy(Te)
+                        Te *= C1*1e3 #eV
+                        if C2 != 0:
+                            Te /= np.sqrt(1.-C2*Te_**2)
+                        if C3 != 0:
+                            Te += (C3*1e3)*Te_**4
+                            
+                    if adosf != 0:
+                        Te += adosf*1e3
 
                 output[n] = Te[ind]
                 self.data_dict[n] = Te
@@ -452,7 +450,7 @@ def main():
     
     #data_ = ece.get_signal("", ece.get_names(ece.groups[0]), tmin=2, tmax = 2.1)
     #T =T()
-    data = ece.get_signal("",27, tmin=1, tmax = 5)
+    data = ece.get_signal("",arange(10,27), tmin=1, tmax = 5)
     
     exit()
 
