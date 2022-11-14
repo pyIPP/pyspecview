@@ -588,18 +588,14 @@ class loader_SXR(loader):
 
         
         self.names = {}
-        self.names['165R1'] = list(range(1,13))
-        self.names['45R1' ] = list(range(1,13))
-        self.names['195R1'] = list(range(1,13))
-        self.names['90RM1'] = list(range(1,33))
-        self.names['90RP1'] = list(range(1,33))
+        self.names['165R1'] = arange(1,13)
+        self.names['45R1' ] = arange(1,13)
+        self.names['195R1'] = arange(1,13)
+        self.names['90RM1'] = arange(1,33)
+        self.names['90RP1'] = arange(1,33)
         
         self.n_chunks = {'165R1':5,'45R1':5,'195R1':5,'90RM1':4,'90RP1':4}
-        #self.names['165R1'] = range(1,13)
-        #self.names['45R1'] = range(1,13)
-        #self.names['195R1'] = range(1,13)
-        #self.names['90RM1'] = range(1,33)
-        #self.names['90RP1'] = range(1,33)
+
         
         if self.shot > 168847: #only one toroidal camera is operational
             tor_mode_num = False
@@ -607,8 +603,9 @@ class loader_SXR(loader):
         #self.n_chunks = 5
 
         self.groups = sort(list(self.names.keys()))
-        
-        self.calib = get_calib_fact(self.shot,'./loaders_DIIID')
+        path = os.path.dirname(os.path.realpath(__file__))
+ 
+        self.calib = get_calib_fact(self.shot,path)
                             #sig[i] *= self.calib[group][int(n)-1]
         self.calib['90RM1'][2] = 0 #corrupted channel
         # Geometry from
@@ -696,8 +693,7 @@ class loader_SXR(loader):
         if size(names) == 1 and not isinstance(names,tuple):
             names = (names,)
         
-        names = int_(names)
-        
+        names = atleast_1d(squeeze(int_(names)))
         num_MDS_Tasks = 8
         MDSserver = self.MDSconn.hostspec
         group_ = group.split('R')
@@ -719,7 +715,7 @@ class loader_SXR(loader):
    
         indmin = where([t[-1] > tmin for t in self.tvec_fast[group]])[0][0]
         indmax = where([t[ 0] < tmax for t in self.tvec_fast[group]])[0][-1]+1
-        index = list(range(indmin,indmax))
+        index = arange(indmin,indmax)
         if calib: index = unique(r_[0,index])
         
         t = T()
@@ -733,9 +729,9 @@ class loader_SXR(loader):
                     TDI.append(TDIcall)
                     
         if len(TDI) > 0:
-            print( 'fetching data')
+            #print( 'fetching data')
             data = mds_par_load(MDSserver, TDI,  num_MDS_Tasks)
-            print(( 'data loaded in %.2f'%( T()-t)))
+            #print(( 'data loaded in %.2f'%( T()-t)))
 
      
         j = 0
@@ -841,7 +837,7 @@ class loader_SXR(loader):
             sig = self.MDSconn.get(TDIcall%nch).data()
             self.MDSconn.closeTree(self.tree,self.shot)
 
-            print(( 'data loaded in %.2f'%( T()-t)))
+            #print(( 'data loaded in %.2f'%( T()-t)))
         
             self.cache_slow[group][nch] = sig
 
@@ -861,7 +857,7 @@ class loader_SXR(loader):
             TDI = [TDIcall%n for n in  load_nch]
             out = mds_par_load(server,   TDI,  numTasks)
 
-            print(( 'data loaded in %.2f'%( T()-t)))
+            #print(( 'data loaded in %.2f'%( T()-t)))
 
             for n, sxr in zip(load_nch, out):
                 self.cache_slow[group][n] = sxr
@@ -1071,7 +1067,7 @@ def polarray():
 
     legend(['90RM1 core', '90RM1 edge', '90RM1 core', '90RM1 edge','45R1 old geom.'], loc='center')
     ylim(0,170)
-    grid('on')
+    grid(True)
     xlim(-1,1)
     xlabel('rho_pol')
     ylabel('effective Be filter thickness [$\mu$m]')
@@ -1183,8 +1179,8 @@ def polarray():
 from matplotlib.pylab import *
 def main():
     
-    mds_server = "localhost"
-    #mds_server = "atlas.gat.com"
+    #mds_server = "localhost"
+    mds_server = "atlas.gat.com"
 
     import MDSplus as mds
     MDSconn = mds.Connection(mds_server )
@@ -1192,22 +1188,28 @@ def main():
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
     eqm.Open(175900,diag='EFIT01' )
-    sxr = loader_SXR(175900,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
-    from ECE import loader_ECE
-    ece = loader_ECE(175900,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
+    sxr = loader_SXR(183142,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
+    #from ECE import loader_ECE
+    #ece = loader_ECE(175900,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
   
-    data = sxr.get_signal( '195R1',1, tmin=3.04, tmax = 3.11,calib=False)  
-    data2 = ece.get_signal("",13, tmin=3.04, tmax = 3.11)
-
-    
-    tvec, sig = data2
-    plot(tvec,(sig-mean(sig))/std(sig),'--')
-    tvec, sig = data
-    plot(tvec,(sig-mean(sig))/std(sig))
+    data = sxr.get_signal( '90RP1',9, tmin=-1, tmax = 6.11,calib=False) 
+        
+    import IPython
+    IPython.embed()
+    exit()
+    #data2 = ece.get_signal("",13, tmin=3.04, tmax = 3.11)
+    tvec, sig = data    
+    N = 1
+    plot(tvec[:(len(sig)//N)*N].reshape( -1,N).mean(1), 
+          sig[:(len(sig)//N)*N].reshape(-1,N).mean(-1))
+    ##tvec, sig = data2
+    #plot(tvec,(sig-mean(sig))/std(sig),'--')
+    #plot(tvec,(sig-mean(sig))/std(sig))
     xlim(tvec[0],tvec[-1])
     #xlim( 3.0925,3.092637,)
     show()
     
+    exit()
     
       
     

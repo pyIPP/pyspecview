@@ -9,6 +9,7 @@ def check(shot):
 
 
 class loader_RIP(loader):
+    radial_profile=True
 
     def __init__(self,*args, **kargs):
         
@@ -37,22 +38,35 @@ class loader_RIP(loader):
             return [self.get_signal(group, name,calib=calib,tmin=tmin,tmax=tmax) for name in names]
         name = names
         
-        
-        if group == 'B_r':
-            tagname = 'rpich%dphi'%(name*2-1)
+        if self.shot < 177052:
+            if group == 'B_r':
+                tagname = 'rpich%dphi'%(name*2-1)
+                
+            if group == 'n_e':
+                tagname = 'rpich%dphi'%(name*2  )
+                
+                
+        else:
+            l = 'zpn'[int(name)-1]
             
-        if group == 'n_e':
-            tagname = 'rpich%dphi'%(name*2  )
+            if group == 'B_r':
+                tagname = 'rip'+l+'a2phi'
+                
+            if group == 'n_e':
+                tagname = 'rip'+l+'b1phi'
+            
             
         tree = 'RPI'
         if tagname in self.catch:
             sig = self.catch[tagname]
         else:
-            
             self.MDSconn.openTree(tree,self.shot)
 
             TDIcall ='_x= \\%s::%s'%(tree,tagname)
             sig = self.MDSconn.get(TDIcall).data()
+            if group == 'n_e':
+                sig *= 1.34e-3/2 #line-integral density in 10^19m^-2.
+                
  
             self.catch[tagname] = sig
 

@@ -11,11 +11,15 @@ from scipy.interpolate import interp1d
 from scipy.linalg import eigh
 from scipy.stats.mstats import mquantiles
 from multiprocessing import Process,Queue
+from matplotlib.ticker import MaxNLocator
+
 from copy import deepcopy
-try:
+try: #only for AUG
     import aug_sfutils as sf
 except:
     pass
+
+
 try:
     from PyQt5.QtCore import *
     from PyQt5.QtGui import *
@@ -47,26 +51,23 @@ cdict = {
 }
 my_cmap = colors.LinearSegmentedColormap('my_colormap', cdict, 1024)
 
+tomo_local_path = '~/tomography/'
 loc_dir = os.path.dirname(os.path.abspath(__file__))
 
-#AUG
-tomo_code_path = '$PYTOMO/'
-#afs/ipp-garching.mpg.de/home/t/todstrci/pytomo_orig'
-tomo_local_path = '~/tomography/'
+if os.path.exists('$PYTOMO'):  #AUG
+    tomo_code_path = '$PYTOMO/'
+#afs/ipp-garching.mpg.de/home/t/todstrci/pytomo_orig/'
+elif os.path.exists('/fusion/projects/codes/pytomo/'): #DIII-D
+     tomo_code_path = '/fusion/projects/codes/pytomo/'
+else:  #local instalation
+     tomo_code_path = tomo_local_path
 
-#local
-#tomo_code_path = '/home/tomas/tomography/'
-#tomo_local_path = '/home/tomas/tomography'
-
-##DIIID
-#tomo_code_path = '/fusion/projects/codes/pytomo/'
-#tomo_local_path = '/home/$USER/tomography'
-
+ 
 
 
 tomo_code_path  = os.path.expanduser(os.path.expandvars(tomo_code_path))
 tomo_local_path = os.path.expanduser(os.path.expandvars(tomo_local_path))
-print('tomography path:', tomo_code_path)
+
 sys.path.append(tomo_code_path)
 
 #load some modules from pytomo 
@@ -176,7 +177,11 @@ class DataSettingWindow(QMainWindow):
         self.Edit_wrongDetectors.setToolTip('Insert wrong detectors, use ":" for the intervals - 1,,3,5:40,...')
         self.Edit_wrongDetectors.editingFinished.connect(self.dets_list_edited)
 
-      
+        if not hasattr(self.tomo,'tvec'):
+            QMessageBox.warning(self.parent,"No data",
+                    "Data wre not loaded! Missing fast SXR?",QMessageBox.Ok)
+            return
+            
         tvec = self.tomo.tvec
         data = self.tomo.signals
         self.nch = data.shape[1]
@@ -201,7 +206,6 @@ class DataSettingWindow(QMainWindow):
         self.ax_data.set_xlabel('Channel',fontsize=self.font_size)
 
         from make_graphs import LogFormatterTeXExponent
-        from matplotlib.ticker import MaxNLocator
 
         cbar = self.fig_data.colorbar(self.data_im,format=LogFormatterTeXExponent('%.2e'))
         self.ax_data.axis((0.5, self.nch+.5,tvec[0],tvec[-1]))
@@ -302,10 +306,10 @@ class DataSettingWindow(QMainWindow):
         if wrong_dets_str.strip() != '':
             
             try:
-                dets_list = eval('r_['+str(wrong_dets_str)+']')
+                dets_list = eval('np.r_['+str(wrong_dets_str)+']')
                 wrong_dets_pref = np.array(np.int_(dets_list)-1, ndmin=1)
             except:
-                QMessageBox.warning(self,"Input problem",
+                QMessageBox.warning(self.parent,"Input problem",
                     "Wrong detectors are in bad format, use ...,10,11,13:15,...",QMessageBox.Ok)
                 raise
         elif init:     # do not remove on init
@@ -893,7 +897,7 @@ class Roto_tomo:
     loaded = False
 
     def __init__(self, parent, fig,m_num,n_num,add_back, TeOver,show_flux, plot_limit,
-                 reg, n_harm,n_svd, rho_lbl):
+                 reg, n_harm,n_svd,map_equ,rho_lbl, show_contours):
         
         self.m_num = m_num
         self.n_num = n_num
@@ -902,7 +906,10 @@ class Roto_tomo:
         self.slider_lim = plot_limit
         self.slider_reg = reg
         self.add_back = add_back
+        self.map_equ = map_equ
         self.rho_lbl = rho_lbl
+        self.show_contours = show_contours
+        
         
         self.parent = parent
         self.fig = fig
@@ -927,14 +934,22 @@ class Roto_tomo:
         self.n = int(self.n_num.currentText())
         self.n_rho_plot = 10
         self.n_theta_plot = 16
-        self.n_contour = 20
+        self.n_contour = 15
         self.font_size = 10
         self.hsolvers = []
         self.t0 = np.nan
         self.showTe = False
+        self.cmap = my_cmap
+        
+        #print('self.show_contours', self.show_contours)
+        if self.show_contours:
+            self.levels = np.linspace(0, 1, self.n_contour)            
+            self.tomo_img = self.ax.contourf([0,0], [0,0], np.ones((2,2)),levels=self.levels,
+                                             extend='both', cmap= self.cmap, vmin=0, vmax = 1) 
 
-        self.tomo_img = self.ax.imshow(np.zeros((self.nx,self.ny)), animated=True,origin='lower'
-                                       ,vmin = 0,vmax=1,cmap=my_cmap, interpolation='quadric')
+        else:
+            self.tomo_img = self.ax.imshow(np.zeros((self.nx,self.ny)), animated=True,origin='lower'
+                                        ,vmin = 0,vmax=1,cmap=self.cmap, interpolation='quadric')
         #magnetic flux surfaces
         X = np.zeros((1,self.n_rho_plot))
         self.plot_mag_rho   = self.ax.plot(X,X,'--',c='0.5',lw=.5, visible=self.show_flux.isChecked())
@@ -950,12 +965,8 @@ class Roto_tomo:
         elif self.parent.tokamak == 'DIIID':
             from loaders_DIIID import map_equ
             gc_r, gc_z = map_equ.get_gc()
-            try:
-                for key in gc_r:
-                    self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
-            except:
-                logger.error('Loading of the  vessel shape failed!!')
-                logger.error( traceback.format_exc())
+            for key in gc_r.keys():
+               self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
 
         for label in (self.ax.get_xticklabels() + self.ax.get_yticklabels()):
             label.set_fontsize(self.font_size) # Size here overrides font_prop
@@ -965,7 +976,8 @@ class Roto_tomo:
         self.cbar_ax.yaxis.set_major_formatter(plt.NullFormatter())
         self.cbar_ax.tick_params(labelsize= self.font_size) 
         
-        cbar = self.fig.colorbar(self.tomo_img, cax=self.cbar_ax)
+        self.update_colorbar()
+        #self.cbar = self.fig.colorbar(self.tomo_img, cax=self.cbar_ax)
         self.ax.set_title('SXR emissivity [kW/m$^3$]',fontsize=self.font_size)
         self.plot_description = self.ax.text(1.008,.05,'',rotation='vertical', 
                 transform=self.ax.transAxes,verticalalignment='bottom',
@@ -976,7 +988,7 @@ class Roto_tomo:
         self.ax.set_ylabel('z [m]',fontsize=self.font_size)
         self.ax.yaxis.labelpad = -5
         
-        self.ax.patch.set_facecolor(my_cmap(0))
+        self.ax.patch.set_facecolor(self.cmap(0))
 
 
         self.ax.axis([1.4,2.2,-0.25,0.35]) 
@@ -1011,15 +1023,12 @@ class Roto_tomo:
 
         if tok_lbl == 'AUG':
             magr, magz= sf.rhoTheta2rz(eqm, self.rhop,theta_in,t0,coord_in=self.rho_lbl)
-            self.magr = magr[0]
-            self.magz = magz[0]
             self.rho = sf.rho2rho(eqm, self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
         elif tok_lbl == 'DIIID':
             magr, magz= eqm.rhoTheta2rz(self.rhop,theta_in,t0,coord_in=self.rho_lbl)
-            self.magr = magr[0]
-            self.magz = magz[0]
             self.rho = eqm.rho2rho(self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
-            
+        self.magr = magr[0]
+        self.magz = magz[0]
         
         #set view to contain rho = 0.7 contour 
         ir = np.argmin(np.abs(self.rhop - 0.5))
@@ -1045,15 +1054,16 @@ class Roto_tomo:
 
         if not hasattr(config, 'wrong_dets_pref'):
             config.wrong_dets_pref = input_parameters['wrong_dets']
+        
 
         if tok_lbl == 'DIIID':
             import geometry.DIIID as Tok
             diag = 'SXR fast'
-            diag_path = '%s%s' %(tomo_local_path, 'geometry/DIIID/SXR')
+            diag_path = tomo_local_path+ 'geometry/DIIID/SXR'
         elif tok_lbl == 'AUG':
             import geometry.ASDEX as Tok
             diag = 'SXR_fast'
-            diag_path = '%s%s' %(tomo_local_path, 'geometry/ASDEX/SXR')
+            diag_path = tomo_local_path+ 'geometry/ASDEX/SXR'
         else:
             raise Exception('Support of the tokamak %s was not implemented' %tok_lbl)
 
@@ -1066,14 +1076,15 @@ class Roto_tomo:
         except:
             import traceback
             print( traceback.format_exc())
-            QMessageBox.warning(self,"Load SXR data issue", "Fast SXR data probably do not exist",QMessageBox.Ok)
+            QMessageBox.warning(self.parent,"Load SXR data issue", "Fast SXR data probably do not exist",QMessageBox.Ok)
             return 
         
         self.xgridc = (self.tok.xgrid+self.tok.dx/2)/self.tok.norm  #centers of the pixels
         self.ygridc = (self.tok.ygrid+self.tok.dy/2)/self.tok.norm  #centers of the pixels
         self.nl = self.tok.nl
-
-        self.tomo_img.set_extent([self.tok.xgrid[0],self.tok.xgrid[-1]+self.tok.dx,
+        
+        if not self.show_contours:
+            self.tomo_img.set_extent([self.tok.xgrid[0],self.tok.xgrid[-1]+self.tok.dx,
                                   self.tok.ygrid[0],self.tok.ygrid[-1]+self.tok.dy])
         
         if tok_lbl == 'DIIID':
@@ -1084,7 +1095,7 @@ class Roto_tomo:
                              self.tok.virt_chord, path=None)[0]
 
 
-        #Auxiliarly tokamak to avoid loading of efquilibrium from tomography
+        #Auxiliarly tokamak to avoid loading of equilibrium from tomography
         self.aux_tok = tokamak(self.rhop,self.magr, self.magz,self.tok.xgrid,self.tok.ygrid)
         self.aux_tok.vessel_boundary = self.tok.vessel_boundary
 
@@ -1108,8 +1119,8 @@ class Roto_tomo:
         #add correction for finite DAS IIR
 
         if tok_lbl == 'AUG':
-            slow_das = np.loadtxt('%s/slow_sxr_diag.txt' %loc_dir)
-            fast_das = np.loadtxt('%s/fast_sxr_das.txt'  %loc_dir)
+            slow_das = np.loadtxt(loc_dir+'/slow_sxr_diag.txt' )
+            fast_das = np.loadtxt(loc_dir+'/fast_sxr_das.txt'  )
             SampFreq =  self.tok.SampFreq#[dets]
             #amplitude reduction of DAS IIR
             self.A[  SampFreq == 5e5] = np.interp(self.F0*np.arange(1,n_harm_max),slow_das[:,0],slow_das[:,1])
@@ -1317,33 +1328,41 @@ class Roto_tomo:
         self.eval_tomo()
         self.lam0 = int(100*self.gamma[1])/100.
         self.slider_reg.setValue(int(100*self.lam0))
-        self.update()
+        self.update(update_cax=True)
         
     def set_plot_lim(self, val):
         if self.plot_lim == val/100.: return 
         self.plot_lim = val/100.
-        self.update()
+        self.update(update_cax=True)
 
     def set_reg(self, val):
         if self.lam0*100 == val: return
         self.lam0 = val/100.
         self.eval_tomo()
-        self.update()
+        self.update(update_cax=True)
 
     def set_substract(self,ind):
         self.substract = not self.add_back.isChecked()
         if self.substract:
-            cmap = cm.get_cmap('seismic')
+            self.cmap = cm.get_cmap('seismic')
             c = 0.5
         else:
-            cmap = my_cmap
+            self.cmap = my_cmap
             c = 0
         
-        self.tomo_img.set_cmap(cmap)
+        self.tomo_img.set_cmap(self.cmap)
         #set background color of ax
-        self.ax.patch.set_facecolor(cmap(c))   
-        self.update()
+        self.ax.patch.set_facecolor(self.cmap(c))   
+        self.update(update_cax=True)
         
+    def update_colorbar(self):
+        #BUG update colorbar by creating a new one :( 
+        self.cbar_ax.cla()
+        cb = self.fig.colorbar(self.tomo_img, cax=self.cbar_ax)
+        tick_locator = MaxNLocator(nbins=7)
+        cb.locator = tick_locator
+        cb.update_ticks()     
+                    
     def TeOverplot(self):
         #show contours of 
         QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -1374,9 +1393,7 @@ class Roto_tomo:
         self.Te2Dmap.UpdateModeM(np.searchsorted(self.parent.m_numbers,self.m), animate=True)
         self.fig.canvas.draw_idle()
 
-        
-        #self.shift_phase(self.shift_phi)
-
+    
         QApplication.restoreOverrideCursor()
 
         
@@ -1430,13 +1447,15 @@ class Roto_tomo:
             phase_shift =  np.average(phase_retro, weights=aplitude_retro )
             phase_data  -= phase_shift
             phase_retro -= phase_shift
+            #print(phase_retro.min(), phase_retro.max())
             
             weak = aplitude_data < np.nanmax(aplitude_data)*0.05
             phase_data[weak] = np.nan
             phase_retro[weak] = np.nan
 
 
-            norm = np.amax(aplitude_retro)/6./1e3
+            norm = np.amax(aplitude_retro)/3./1e3
+            #print(n,  norm)
             ax.plot(self.dets, aplitude_retro/1e3, 'b',label='retro')
             ax.errorbar(self.dets,aplitude_data/1e3, aplitude_err/1e3,c='r',label='data')
             ymax = max(aplitude_data.max(),aplitude_retro.max())/1e3
@@ -1456,6 +1475,7 @@ class Roto_tomo:
             [ax.axvline(i-0.5,c='k') for i in det_ind]
             ax.axhline(y=0,c='k')
             ax.set_title('%d. harmonic: $\gamma$ = %.2f  $\chi^2$=%.2f'%(n,self.gamma[n],self.chi2[n]))
+            
         plt.tight_layout()
 
         self.AxZoom = fconf.AxZoom()
@@ -1553,17 +1573,36 @@ class Roto_tomo:
 
         w = 2*np.pi*self.F1
         G_t = [np.real(g*np.exp(1j*w*(self.time-self.t0)*i)) for i,g in enumerate(self.G)]
-
         G_t = np.sum(G_t[1:] if self.substract else G_t,0)
-        self.tomo_img.set_array(G_t/1e3)
         
-     
         if self.substract:
-            self.tomo_img.set_clim(-self.plot_lim*self.vmax_bcg/1e3, self.vmax_bcg*self.plot_lim/1e3)
+            vmin,vmax = -self.plot_lim*self.vmax_bcg/1e3, self.vmax_bcg*self.plot_lim/1e3 
+            self.levels = np.linspace(vmin,vmax, self.n_contour*2)            
         else:
-            self.tomo_img.set_clim((1-self.plot_lim)*self.vmax/1e3, self.vmax/1e3)
+            vmin,vmax = (1-self.plot_lim)*self.vmax/1e3, self.vmax/1e3 
+            self.levels = np.linspace(vmin,vmax, self.n_contour)            
        
-        anim_obj = (self.tomo_img,)
+        
+        if self.show_contours:
+            #remove previous contours
+            if hasattr(self.tomo_img, 'collections'):
+                for coll in self.tomo_img.collections:
+                    try:    self.ax.collections.remove(coll)
+                    except ValueError: pass#Everything is not removed for some reason!    
+                
+            self.tomo_img = self.ax.contourf( self.xgridc, self.ygridc, G_t/1e3, extend='both', 
+                                    vmin=vmin, vmax=vmax, levels=self.levels, cmap=self.cmap)
+            if update_cax:
+                self.update_colorbar()
+            anim_obj = (self.tomo_img.collections,)
+
+        else:
+            self.tomo_img.set_array(G_t/1e3)
+            self.tomo_img.set_clim(vmin,vmax)
+            anim_obj = (self.tomo_img,)
+ 
+ 
+        
         if self.showTe:
             #relative shift in the mode phase between SXR and ECE
             Phi_ece = self.Te2Dmap.Phi0
@@ -1579,6 +1618,7 @@ class Roto_tomo:
             return anim_obj
         
         self.fig.canvas.draw_idle()
+    
  
  
     def MouseWheelInteraction(self,event):
@@ -1595,19 +1635,24 @@ class Roto_tomo:
 
         
     def onKeyPress(self,event):
+        step = 36
         if 'control' == event.key:
             self.keyCtrl=True
+            step = 360
         if 'shift' == event.key:
             self.keyShift=True
-        
-        if 'left' == event.key:
-            self.shift_phase(self.shift_phi-2*np.pi/36)
-            self.update( update_mag=False)
 
-            
-        if 'right' == event.key:
-            self.shift_phase(self.shift_phi+2*np.pi/36)
-            self.update( update_mag=False)
+        sign = None
+        if 'left' == event.key:
+            sign = -1
+
+        elif 'right' == event.key:
+            sign = 1
+
+        if sign is not None:
+            self.shift_phi+= sign*2*np.pi/step
+            self.shift_phase(self.shift_phi)
+            self.update(update_mag=False)
             
 
     def onKeyRelease(self,event):
@@ -1624,10 +1669,11 @@ class Roto_tomo:
                 h.qin.close()
                 h.qout.close()
                 del h  #release memory 
+            #print('solvers are closed')
             self.hsolvers = []
             self.initialized = False
             if plt.fignum_exists('Retrofit'):
-                plt.close(figure('Retrofit'))
+                plt.close(plt.figure('Retrofit'))
             
             import gc
             gc.collect()

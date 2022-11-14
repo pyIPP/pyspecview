@@ -143,7 +143,8 @@ class loader_CO2(loader):
         tvec = hstack(self.tvec[indmin:indmax])
         sig  = hstack(self.cache[group][name][indmin:indmax])
         
-        
+
+        sig = self.remove_elms(tvec, sig)        
         
         ##tvec=np.linspace(0,5,100000000*5)
         ##sig = np.random.randint(0,2**16,100000000*5)

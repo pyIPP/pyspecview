@@ -36,9 +36,13 @@ class loader_BES(loader):
         self.tvec =  {'BESFU':None, 'BESSU':None }
         self.catch = {'BESFU':{}, 'BESSU':{} }
         self.MDSconn.openTree('BES', self.shot)
-
-        self.R = self.MDSconn.get('\\bes::bes_r').data()/100.
-        self.Z = self.MDSconn.get('\\bes::bes_z').data()/100.
+        try:
+            self.R = self.MDSconn.get('\\bes::bes_r').data()/100.
+            self.Z = self.MDSconn.get('\\bes::bes_z').data()/100.
+        except:
+            print('BES R,Z coordinates were not found')
+            self.R = 0
+            self.Z = 0
         self.MDSconn.closeTree('BES', self.shot)
 
     

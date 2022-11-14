@@ -297,6 +297,7 @@ class SVDFilter():
                 ax.yaxis.offsetText.set_visible(False)
 
             ax0 = plt.Subplot( self.fig_retro, gs00[0])
+            ax0._N = 0
             self.fig_retro.add_subplot(ax0)
             ax0.xaxis.set_ticks_position('top')
             ax0.yaxis.offsetText.set_visible(False)

@@ -1,0 +1,13 @@
+  4  1  4
+0.00457
+operations
+  330.0  30.41  1.0  1  \bdot_l1dmivvhf1_raw
+  350.0  30.41  1.0  2  \bdot_l1dmivvhf2_raw
+  354.6  30.41  1.0  5  \bdot_l1dmivvhf5_raw
+  360.0  30.41 -1.0  3  \bdot_l1dmivvhf3_raw
+  340.0  30.41 -1.0  4  \bdot_l1dmivvhf4_raw
+  330.0  30.41  1.0  1  \bdot_l1dmivvhf1_raw
+  330.0  23.12  1.0  8  \bdot_l1dmivvhf8_raw
+  330.0  14.94  1.0  7  \bdot_l1dmivvhf7_raw
+  330.0 -23.12  1.0  6  \bdot_l1dmivvhf6_raw
+   0  0

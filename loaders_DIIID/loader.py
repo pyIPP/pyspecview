@@ -248,9 +248,60 @@ class loader(object):
         
     def get_plasma_freq(self,rho):
         
+        #fetch rotation data from CER
+        if not hasattr(self,'plasma_freq'):
+            analysis_type = 'CERAUTO'
+            system = 'tangential'
+            path = 'CER.%s.%s.CHANNEL*'%(analysis_type,system)
+            self.MDSconn.openTree('IONS',self.shot)
+
+            nodes = self.MDSconn.get('getnci("'+path+'","path")')
+            lengths = self.MDSconn.get('getnci("'+path+':ROT","LENGTH")').data()
+            TDI = []
+            for node,length in zip(nodes,lengths):
+                if length == 0: continue
+                node = node.item()
+                try:
+                    node = node.decode()
+                except:
+                    pass
+                TDI.append(node+':R')
+                TDI.append(node+':Z')
+                TDI.append(node+':TIME')
+                TDI.append(node+':ROTC')
+                
+            TDI = array(TDI, dtype=object).reshape(-1,4)
+            TDI_list = '['+ ','.join(list(TDI.T.flatten())) +']'
+            
+            R,Z,T,Vtor = self.MDSconn.get(TDI_list).reshape(4,-1)
+            T /= 1e3
+            Vtor *= 1e3
+            self.plasma_freq_rho = self.eqm.rz2rho(R[:,None],Z[:,None],T, coord_out=self.rho_lbl)[:,0]
+    
+            self.plasma_freq = Vtor/(R*2*pi)
+            r0 = interp(T,  self.eqm.t_eq, self.eqm.ssq['Rmag'] )
+            self.plasma_freq_rho[R<r0]*= -1
+            self.plasma_freq_tvec =  T
+
         
-        #import IPython
-        #IPython.embed()
+        from scipy.interpolate import griddata
+        tvec = unique(self.plasma_freq_tvec)
+        freq=griddata((self.plasma_freq_tvec, self.plasma_freq_rho), self.plasma_freq,(tvec, rho*ones_like(tvec)))
+
+
+
+        #plasma_freq_tvec = copy(self.plasma_freq_tvec)
+        
+        #breaks = where(diff(self.plasma_freq_tvec) > 2* median(diff(self.plasma_freq_tvec)))[0]+1
+        #plasma_freq_tvec = insert(plasma_freq_tvec, breaks,  plasma_freq_tvec[breaks])
+        #F = insert(F, breaks, nan)
+ 
+        return tvec, np.abs(freq)
+        
+        
+         
+        
+
                 
         #import time
         #t = time.time()
@@ -312,6 +363,68 @@ class loader(object):
         F = insert(F, breaks, nan)
  
         return plasma_freq_tvec,F
+        
+    
+    def remove_elms(self, tvec, signal):
+        if not hasattr(self,'elm_start'):
+            try:
+                #load ELMs from Tom Osborns MDS+ tree
+                self.MDSconn.openTree('PEDESTAL', self.shot)
+                
+                #TDI = r'\PEDESTAL::TOP.ELM:ELMDANAME'
+                #fname = self.MDSconn.get(TDI).data()
+                
+                TDI = r'\PEDESTAL::TOP.ELM:ELMSTART'
+                elm_val = self.MDSconn.get(r'_x=\PEDESTAL::TOP.ELM:ELMSTART').data()
+                elm_start = self.MDSconn.get(r'dim_of(_x)').data()
+                TDI = r'\PEDESTAL::TOP.ELM:ELMEND'
+                elm_end = self.MDSconn.get('dim_of('+TDI+')').data()
+                TDI = r'\PEDESTAL::TOP.ELM:ELMPEAK'
+                elm_peak = self.MDSconn.get('dim_of('+TDI+')').data()
+                
+                
+        
+                #estimate size of the ELM
+                area = (elm_end-elm_start)*elm_val
+                ind = area > 1e15  #BUG hardcoded value
+                
+                self.elm_start = elm_start[ind]/1e3 #[s]
+                self.elm_peak = elm_peak[ind]/1e3#[s]
+                self.elm_end = elm_end[ind]/1e3#[s]
+                self.elm_val = elm_val[ind]
+                
+                
+
+                #self.MDSconn.openTree('SPECTROSCOPY', self.shot)
+                #TDI = '_x=\\SPECTROSCOPY::'+ fname
+                #filterscope = self.MDSconn.get(TDI).data()
+                #filterscope_t = self.MDSconn.get('dim_of(_x)').data()/1e3
+ 
+            except Exception as e:
+                print('ELM detection issue: ', e)
+                return signal
+     
+        
+        valid = (self.elm_start > tvec[0])&(self.elm_start < tvec[-1])
+        
+        #delete also 0.1ms before and after due to uncertainties in elm time
+        ind_start = tvec.searchsorted(self.elm_start[valid]-1e-4)
+        ind_end = tvec.searchsorted(self.elm_peak[valid]+1e-4)
+        
+ 
+        corrected_signal = copy(signal)
+        for i1,i2 in zip(ind_start, ind_end):
+            corrected_signal[i1:i2] = np.linspace(signal[i1], signal[i2], i2-i1)
+            
+            
+        #plot(tvec, signal)
+        #plot(tvec, corrected_signal)
+        #plot(filterscope_t,filterscope/1e15 )
+        #plot(c_[self.elm_start, self.elm_peak, self.elm_end].flatten(), c_[0*self.elm_val,self.elm_val/1e15,self.elm_val*0].flatten())        
+        #show()
+
+        return corrected_signal
+            
 
     #self.dd.Open('COZ', )
 
@@ -361,89 +474,35 @@ class spaced_vector:
         step = step*self.step
         
         return spaced_vector(start,stop,step)
-        
-            
 
 
+from matplotlib.pylab import *
 
 
 def main():
     
-    #asarray(spaced_vector(1,5))
-    
-    
-    import IPython
-    IPython.embed()
-    
-    
-    import os
-    import os,sys
-    sys.path.append('/afs/ipp/home/t/todstrci/TRANSP/')
-    #import dd   
-    #from matplotlib.pylab import *
-    dd = dd.shotfile()
+ 
 
-    #sys.path.append('/afs/ipp/aug/ads-diags/common/python/lib/')
-    from . import map_equ
+    shot = 175860
+    
+    
+    mds_server = "localhost"
+    #mds_server = "atlas.gat.com"
+    import MDSplus as mds
 
-    #eqm = map_equ.equ_map(debug=False)
-    
-    #eqm.Open(31113,diag='IDE')
-    #print eqm.ssq 
-    #exit()
-    
-    #eq_diag = TRE
-##eq_ed = 45
-#eq_exp = RDA
-    shot = 30530
+    MDSconn = mds.Connection(mds_server )
+    from map_equ import equ_map
+    eqm = equ_map(MDSconn,debug=False)
+    eqm.Open(shot,diag='EFIT01' )
+    MDSconn2 = mds.Connection(mds_server)
 
-    eqm = map_equ.equ_map(debug=True)
-    eqm.Open(shot, diag='EQI', exp='AUGD',ed=0)
     
-    #eqm.ssq 
-    eqm.read_ssq()
-
-
-    L = loader(shot,exp='AUGD',ed=0,eqm= eqm,rho_lbl='rho_tor')
-    
-    #L.get_q_surfs(4.14, (1,1.5,2))
-
-    rho_grid = linspace(0.01,1,30)
-    magr,magz,theta,theta_star=L.mag_theta_star(2.9 , rho_grid,)
-    
-
-    exit()
-        
-    
-    u,i = eqm._get_nearest_index(3.23)
-    
-    R,Z = eqm.rho2rz(rho_grid, t_in=3, coord_in='rho_tor')
-        
-    
-    
-    for r,z in zip(R[0],Z[0]):        plot(r,z,'--')
-    #plot(eqm.r0[i], eqm.z0[i],'o')
-    plot(eqm.ssq['Rmag'][i],eqm.ssq['Zmag'][i],'x')
-    plot(magr.T, magz.T)  
-    axis('equal')
-    show()
-    #plot()
-    import IPython
-    IPython.embed()  
-    r = hypot(magr-magr[(0,)], magz-magz[(0,)])
-    dr = gradient(r)[0]/gradient(rho_grid)[:,None]
-    dt = gradient(theta_star)[1]/gradient(theta)[None]
-    J = dt*dr
-    contourf(J,linspace(0,3,50))
+    ll = loader(shot,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2 )
+    t,f = ll.get_plasma_freq(0.5)
+    plot(t,f)
     show()
     
-    
-    import IPython
-    IPython.embed()      
-    
-    
-    
-    
+   
     
 if __name__ == "__main__":
     main()

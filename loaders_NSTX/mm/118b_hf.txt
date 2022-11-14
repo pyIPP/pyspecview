@@ -1,0 +1,8 @@
+  3  1  0
+ 0.00457
+ ops_pc
+  330.0  27.17  1.0  1  \bdot_l1dmivvhf1_raw
+  338.7  27.17 -1.0  2  \bdot_l1dmivvhf2_raw
+  351.5  27.17  1.0  4  \bdot_l1dmivvhf4_raw
+  345.1  27.17  1.0  3  \bdot_l1dmivvhf3_raw
+   0  0

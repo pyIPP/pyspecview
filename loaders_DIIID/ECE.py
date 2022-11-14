@@ -1,4 +1,6 @@
 from loaders_DIIID.loader import * 
+#from loader import * 
+
 import os
 from multiprocessing import  Pool
 import MDSplus as mds
@@ -25,34 +27,19 @@ from time import time as T
 
 
 
-#def mds_load((mds_server,tree, shot,  TDI)):
-    #MDSconn = mds.Connection(mds_server )
-    #MDSconn.openTree(tree, shot)
-    #data = MDSconn.get(TDI).data()
-    #MDSconn.closeTree(tree, shot)
-
-    #print mds_server,tree, shot,  TDI
-
-    #return data
 
 def mds_load(tmp):
-    (mds_server,tree, shot,  TDI) = tmp
+    mds_server, shot,  TDI = tmp
     MDSconn = mds.Connection(mds_server )
-    MDSconn.openTree(tree, shot)
     data = []
     for tdi in TDI:
         try:
             data.append(MDSconn.get(tdi).data())
         except:
             data.append([])
-            
-    MDSconn.closeTree(tree, shot)
-
-    #print mds_server,tree, shot,  TDI
-
     return data
 
-
+from IPython import embed
 class loader_ECE(loader):
     
 
@@ -60,7 +47,6 @@ class loader_ECE(loader):
     units = 'eV'
     
     #can improve performace over very slow networks
-    slow_network=False
 
     def __init__(self,*args, **kargs):
         
@@ -85,16 +71,17 @@ class loader_ECE(loader):
         subnodes_freq = nodes + 'FREQ'
         subnodes_lofreq = nodes + 'LOFREQ' #Also not yet used - but may be something folks will want later.
         subnodes_valid = nodec +  'VALIDF'
-            
+        subnodes_channels = nodec +  'ECPTNAMF'
+        calid_cc1f = nodec +  'CC1F'
+        calid_cc2f = nodec +  'CC2F'
+        calid_cc3f = nodec +  'CC3F'
+        calid_adosf = nodec +  'ADOSF'
+
+        
         tag='\TECEF'
         TDIcall= tag+"01"
 
-        if self.slow_network:    
-        #alternative, but slow!!!!! why???   
-            a,b,c = self.MDSconn.get( r'_t=dim_of('+TDIcall+'); [size(_t), _t[0], _t[size(_t)-1]]' ).data()
-            self.tvec = linspace(b/1e3,c/1e3,int(a))
-        else:
-            self.tvec = None
+        self.tvec = None
             
         if self.shot < 109400:
             self.nchs = 32
@@ -109,10 +96,17 @@ class loader_ECE(loader):
         self.freq = self.MDSconn.get(subnodes_freq).data()*1e9
         
         self.valid = bool_(self.MDSconn.get(subnodes_valid))
-
+        self.channels = self.MDSconn.get( subnodes_channels  )
+        
+        #calibration factors
+        self.cc1f = self.MDSconn.get(calid_cc1f)
+        self.cc2f = self.MDSconn.get(calid_cc2f)
+        self.cc3f = self.MDSconn.get(calid_cc3f)
+        self.adosf= self.MDSconn.get(calid_adosf)
+ 
         # get position settings
         self.z = self.MDSconn.get(subnodes_z).data()
-        self.Phi  = self.MDSconn.get(subnodes_phi).data()#deg
+        self.Phi  =  21.#81.60 #from diagnostic webpage #self.MDSconn.get(subnodes_phi).data()#deg
         self.MDSconn.closeTree(self.tree, self.shot)
 
         if self.freq is None or len(self.freq)<2:
@@ -120,8 +114,13 @@ class loader_ECE(loader):
        
         #BUG!!!1   which channels are turned off? 
         self.freq = self.freq[:self.nchs]
-
-        
+        self.channels = self.channels[:self.nchs]
+        #raw_ch_name = self.channels[nch-1]
+        try:
+            self.channels = [ch.decode for ch in self.channels]
+        except:
+            pass
+    
     def get_signal(self,group, names,calib=False,tmin=None,tmax=None):
         #RAW DATA?
     
@@ -138,23 +137,15 @@ class loader_ECE(loader):
             imin,imax = self.tvec.searchsorted([tmin,tmax])
             imax+= 1
             ind = slice(imin,imax)
-            #print 'imin,imax', imin,imax
 
         #use catch if possible 
         for n in atleast_1d(nch):
             if n in self.data_dict:
-                Te, ind_ = self.data_dict[n]
-                if  ind_.start <= imin and  ind_.stop >= imax:
-                    output[n] = Te[imin-ind_.start:imax-ind_.start]
-        
-        
-        
-        TDIcall="_x=\TECEF%02d"
+                output[n] = self.data_dict[n][imin:imax]
+                
+        #TDIcall="_x=\TECEF%02d"
 
-        if self.slow_network:
-            #load only short part of the signal(it is slow, but can be useful when the internet access is slower)
-            TDIcall="("+TDIcall+")[%d:%d:%d]"%(imin,imax,1)
-                        
+    
             
         #single signal loading
         if size(nch) == 1:
@@ -163,28 +154,41 @@ class loader_ECE(loader):
             if len(output) == 1:
                 return [self.tvec[imin:imax],output[nch]] 
                 
-            t = T()
+    
+            Te = self.MDSconn.get(f'_x=PTDATA2("{self.channels[nch-1]}", {self.shot}, 4)').data()
 
-            self.MDSconn.openTree(self.tree,self.shot)
-            Te = self.MDSconn.get(TDIcall%nch).data()
-            Te*= 1e3 #eV
+            C1 = float(self.cc1f[nch-1])
+            C2 = float(self.cc2f[nch-1])
+            C3 = float(self.cc3f[nch-1])
+            adosf = float(self.adosf[nch-1])
+            
+            
+            #Te_calib = Te*(C1/np.sqrt(1.-C2*Te**2)+C3*Te**3)+adosf
+            Te_calib = np.copy(Te)
+            Te_calib *= C1*1e3 #eV
+            if C2 != 0:
+                Te_calib /= np.sqrt(1.-C2*Te**2)
+            if C3 != 0:
+                Te_calib += (C3*1e3)*Te**4
+            if adosf != 0:
+                Te_calib += adosf*1e3
+
+                
+            #BUG https://diii-d.gat.com/diii-d/ECE#pointnames
+            #Ask if ther are any issues with timing in th new discharges 
+   
+            
             if self.tvec is None:
-                self.tvec = self.MDSconn.get('dim_of(_x)').data()
-                self.tvec /= 1e3 #s
+                tbeg,tend = self.MDSconn.get('_t=dim_of(_x); [_t[0], _t[size(_t)-1]]').data()/1e3 #s
+                self.tvec = np.linspace(tbeg,tend,len(Te))
                 imin,imax = self.tvec.searchsorted([tmin,tmax])
                 imax+= 1
 
-            self.MDSconn.closeTree(self.tree,self.shot)
+ 
+            self.data_dict[nch] = Te
 
-            
             ind = slice(imin,imax)
-            
-            if self.slow_network:
-                self.data_dict[nch] = Te, ind
-                return [self.tvec[ind], Te]
-            else:
-                self.data_dict[nch] = Te, slice(0, len(Te))
-                return [self.tvec[ind], Te[ind]]
+            return [self.tvec[ind], Te[ind]]
                  
 
             
@@ -193,32 +197,27 @@ class loader_ECE(loader):
         load_nch = [n for n in nch if not n in output]
         
         if len(load_nch) > 0:
-                    #fast parallel fetch
-            print( '\n fast parallel fetch...')
+            #logger.info( 'fast parallel fetch..', (time.time() - t))
+
             numTasks = 8
             
-            t = T()
             server = self.MDSconn.hostspec
-            
-            TDI = [TDIcall%n for n in load_nch]
+            TDI = [f'PTDATA2("{self.channels[nch-1]}", {self.shot}, 4)' for nch in load_nch]
             if  self.tvec is None :  
-                TDI.append('dim_of(\\TECEF01)')
+                TDI.append(f'dim_of('+TDI[-1]+')')
             
             TDI = array_split(TDI, numTasks)
 
- 
-            args = [(server,self.tree, self.shot, tdi) for tdi in TDI]
+            args = [(server, self.shot, tdi) for tdi in TDI]
             
             out = []
-            nconn = len(args)  #brutal force
             pool = Pool()
-            #out = pool.map(mds_load,args)
             for o in pool.map(mds_load,args):
                 out.extend(o)
             pool.close()
             pool.join()
 
-            print(( 'data loaded in %.2f'%( T()-t)))
+            #print(( 'data loaded in %.2f'%( T()-t)))
             if self.tvec is None:
                 self.tvec = out[-1]
                 self.tvec /= 1.e3
@@ -228,18 +227,33 @@ class loader_ECE(loader):
             ind = slice(imin,imax)
             
             for n, Te in zip(load_nch, out ):
-                if len(Te) == 0: Te =  self.tvec*0
-                Te*= 1e3 #convert to eV units
-                if self.slow_network:
-                    output[n] = Te
-                    self.data_dict[n] = Te, ind
+                
+                if len(Te) == 0: 
+                    Te =  np.zeros_like(self.tvec, dtype='single')
                 else:
-                    output[n] = Te[ind]
-                    self.data_dict[n] = Te, slice(0, len(Te))
+                    C1 = float(self.cc1f[n-1])
+                    C2 = float(self.cc2f[n-1])
+                    C3 = float(self.cc3f[n-1])
+                    adosf = float(self.adosf[n-1])
+                                    
+                    if C2 == 0 and C3 == 0 and adosf == 0:
+                        Te *= C1*1e3 #eV
+                    else:
+                        Te_ = np.copy(Te)
+                        Te *= C1*1e3 #eV
+                        if C2 != 0:
+                            Te /= np.sqrt(1.-C2*Te_**2)
+                        if C3 != 0:
+                            Te += (C3*1e3)*Te_**4
+                            
+                    if adosf != 0:
+                        Te += adosf*1e3
+
+                output[n] = Te[ind]
+                self.data_dict[n] = Te
         
         #just for testing 
         #tvec = spaced_vector(self.tvec[0],self.tvec[-1],(self.tvec[-1]-self.tvec[0])/(len(self.tvec)-1))
-        #print 'self.tvec[ind]' ,self.tvec[ind].shape,self.tvec.shape, ind, self.tvec.shape, tmin,tmax
         return [[self.tvec[ind], output[n]] for n in nch]
      
         
@@ -287,38 +301,43 @@ class loader_ECE(loader):
         
     def get_Te0(self,tmin,tmax,IDA=True,dR=0,dZ=0,R=None,Z=None):
         #load ziprofiles
-        #import IPython
-        #IPython.embed()
-        if not hasattr(self,'zipcache'):
-            TDIcall = '\ELECTRONS::TOP.PROFILE_FITS.ZIPFIT:'
+        try:
+            if not hasattr(self,'zipcache'):
+                self.zipcache = []
+                TDIcall = '\ELECTRONS::TOP.PROFILE_FITS.ZIPFIT:'
 
-            self.MDSconn.openTree('ELECTRONS' ,self.shot)
-            ZipTe = self.MDSconn.get('_x='+TDIcall+'ETEMPFIT').data()
-            ZipNe = self.MDSconn.get('_x='+TDIcall+'EDENSFIT').data()
-            ZipTe*= 1e3 #eV
-            ZipNe*= 1e19 #m^-3
-            zip_tvec = self.MDSconn.get('dim_of(_x,1)').data()
-            zip_tvec/= 1e3#s
-            zip_rho = self.MDSconn.get('dim_of(_x,0)').data()
-            zip_rho = self.eqm.rho2rho(zip_rho,zip_tvec,coord_in='rho_tor', coord_out=self.rho_lbl)
-            self.MDSconn.closeTree('ELECTRONS',self.shot)
-            self.zipcache = zip_tvec,zip_rho, ZipTe, ZipNe
+                self.MDSconn.openTree('ELECTRONS' ,self.shot)
+                ZipTe = self.MDSconn.get('_x='+TDIcall+'ETEMPFIT').data()
+                ZipNe = self.MDSconn.get('_x='+TDIcall+'EDENSFIT').data()
+                ZipTe*= 1e3 #eV
+                ZipNe*= 1e19 #m^-3
+                zip_tvec = self.MDSconn.get('dim_of(_x,1)').data()
+                zip_tvec/= 1e3#s
+                zip_rho = self.MDSconn.get('dim_of(_x,0)').data()
+                zip_rho = self.eqm.rho2rho(zip_rho,zip_tvec,coord_in='rho_tor', coord_out=self.rho_lbl)
+                self.MDSconn.closeTree('ELECTRONS',self.shot)
+                self.zipcache = zip_tvec,zip_rho, ZipTe, ZipNe
             
-        zip_tvec,zip_rho,ZipTe, ZipNe = self.zipcache
-        
-        imin,imax = zip_tvec.searchsorted((tmin,tmax))
-        Te = median(ZipTe[imin:imax+1], 0)
-        zip_rho = mean(zip_rho[imin:imax+1], 0)
-        time = (tmin+tmax)/2
-        
-        if R is None and Z is None:
-            rho = self.get_rho('',self.names,time,dR=dR,dZ=dZ)[0]
-        else:
-            rho = self.eqm.rz2rho(R,Z,time,self.rho_lbl)
-        #import IPython
-        #IPython.embed()
-        
-        Te_ece = interp(abs(rho), zip_rho,Te )
+            if self.zipcache is []:
+                return
+            
+            zip_tvec,zip_rho,ZipTe, ZipNe = self.zipcache
+            
+            imin,imax = zip_tvec.searchsorted((tmin,tmax))
+            Te = median(ZipTe[imin:imax+1], 0)
+            zip_rho = mean(zip_rho[imin:imax+1], 0)
+            time = (tmin+tmax)/2
+            
+            if R is None and Z is None:
+                rho = self.get_rho('',self.names,time,dR=dR,dZ=dZ)[0]
+            else:
+                rho = self.eqm.rz2rho(R,Z,time,self.rho_lbl)
+    
+            
+            Te_ece = interp(abs(rho), zip_rho,Te )
+        except Exception as e:
+            print('Zipfit error', e)
+            return 
         
         return rho,Te_ece
         
@@ -388,17 +407,17 @@ def main():
 
     
     mds_server = "localhost"
-    mds_server = "atlas.gat.com"
+    #mds_server = "atlas.gat.com"
     import MDSplus as mds
 
     MDSconn = mds.Connection(mds_server )
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
-    print(( eqm.Open(175900,diag='EFIT01' )))
+    eqm.Open(178924,diag='EFIT01' )
     MDSconn2 = mds.Connection(mds_server )
 
 
-    ece = loader_ECE(175900,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
+    ece = loader_ECE(178924,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
     #cd 
     #ece.get_RZ_theta( 3,range(1,40),dR=0,dZ=0)
     #ece.get_Te0(2,3)
@@ -429,7 +448,10 @@ def main():
     
     #data_ = ece.get_signal("", ece.get_names(ece.groups[0]), tmin=2, tmax = 2.1)
     #T =T()
-    data = ece.get_signal("",27, tmin=3.09, tmax = 3.1)
+    data = ece.get_signal("",arange(10,27), tmin=1, tmax = 5)
+    
+    exit()
+
     tvec, sig = data
     plot(tvec,sig)
     xlim(tvec[0],tvec[-1])
@@ -540,7 +562,6 @@ def main():
     import IPython
     IPython.embed()
     
-    exit()
     
     
     
