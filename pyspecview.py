@@ -276,7 +276,7 @@ class SpectraViewer(object):
                 artist.remove()
             self.uax.figure.canvas.draw_idle()
             
-        
+        self.plot_description.remove()
        
     def init_plot(self, data, window=None, tmin=None, tmax=None, 
                   fmin0=-np.infty, fmax0=np.infty, description='', mode_range=None, mode_num_lbl='' ):
@@ -1874,7 +1874,7 @@ class Diag2DMapping(object):
                 tick_locator = MaxNLocator(nbins=7)
                 cb.locator = tick_locator
                 cb.update_ticks()
-                cb.set_label(prefix+self.units, labelpad=4, fontsize=font_size)
+                cb.set_label('Te ['+prefix+self.units+']', labelpad=4, fontsize=font_size)
 
         if not animate:
             self.fig.canvas.draw_idle()
@@ -2720,7 +2720,7 @@ class MainGUI(QMainWindow):
                                     np.mean(xlims), dR=self.dR_corr, dZ=self.dZ_corr)[0]
                 data['freq_tvec'], data['freq'] = self.data_loader.get_plasma_freq(rho)
             except Exception as e:
-                print( traceback.format_exc())
+                #print( traceback.format_exc())
                 data['freq_tvec'] = data['freq'] = np.nan
         
         #for NSTX, plot frequency of the modes on q = 1 to q = 4
