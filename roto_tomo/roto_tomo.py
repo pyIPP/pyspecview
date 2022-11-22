@@ -12,6 +12,7 @@ from scipy.linalg import eigh
 from scipy.stats.mstats import mquantiles
 from multiprocessing import Process,Queue
 from matplotlib.ticker import MaxNLocator
+from matplotlib.widgets import MultiCursor
 
 from copy import deepcopy
 try: #only for AUG
@@ -311,7 +312,7 @@ class DataSettingWindow(QMainWindow):
             except:
                 QMessageBox.warning(self.parent,"Input problem",
                     "Wrong detectors are in bad format, use ...,10,11,13:15,...",QMessageBox.Ok)
-                raise
+                #raise
         elif init:     # do not remove on init
             wrong_dets_pref = np.int_(config.wrong_dets_pref)
      
@@ -920,21 +921,21 @@ class Roto_tomo:
 
         self.n_harm = n_harm
         self.n_svd = n_svd
-        self.tau = 2
-        self.nr = 100
-        self.ntheta = 120
-        self.dtheta =  2*np.pi/30
-        self.rgmin = 1e-8
-        self.nfisher = 3
+        self.tau = 2 #time resolution for signal extraction
+        self.nr = 100 #radial resulution for calculation of magnetic equalibrium in radial/ poloidal coordinates
+        self.ntheta = 120 #angular resulution for calculation of magnetic equalibrium in radial/ poloidal coordinates
+        self.dtheta =  2*np.pi/30 #poloidal step for regularisation matrix
+        self.rgmin = 1e-8 #zero zupression parameter of the tomography
+        self.nfisher = 3 #number of fisher iterations
         self.plot_lim = self.slider_lim.value()/100.
-        self.danis = 4
-        self.nx = 80
-        self.ny = 120
+        self.danis = 4  #ratio between poloidal and radialcorelation in tomgraphy
+        self.nx = 80    #horisontal resolution of the tomography
+        self.ny = 120   #vertical resolution of the tomography
         self.m = int(self.m_num.currentText())
         self.n = int(self.n_num.currentText())
-        self.n_rho_plot = 10
-        self.n_theta_plot = 16
-        self.n_contour = 15
+        self.n_rho_plot = 10  #number of plotted radial magnetic contours
+        self.n_theta_plot = 16#number of plotted poloidal magnetic contours
+        self.n_contour = 15 #numberof Te contours 
         self.font_size = 10
         self.hsolvers = []
         self.t0 = np.nan
@@ -1114,14 +1115,15 @@ class Roto_tomo:
         self.A   = np.ones((self.nl,n_harm_max-1)) #assume n_harm_max harmonic at most!
         self.phi = np.zeros((self.nl,n_harm_max-1))
         self.Phi = np.asarray(self.tok.Phi)  #BUG co ten posuv o 45 stupnu? 
-        self.Phi0 = np.median(self.Phi) #toroidal position of SXR cameras
+        self.Phi0 = np.median(self.Phi) #toroidal position of SXR cameras in radians!
+        print('self.Phi',self.Phi,'self.Phi0',self.Phi0)
 
         #add correction for finite DAS IIR
 
         if tok_lbl == 'AUG':
             slow_das = np.loadtxt(loc_dir+'/slow_sxr_diag.txt' )
             fast_das = np.loadtxt(loc_dir+'/fast_sxr_das.txt'  )
-            SampFreq =  self.tok.SampFreq#[dets]
+            SampFreq =  self.tok.SampFreq 
             #amplitude reduction of DAS IIR
             self.A[  SampFreq == 5e5] = np.interp(self.F0*np.arange(1,n_harm_max),slow_das[:,0],slow_das[:,1])
             self.A[  SampFreq == 2e6] = np.interp(self.F0*np.arange(1,n_harm_max),fast_das[:,0],fast_das[:,1])
@@ -1215,11 +1217,12 @@ class Roto_tomo:
         config.useCache = True  #force storing of the data
 
         #load SXR data 
-        signals,error_sig, self.tvec, dets,_,_ = \
-                    self.tok.prepare_data(self.tmin,self.tmax,1,1,1,detsCutOff=False)
+        signals,error_sig, self.tvec, dets,_,_ = self.tok.prepare_data(self.tmin,self.tmax,1,1,1,detsCutOff=False)
         self.signals,self.error_sig = signals.T,error_sig.T
       
         self.dets = dets[np.all(np.isfinite(error_sig),1)[dets]]
+        print('BUG')
+        np.savez('inputs', signals=signals,tvec=self.tvec,  dets=dets  )
         
         #initialise it only once 
         dets_index = self.tok.dets_index[:-1]  
@@ -1240,7 +1243,10 @@ class Roto_tomo:
 
         #apply SVD filter to get complex harmonic 
         self.SVDF.run_filter(update_plots=False)
+        #from IPython import embed
+        #embed()
         
+        np.savez('svdf', t=self.SVDF.tvec[-len(self.SVDF.retrofit):],y= self.SVDF.retrofit, d=self.SVDF.data[-len(self.SVDF.retrofit):], t0=self.SVDF.t0)
         
         self.F1 = self.SVDF.f0
         self.t0 = self.SVDF.t0
@@ -1270,7 +1276,7 @@ class Roto_tomo:
         t = time.time()
 
         for ifisher in range(self.nfisher):
-            Hper,Hpar = create_derivation_matrix( G0.reshape(-1,1,order='F'), self.Bmat,self.danis)
+            Hper,Hpar = create_derivation_matrix(G0.reshape(-1,1,order='F'), self.Bmat,self.danis)
             qin, qout = Queue(),Queue() 
 
             if ifisher < self.nfisher-1:  #the last step will be evaluated with the others  #BUG slow!!! 
@@ -1419,7 +1425,7 @@ class Roto_tomo:
             plt.figure('Retrofit').clf()
             
         f,axes = plt.subplots(max((self.n_harm+1)//2,1),2,sharex=True,num='Retrofit',figsize=(9,8))
-        f.suptitle('t=%.3f'%self.t0)
+        f.suptitle('t = %.3fs'%self.t0)
         for ax in np.atleast_2d(axes)[:,0]:
             ax.set_ylabel('SXR [kW/m$^2$]')
             
@@ -1447,36 +1453,44 @@ class Roto_tomo:
             phase_shift =  np.average(phase_retro, weights=aplitude_retro )
             phase_data  -= phase_shift
             phase_retro -= phase_shift
-            #print(phase_retro.min(), phase_retro.max())
             
             weak = aplitude_data < np.nanmax(aplitude_data)*0.05
             phase_data[weak] = np.nan
             phase_retro[weak] = np.nan
-
-
-            norm = np.amax(aplitude_retro)/3./1e3
-            #print(n,  norm)
+   
             ax.plot(self.dets, aplitude_retro/1e3, 'b',label='retro')
             ax.errorbar(self.dets,aplitude_data/1e3, aplitude_err/1e3,c='r',label='data')
             ymax = max(aplitude_data.max(),aplitude_retro.max())/1e3
-            if n == 0:
-                ax.set_ylim(0,ymax)
-            else:
-                ax.set_ylim(-ymax,ymax)
+            
+            ax_phase = ax.twinx()
+
+            #if n == 0:
+            ax.set_ylim(0,ymax)
+            #else:
+                #ax.set_ylim(-ymax,ymax)
 
             w = aplitude_data/np.nanmax(aplitude_data)
             w[weak] = 0
             if any(~np.isreal(self.bb[n])):
-                ax.scatter(self.dets, phase_data*norm,facecolor=(np.outer((1,0,0), w)+1-w).T,      
+                ax_phase.scatter(self.dets, phase_data,facecolor=(np.outer((1,0,0), w)+1-w).T,      
                            edgecolors=(1,0,0),s=50,linewidths=.5)
-                ax.plot( self.dets,  phase_retro*norm ,'.--b')
+                ax_phase.plot( self.dets,  phase_retro ,'.--b')
             ax.set_xlim(self.dets[0], self.dets[-1]+1)
+            ax_phase.set_ylim(-2*np.pi, 2*np.pi)
+          
+            y_tick = np.linspace(-np.pi*2, np.pi*2, 9)
+            y_label = [r"$-2\pi$", r"$-3\pi/2$", r"$-\pi$", r"$-\pi/2$", "$0$", 
+                   r"$\pi/2$", r"$\pi$", r"$3\pi/2$", r"$2\pi$"]
+            ax_phase.set_yticks(y_tick)
+            ax_phase.set_yticklabels(y_label ) 
+            #ax_phase.set_ylabel('Phase [rad]')
             ax.legend()
             [ax.axvline(i-0.5,c='k') for i in det_ind]
             ax.axhline(y=0,c='k')
             ax.set_title('%d. harmonic: $\gamma$ = %.2f  $\chi^2$=%.2f'%(n,self.gamma[n],self.chi2[n]))
             
         plt.tight_layout()
+        self.multi_retrofit = MultiCursor(f.canvas, axes ,horizOn=False, color='k', lw=1)
 
         self.AxZoom = fconf.AxZoom()
         self.zoom_cid = f.canvas.mpl_connect('button_press_event', self.AxZoom.on_click)
@@ -1545,22 +1559,32 @@ class Roto_tomo:
         for h in self.hsolvers[1:]:
             h.qin.put(self.lam0) 
 
-        #get output
+        #get output, usually fast
         out = [h.qout.get() for h in self.hsolvers]
         self.G     = [o[0].reshape(self.ny,self.nx,order='F') for o in out]
         self.retro = [o[1]*be for o,be in zip(out,self.bb_err)]
         self.gamma = [o[2] for o in out]
         self.chi2  = [o[3] for o in out]
         
-        cmplx_phase = np.exp(2*np.pi*self.F1*1j*(self.tvec-self.t0))
-         
-        self.retro_t    = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.retro)],0).T
-        self.filtered_t = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.bb)],0).T
-
+        #estimate vmax for the tomography image
         G_t = [np.abs(g) for g in self.G]
         self.vmax = np.sum(G_t,0).max()
         self.vmax_bcg = np.sum(G_t[1:],0).max()
+        
+        return
+        
+        cmplx_phase = np.exp(2*np.pi*self.F1*1j*(self.tvec-self.t0))
+        
+        #retrofit in time domain
+        self.retro_t    = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.retro)],0).T
+        #filtered data in time domain
+        self.filtered_t = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.bb)],0).T
 
+        #this is exactly equal to self.retro_t
+        self.retro_gt = np.sum([np.real(self.T*g.flatten(order='F')*cmplx_phase**i) for i,g in enumerate(self.G)],0).T
+
+        
+        
 
     def shift_phase(self,shift_phi):
         self.shift_phi %= 2*np.pi #periodicity
@@ -1572,7 +1596,7 @@ class Roto_tomo:
     def update(self,update_mag=True,animate=False,update_cax=False,):
 
         w = 2*np.pi*self.F1
-        G_t = [np.real(g*np.exp(1j*w*(self.time-self.t0)*i)) for i,g in enumerate(self.G)]
+        G_t = [np.real(g*np.exp(i*1j*w*(self.time-self.t0))) for i,g in enumerate(self.G)]
         G_t = np.sum(G_t[1:] if self.substract else G_t,0)
         
         if self.substract:
@@ -1609,7 +1633,7 @@ class Roto_tomo:
             self.Te2Dmap.f0 = self.F1
             
             dPhi = self.n*(Phi_ece-self.Phi0)/self.m
-
+            print('shift_phi', self.Te2Dmap.shift_phi,'Phi_ece ', Phi_ece,'Phi0',self.Phi0)
             self.Te2Dmap.shift_phi = self.shift_phi +dPhi+self.dPhi/self.n
             anim_obj += self.Te2Dmap.update(update_cax=False,update_mag=False,animate=animate,
                                 ax = self.ax, filled_contours=False)

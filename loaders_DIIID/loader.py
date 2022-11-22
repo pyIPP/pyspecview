@@ -401,9 +401,12 @@ class loader(object):
                 #filterscope_t = self.MDSconn.get('dim_of(_x)').data()/1e3
  
             except Exception as e:
+                self.elm_start = None
                 print('ELM detection issue: ', e)
                 return signal
      
+        if self.elm_start is None:
+            return signal
         
         valid = (self.elm_start > tvec[0])&(self.elm_start < tvec[-1])
         

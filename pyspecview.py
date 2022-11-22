@@ -1742,10 +1742,12 @@ class Diag2DMapping(object):
 
         self.shift_phi = shift_phi%(2*np.pi)#periodicity -         
         self.time = self.t_start + self.shift_phi/(2*np.pi*self.f0)*np.abs(self.m)
-
-        description = '#%d  at %.6fs, $\phi_0$ = %d, f$_0$ = %.4fkHz and m=%d'%(self.shot, \
+        try:
+            description = '#%d  at %.6fs, $\phi_0$ = %d, f$_0$ = %.4fkHz and m=%d'%(self.shot, \
                 self.time, np.rad2deg(np.median(self.Phi0)), self.f0/1e3, self.m)
-
+        except:
+            description = ''
+            print('Error: ', (self.shot, self.time, np.rad2deg(np.median(self.Phi0)), self.f0/1e3, self.m, shift_phi, self.t_start))
         self.plot_description.set_text(description)
 
 
@@ -2058,6 +2060,39 @@ class MainGUI(QMainWindow):
         self.change_signal_phase()
 
         self.closeEvent = self.__del__
+        
+            #######################################
+        #from time import time
+        #t = time()
+        #from multiprocessing import  Pool
+
+        #def mds_load(tmp):
+            #mds_server,  TDI = tmp
+            #MDSconn = mds.Connection(mds_server )
+            #data = []
+            #for tdi in TDI:
+                #try:
+                    #data.append(MDSconn.get(tdi).data())
+                #except:
+                    #data.append([])
+            #return data
+        #group = 'LFS'
+        #names = ['0301', '0302', '0303', '0304', '0305', '0306', '0307', '0308', '0501', '0502', '0503', '0504', '0505', '0506', '0507', '0508', '0701', '0702', '0703', '0704', '0705', '0706', '0707', '0708', '1101', '1102', '1103', '1104', '1105', '1106', '1107', '1108', '1201', '1202', '1203', '1204', '1205', '1206', '1207', '1208', '1301', '1302', '1303', '1304', '1305', '1306', '1307', '1308', '1501', '1502', '1503', '1504', '1505', '1506', '1507', '1508', '1701', '1702', '1703', '1704', '1705', '1706', '1707', '1708', '1901', '1902', '1903', '1904', '1905', '1906', '1907', '1908', '2101', '2102', '2103', '2104', '2105', '2106', '2107', '2108']
+        #shot = 180180
+        #numTasks = 8
+        #TDI = [f'PTDATA2("{group+n}", {shot})' for n in names]
+        #TDI = np.array_split(TDI, numTasks)
+        #args = [("localhost", tdi) for tdi in TDI]
+        
+        #out = []
+        #pool = Pool()
+        #for o in pool.map(mds_load,args):
+            #out.extend(o)
+        #pool.close()
+        #pool.join()
+        #print(time()-t)
+        
+        
     
     def __del__(self, event=None):
         if hasattr(self, 'roto_tomo'):
@@ -2135,7 +2170,7 @@ class MainGUI(QMainWindow):
         if new_panel == '2D Te':
     
             if not (self.radial_view.diag == 'ECE' and prew_panel == 'Radial Profile'):
-                print('Switching radial profile to ECE diagnostic')
+                print('Switching radial profile to ECE diagnostic', self.radial_view.diag, self.diag)
 
                 if self.radial_view.diag != 'ECE':
                     self.diag = 'ECE'
@@ -2712,7 +2747,8 @@ class MainGUI(QMainWindow):
 
         data = {'tvec':tvec, 'signal':sig}
         
-        logger.info(  'data loaded in %5.2fs', (time.time()-T))
+        if time.time()-T > 0.1:
+            logger.info(  self.diag+' data loaded in %5.2fs', (time.time()-T))
      
         if self.show_plasma_freq and self.data_loader.radial_profile and self.eqm_ready:
             try:
@@ -2839,12 +2875,13 @@ class MainGUI(QMainWindow):
             self.radial_view.set_data(self.diag, rho, theta_tg, data, R, Z, Phi, mag_data, magr, magz, theta_star, rho_qsurfs, units)
             self.radial_view.group = self.diag_group
             
-            logger.info(  'data loaded in %5.2fs', (time.time()-T))
+            if time.time()-T  > 0.1:
+                logger.info('Radial profile data loaded in %5.2fs', (time.time()-T))
 
 
         if not self.signal_radial is None:
             cross_sig = self.data_loader_radial.get_signal(self.diag_group_radial, 
-                                    self.signal_radial, calib=True, tmin=tmin, tmax=tmax)
+                                    self.signal_radial, calib=False, tmin=tmin, tmax=tmax)
             
             self.radial_view.set_cross_signal( cross_sig)
             info = self.data_loader_radial.signal_info(self.diag_group_radial, 
@@ -2882,7 +2919,7 @@ class MainGUI(QMainWindow):
 
         xlims = self.SpecWin_phase.ax.get_xlim()
         ylims = self.SpecWin_phase.ax.get_ylim()
-
+        T = time.time()
         try:
             tvec, sig = self.data_loader_phase.get_signal_phase(self.signal_phase)
             if sig is None: raise
@@ -2892,7 +2929,9 @@ class MainGUI(QMainWindow):
             QMessageBox.warning(self, "Loading problem", "Check if the signal exist", QMessageBox.Ok)
             return 
         
-        
+        if time.time()-T > 0.1:
+            logger.info(  self.diag_phase+' data loaded in %5.2fs', (time.time()-T))
+            
         self.statusBar().showMessage('')
         #option to set mode range from config file 
         if self.mode_range is None:
