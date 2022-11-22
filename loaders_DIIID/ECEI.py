@@ -68,13 +68,13 @@ class loader_ECEI(loader):
         try:
             self.LFSGOOD = self.MDSconn.get('\\ECEI::TOP.LFSGOOD')
             self.groups.append('LFS')
-        except mds.mdsExceptions.TreeNODATA:
+        except:
             self.LFSGOOD = False
             
         try:
             self.HFSGOOD = self.MDSconn.get('\\ECEI::TOP.HFSGOOD')
             self.groups.append('HFS')
-        except mds.mdsExceptions.TreeNODATA:
+        except:
             self.HFSGOOD = False
         
 
