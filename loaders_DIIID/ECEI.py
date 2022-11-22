@@ -290,7 +290,7 @@ class loader_ECEI(loader):
         TT = T()
 
         #fast paraell fetch 
-        if len(load_names) > 0:
+        if len(load_seg ) > 0:
             numTasks = 8
             server = self.MDSconn.hostspec
             
@@ -309,8 +309,8 @@ class loader_ECEI(loader):
                 self.data_dict[s] = o
                 
             #TODO check if it fetch the whole shot in 40s
-        print('fetch', T()-TT)
-        TT = T()
+            print('fetch', T()-TT)
+            TT = T()
 
         
         for it in time_intervals:
