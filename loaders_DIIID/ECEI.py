@@ -41,7 +41,6 @@ def mds_load(tmp):
             data.append(MDSconn.get(tdi).data())
         except:
             data.append([])
-    print(  T()-TT, TDI)
     return data
 
 from IPython import embed
@@ -266,13 +265,11 @@ class loader_ECEI(loader):
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
  
-        TT = T()
         #it takes ~2s to fetch the header
         if self.time_header is None: 
             channel = f'{group}{names[0]}'
             time_header = self.MDSconn.get(f'PTHEAD2("{channel}",{self.shot}); __real64')[2:]
             self.time_header = time_header.reshape(-1,2).T
-        print('header', T()-TT)
         
         imin = max(0,self.time_header[0].searchsorted(tmin)-1)
         imax = min(len(self.time_header.T)-1,self.time_header[1].searchsorted(tmax))
@@ -307,16 +304,10 @@ class loader_ECEI(loader):
             pool.join()
             for s,o in zip(load_seg,out):
                 self.data_dict[s] = o
-                
-            #TODO check if it fetch the whole shot in 40s
-            print('fetch', T()-TT)
-            TT = T()
-
-        
+       
         for it in time_intervals:
             if it not in self.tvec:
                 nt = len(self.data_dict[ f'{group+names[0]}_{it}'])
-                #print(nt)
                 self.tvec[it] = np.linspace(self.time_header[0,it],self.time_header[1,it], nt)
         
         tvec = np.hstack([self.tvec[it] for it in time_intervals])
@@ -335,14 +326,14 @@ class loader_ECEI(loader):
             R,Z,Theta = self.get_RZ_theta((tmin+tmax)/2, group, names)
             rho,Te0 = self.get_Te0(tmin,tmax,R=R,Z=Z)
             if Te0 is not None:
-                for out, Te in zip(output, Te0):
+                for out, Te, n in zip(output, Te0, names):
                     #don't use inplace operation
+                    m = out[1].mean()
+                    print(n,m,Te)
                     out[1] = out[1]*(Te/out[1].mean())
             else:
                 print('ECEI data are not calibrated')
          
-        print('others', T()-TT)
-
         if len(names) == 1:
             return output[0]
         else:
