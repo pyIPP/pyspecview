@@ -266,22 +266,26 @@ class loader_ECEI(loader):
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
  
-        load_names = []
-        #use catch if possible 
-        for n in atleast_1d(names):
-            if group+n not in self.data_dict:
-                load_names.append(n)
-       
+        TT = T()
         #it takes ~2s to fetch the header
         if self.time_header is None: 
             channel = f'{group}{names[0]}'
             time_header = self.MDSconn.get(f'PTHEAD2("{channel}",{self.shot}); __real64')[2:]
             self.time_header = time_header.reshape(-1,2).T
- 
+        print('header', T()-TT)
         
         imin = max(0,self.time_header[0].searchsorted(tmin)-1)
         imax = min(len(self.time_header.T)-1,self.time_header[1].searchsorted(tmax))
         time_intervals = range(imin, imax+1)
+        
+        #use catch if possible 
+        load_seg = []
+        for n in atleast_1d(names):
+            for it in time_intervals:
+                seg = f'{group+n}_{it}'
+                if seg not in self.data_dict:
+                    load_seg.append(seg)
+        
  
         TT = T()
 
@@ -291,8 +295,6 @@ class loader_ECEI(loader):
             server = self.MDSconn.hostspec
             
             #NOTE it is faster to fetch the whole time range than each segment one by one.
-            load_seg = [f'{group+n}_{it}' for n in load_names for it in time_intervals]
-
             TDI = [f'PTDATA2("{s}", {self.shot})' for s in load_seg]
             TDI = array_split(TDI, min(numTasks, len(TDI)))
             args = [(server, tdi) for tdi in TDI]
@@ -300,19 +302,21 @@ class loader_ECEI(loader):
             pool = Pool()
             for o in pool.map(mds_load,args):
                 out.extend(o)
-            #print(out)
+        
             pool.close()
             pool.join()
             for s,o in zip(load_seg,out):
                 self.data_dict[s] = o
                 
             #TODO check if it fetch the whole shot in 40s
-        
+        print('fetch', T()-TT)
+        TT = T()
+
         
         for it in time_intervals:
             if it not in self.tvec:
                 nt = len(self.data_dict[ f'{group+names[0]}_{it}'])
-                print(nt)
+                #print(nt)
                 self.tvec[it] = np.linspace(self.time_header[0,it],self.time_header[1,it], nt)
         
         tvec = np.hstack([self.tvec[it] for it in time_intervals])
@@ -336,7 +340,9 @@ class loader_ECEI(loader):
                     out[1] = out[1]*(Te/out[1].mean())
             else:
                 print('ECEI data are not calibrated')
-        #embed()
+         
+        print('others', T()-TT)
+
         if len(names) == 1:
             return output[0]
         else:
