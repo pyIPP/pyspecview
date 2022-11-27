@@ -1,5 +1,7 @@
-from loaders_DIIID.loader import * 
-#from loader import * 
+try:
+    from loaders_DIIID.loader import * 
+except:
+    from loader import * 
 
 import os
 from multiprocessing import  Pool
@@ -666,19 +668,14 @@ class loader_SXR(loader):
         
         super(loader_SXR,self).__init__(*args, **kargs)
 
-        #from time import time 
-        
-        t = T()
-        
+   
         self.tree = 'spectroscopy'
         self.phase_diags = '45R1','195R1'
  
-        #self.tvec 
         
         self.fast_data = {}
         self.catch={}
-        self.tvec_fast = {}
-        #self.tvec_slow = {}
+        self.time_header = {}
 
 
         
@@ -705,9 +702,6 @@ class loader_SXR(loader):
                             
         self.calib['90RM1'] = np.hstack((self.calib.pop('90RM1a'),self.calib.pop('90RM1b')))
         self.calib['90RP1'] = np.hstack((self.calib.pop('90RP1a'),self.calib.pop('90RP1b')))
-
-        #BUG
-        #embed()
         self.calib['90RM1'][2] = 0 #corrupted channel
         # Geometry from
         # /usc-data/c/idl/source/efitviewdiagnoses/DIII-D/xraypaths.pro
@@ -803,31 +797,27 @@ class loader_SXR(loader):
         
         n_chunks = self.n_chunks[group]
   
-        if not group in self.tvec_fast:
-
-            TDI = ['dim_of(PTDATA2("SX%sF%.2d_%d",%d,1))'%(group_,1,i,self.shot) for i in range(n_chunks)]
-            self.tvec_fast[group] = mds_par_load(MDSserver, TDI,num_MDS_Tasks)
-  
-            if len(self.tvec_fast[group][0])<2:
+        if not group in self.time_header:
+            time_header = self.MDSconn.get(f'PTHEAD2("SX{group_}F01",{self.shot}); __real64').data()[2:]
+            self.time_header[group] = time_header.reshape(-1,2).T
+            if all(self.time_header[group]==0):
                 raise Exception('Fast SXR data are not availible')
-            for i in range(n_chunks):
-                self.tvec_fast[group][i] /= 1e3 #s
+     
         self.fast_data[group] = True
    
-        indmin = where([t[-1] > tmin for t in self.tvec_fast[group]])[0][0]
-        indmax = where([t[ 0] < tmax for t in self.tvec_fast[group]])[0][-1]+1
-        index = arange(indmin,indmax)
-        if calib: index = unique(r_[0,index])
-        
-        t = T()
-        #print 'indeix', index, names
+        indmin = np.where(self.time_header[1] > tmin)[0][0]
+        indmax = np.where(self.time_header[0] < tmax)[0][-1]+1
 
+        index = arange(indmin,indmax)
+        if calib: 
+            index = unique(r_[0,index])
+        
+ 
         TDI = []
         for ch in names:
             for i in index:
                 if self.cache_fast[group][ch][i] is None:
-                    TDIcall = 'PTDATA2("SX%sF%.2d_%d",%d,1)'%(group_,ch,i,self.shot)
-                    TDI.append(TDIcall)
+                    TDI.append('PTDATA2("SX{group_}F{ch:02d}_{i}",self.shot,1)' )
                     
         if len(TDI) > 0:
             data = mds_par_load(MDSserver, TDI,  num_MDS_Tasks)
@@ -840,9 +830,9 @@ class loader_SXR(loader):
                     self.cache_fast[group][ch][i] = data[j]
                     j+= 1
                     
-                     
-        tvec = hstack(self.tvec_fast[group][indmin:indmax])
+    
         sig  = [hstack(self.cache_fast[group][n][indmin:indmax]) for n in names]
+        tvec = np.linspace(self.time_header[0,indmin], self.time_header[1,indmax-1], len(sig[0]))
 
         imin,imax = tvec.searchsorted([tmin,tmax])
         ind = slice(imin,imax+1)
@@ -860,7 +850,6 @@ class loader_SXR(loader):
                     sig[i] *= self.calib[group][int(n)-1]
         
         
-            
             
         if len(sig) == 1:
             return tvec[ind], sig[0][ind]

@@ -41,6 +41,29 @@ def mds_load(tmp):
             data.append([])
     return data
 
+
+def mds_load_par( MDSconn, TDI, numTasks=8):
+    
+    if len(TDI) == 1:
+        return [MDSconn.get(TDI[0]).data()]
+    
+    numTasks = 8
+    server = MDSconn.hostspec
+    TDI = array_split(TDI, min(numTasks,len(TDI)))
+
+    args = [(server, tdi) for tdi in TDI]
+    
+    out = []
+    pool = Pool()
+    for o in pool.map(mds_load,args):
+        out.extend(o)
+    pool.close()
+    pool.join()
+    
+    return out 
+
+
+
 from IPython import embed
 class loader_ECE(loader):
     
@@ -108,7 +131,10 @@ class loader_ECE(loader):
  
         # get position settings
         self.z = self.MDSconn.get(subnodes_z).data()
-        self.Phi  =  21.#81.60 #from diagnostic webpage #self.MDSconn.get(subnodes_phi).data()#deg
+        #print('ECE PHI', self.MDSconn.get(subnodes_phi).data())
+        #self.Phi  =  21.#81.60 #from diagnostic webpage #self.MDSconn.get(subnodes_phi).data()#deg
+        self.Phi = 81
+        self.Phi = 60        
         self.MDSconn.closeTree(self.tree, self.shot)
 
         if self.freq is None or len(self.freq)<2:
@@ -133,37 +159,17 @@ class loader_ECE(loader):
         
          
         load_ch = [n for n in nch if n not in self.data_dict]
-        
 
-        #single signal loading
-        if len(load_ch) == 1:
- 
+
+        #BUG https://diii-d.gat.com/diii-d/ECE#pointnames
+        #Ask if ther are any issues with timing in the new discharges 
+        
+        if len(load_ch) >= 1:
             #NOTE ece data can be splitted in halve and fetch separatelly
-            Te = self.MDSconn.get(f'_x=PTDATA2("{self.channels[load_ch[0]-1]}", {self.shot}, 4)').data()
-
-            self.data_dict[load_ch[0]] = Te
-
-            #BUG https://diii-d.gat.com/diii-d/ECE#pointnames
-            #Ask if ther are any issues with timing in the new discharges 
-
-        
-        elif len(load_ch) > 1:
-
-            numTasks = 8
             
-            server = self.MDSconn.hostspec
             TDI = [f'PTDATA2("{self.channels[n-1]}", {self.shot}, 4)' for n in load_ch]
-            TDI = array_split(TDI, min(numTasks,len(TDI)))
-
-            args = [(server, tdi) for tdi in TDI]
-            
-            out = []
-            pool = Pool()
-            for o in pool.map(mds_load,args):
-                out.extend(o)
-            pool.close()
-            pool.join()
-            
+            tt = T()
+            out = mds_load_par( self.MDSconn, TDI)
             for n, Te in zip(load_ch, out ):
                 self.data_dict[n] = Te
      
@@ -204,7 +210,6 @@ class loader_ECE(loader):
                 
             self.data_dict[n] = Te
             
-            
      
         output = [[self.tvec[imin:imax],  self.data_dict[n][imin:imax]] for n in nch]
         
@@ -221,15 +226,12 @@ class loader_ECE(loader):
     def get_RZ_theta(self, time,names,dR=0,dZ=0):
 
         if hasattr(self,'tvec'):
-            time = max(min(time,self.tvec[-1] ), self.tvec[0] )
-        
-        
-        
+            time = clip(time, *self.tvec[[0,-1]])
   
         B = self.eqm.rz2brzt(r_in=self.eqm.Rmesh, z_in=self.z, t_in=time)
         Btot = squeeze(linalg.norm(B,axis=0))
         
-        ch_ind = in1d(self.names, int_(names))
+        ch_ind = atleast_1d(in1d(self.names, int_(names)))
         
         from scipy.constants import m_e, e, c
 
@@ -247,7 +249,6 @@ class loader_ECE(loader):
         wce = e*Btot/(m_e*gamma)
 
         nharm = 2
- 
         R = interp(-2*pi*self.freq[ch_ind],-wce*nharm,self.eqm.Rmesh)
         z = self.z*ones_like(R)+.04
 
@@ -319,20 +320,15 @@ class loader_ECE(loader):
         
     
     def get_rho(self,group,names,time,dR=0,dZ=0):
-
-        #if hasattr(self,'RZtime'):
-        time = max(min(time, self.tmax), self.tmin)
+        time = clip(time, self.tmin, self.tmax)
         R,z,theta = self.get_RZ_theta(time,names,dR=dR,dZ=dZ)
         
         rho = super(loader_ECE,self).get_rho(time,R,z,dR=dR,dZ=dZ)[0]
 
         r0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Rmag'])+dR
-        R = atleast_1d( R)
+        R = atleast_1d(R)
         rho[R < r0] *= -1
-        #else:
-            #err = ones(len(names))*nan
-            #rho,theta,R,z = err,err,err,err
-        
+ 
         return rho,theta,R,z
     
     def get_phi_tor(self,name=None):
@@ -341,7 +337,6 @@ class loader_ECE(loader):
     def signal_info(self,group,name,time):
         
         rho,theta,R,z = self.get_rho(group,[name,],time)
-        #print rho
         try:
             info = 'ch: '+str(name)+'  R:%.3f m   '%R+self.rho_lbl+': %.3f'%rho
         except:

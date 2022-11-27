@@ -43,6 +43,29 @@ def mds_load(tmp):
             data.append([])
     return data
 
+
+def mds_load_par( MDSconn, TDI, numTasks=8):
+    
+    if len(TDI) == 1:
+        return [MDSconn.get(TDI[0]).data()]
+    
+    numTasks = 8
+    server = MDSconn.hostspec
+    TDI = array_split(TDI, min(numTasks,len(TDI)))
+
+    args = [(server, tdi) for tdi in TDI]
+    
+    out = []
+    pool = Pool()
+    for o in pool.map(mds_load,args):
+        out.extend(o)
+    pool.close()
+    pool.join()
+    
+    return out 
+
+
+
 from IPython import embed
 class loader_ECEI(loader):
     
@@ -75,20 +98,8 @@ class loader_ECEI(loader):
             self.groups.append('HFS')
         except:
             self.HFSGOOD = False
-        
+    
 
-            
-   
-        #if self.LFSGOOD:
-            #self.LFS_FREQS = self.MDSconn.get('\\ECEI::TOP.FREQ.LFS_FREQS')
-            #self.LFSLO = self.MDSconn.get('\\ECEI::TOP.FREQ.LFSLO')
-
-        #if self.HFSGOOD:
-            #self.HFS_FREQS = self.MDSconn.get('\\ECEI::TOP.FREQ.HFS_FREQS')
-            #self.HFSLO = self.MDSconn.get('\\ECEI::TOP.FREQ.HFSLO')
-            
-            
-       
         self.Phi = 270
         
         self.MDSconn.closeTree(self.tree, self.shot)
@@ -211,8 +222,7 @@ class loader_ECEI(loader):
             OpSpan = self.OpticsNarrow / 100 #m
 
         Zc = np.linspace(-OpSpan, OpSpan, 20) 
-        
-        
+                
         if self.time_header is not None:
             time = np.clip(time,self.time_header[0,0], self.time_header[1,-1])
         
@@ -232,7 +242,8 @@ class loader_ECEI(loader):
         except:
             print( 'relativistic mass downshift could not be done')
             gamma = 1
-     
+        
+        
         wce = e*Btot/(m_e*gamma)/1e9 #GHz
 
         nharm = 2
@@ -241,6 +252,8 @@ class loader_ECEI(loader):
         for i, wce_row in enumerate(wce):
             Rc[i] = np.interp(-2*pi*fc,-wce_row*nharm,self.eqm.Rmesh)
         
+        if not any(isfinite(Rc)):
+            exit()
         
          
         Rc = np.array([Rc[len(Zc)-int(n[:2])+3-1,len(fc)-int(n[2:])+1-1] for n in names])
@@ -287,21 +300,13 @@ class loader_ECEI(loader):
         TT = T()
 
         #fast paraell fetch 
-        if len(load_seg ) > 0:
-            numTasks = 8
-            server = self.MDSconn.hostspec
+        if len(load_seg) > 0:
             
             #NOTE it is faster to fetch the whole time range than each segment one by one.
             TDI = [f'PTDATA2("{s}", {self.shot})' for s in load_seg]
-            TDI = array_split(TDI, min(numTasks, len(TDI)))
-            args = [(server, tdi) for tdi in TDI]
-            out = []
-            pool = Pool()
-            for o in pool.map(mds_load,args):
-                out.extend(o)
-        
-            pool.close()
-            pool.join()
+            
+            out = mds_load_par(self.MDSconn, TDI)
+      
             for s,o in zip(load_seg,out):
                 self.data_dict[s] = o
        
@@ -320,7 +325,7 @@ class loader_ECEI(loader):
             #it could be done a bit more efficiently
             Te = np.hstack([self.data_dict[f'{group+n}_{it}'] for it in time_intervals])
             output.append([tvec[imin:imax], Te[imin:imax]])
- 
+        
         #calibrate using zipfit data, offset is already set to be zero
         if calib:
             R,Z,Theta = self.get_RZ_theta((tmin+tmax)/2, group, names)
@@ -329,7 +334,6 @@ class loader_ECEI(loader):
                 for out, Te, n in zip(output, Te0, names):
                     #don't use inplace operation
                     m = out[1].mean()
-                    print(n,m,Te)
                     out[1] = out[1]*(Te/out[1].mean())
             else:
                 print('ECEI data are not calibrated')
@@ -377,15 +381,12 @@ class loader_ECEI(loader):
             if R is None and Z is None:
                 rho = self.get_rho('',self.names,time,dR=dR,dZ=dZ)[0]
             else:
-                #print(R.shape, Z.shape, )
                 rho = self.eqm.rz2rho(R[None],Z[None],time,self.rho_lbl)[0]
-                #print(rho.shape )
 
             
             Te_ece = interp(abs(rho), zip_rho,Te )
         except Exception as e:
             print('Zipfit error', e)
-            #raise
             return None,None
         
         return rho,Te_ece
@@ -449,7 +450,8 @@ from matplotlib.pylab import *
 
 
 def main():
-
+   
+ 
     
     mds_server = "localhost"
     #mds_server = "atlas.gat.com"
@@ -458,23 +460,67 @@ def main():
     MDSconn = mds.Connection(mds_server )
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
-    eqm.Open(180180,diag='EFIT01' )
+    eqm.Open(191823,diag='EFIT01' )
     MDSconn2 = mds.Connection(mds_server )
 
 
-    ecei = loader_ECEI(180180,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
+    ecei = loader_ECEI(191823 ,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
     names = ecei.get_names('LFS')
+    R,Z,T = ecei.get_RZ_theta(2.1, 'LFS', names)
+        #def get_RZ_theta(self, time, system, names,dR=0,dZ=0):
+
+    names2D = array(names).reshape(-1,8)
+    for i in range(10):
+        for j in range(8):
+            plot(R.reshape(-1,8)[i,j],Z.reshape(-1,8)[i,j], '.')
+            text(R.reshape(-1,8)[i,j],Z.reshape(-1,8)[i,j], names2D[i,j])
+    
+    show()
+    
+    
+    
+    
     print(names)
-    t = T()
-    signals = ecei.get_signal('LFS',names[0])
+     
+    signals = ecei.get_signal('LFS',names, calib=True, tmin=-1.1, tmax=8)
+    #embed()
+    for t,s in signals:
+        plot(t[718:].reshape(-1,1000).mean(1),s[718:].reshape(-1,1000).mean(1))
+    
+    
+    Te = [s.mean() for t,s in signals]
+    R,Z,T = ecei.get_RZ_theta(2.1, 'LFS', names)
+    
+    
+    #pcolor(R.reshape(-1,8),Z.reshape(-1,8), array(Te).reshape(-1,8) )
+    #show()
+    
+    contourf(R.reshape(-1,8),Z.reshape(-1,8), array(Te).reshape(-1,8) )
+    names2D = array(names).reshape(-1,8)
+    for i in range(10):
+        for j in range(8):
+            plot(R.reshape(-1,8)[i,j],Z.reshape(-1,8)[i,j], '.')
+            text(R.reshape(-1,8)[i,j],Z.reshape(-1,8)[i,j], names2D[i,j])
+    
+    show()
+    
+    
+    
     print(T()-t)
+    embed()
+    
+    
     exit()
 
     
     #######################################
     from time import time
     t = time()
-    
+    #mds_server = "localhost"
+    mds_server = "atlas.gat.com"
+    import MDSplus as mds
+
+    MDSconn = mds.Connection(mds_server )
     def mds_load(tmp):
         mds_server,  TDI = tmp
         MDSconn = mds.Connection(mds_server )
@@ -487,15 +533,15 @@ def main():
         return data
     group = 'LFS'
     names = ['0301', '0302', '0303', '0304', '0305', '0306', '0307', '0308', '0501', '0502', '0503', '0504', '0505', '0506', '0507', '0508', '0701', '0702', '0703', '0704', '0705', '0706', '0707', '0708', '1101', '1102', '1103', '1104', '1105', '1106', '1107', '1108', '1201', '1202', '1203', '1204', '1205', '1206', '1207', '1208', '1301', '1302', '1303', '1304', '1305', '1306', '1307', '1308', '1501', '1502', '1503', '1504', '1505', '1506', '1507', '1508', '1701', '1702', '1703', '1704', '1705', '1706', '1707', '1708', '1901', '1902', '1903', '1904', '1905', '1906', '1907', '1908', '2101', '2102', '2103', '2104', '2105', '2106', '2107', '2108']
-    shot = 180180
     numTasks = 8
-    TDI = [f'PTDATA2("{group+n}", {shot})' for n in names]
-    TDI = np.array_split(TDI, numTasks)
-    args = [("localhost", tdi) for tdi in TDI]
-    
+    TDI = [f'PTDATA2("LFS{n}", 191823)' for n in names]
+    TDI = array_split(TDI, numTasks)
+    args = [(mds_server, tdi) for tdi in TDI]
+    from multiprocessing import  Pool
+
     out = []
     pool = Pool()
-    for o in pool.map(mds_load,args):
+    for o in map(mds_load,args):
         out.extend(o)
     pool.close()
     pool.join()
@@ -647,10 +693,7 @@ def main():
 
     imshow(filtered_data,interpolation='nearest',aspect='auto',vmax=-0.1,vmin=0.1);colorbar();show()
 
-    
-    import IPython
-    IPython.embed()
-    
+ 
     
     
     

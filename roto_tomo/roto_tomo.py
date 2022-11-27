@@ -1116,7 +1116,7 @@ class Roto_tomo:
         self.phi = np.zeros((self.nl,n_harm_max-1))
         self.Phi = np.asarray(self.tok.Phi)  #BUG co ten posuv o 45 stupnu? 
         self.Phi0 = np.median(self.Phi) #toroidal position of SXR cameras in radians!
-        print('self.Phi',self.Phi,'self.Phi0',self.Phi0)
+        #print('self.Phi',self.Phi,'self.Phi0',self.Phi0)
 
         #add correction for finite DAS IIR
 
@@ -1221,8 +1221,8 @@ class Roto_tomo:
         self.signals,self.error_sig = signals.T,error_sig.T
       
         self.dets = dets[np.all(np.isfinite(error_sig),1)[dets]]
-        print('BUG')
-        np.savez('inputs', signals=signals,tvec=self.tvec,  dets=dets  )
+        #print('BUG')
+        #np.savez('inputs', signals=signals,tvec=self.tvec,  dets=dets  )
         
         #initialise it only once 
         dets_index = self.tok.dets_index[:-1]  
@@ -1633,7 +1633,7 @@ class Roto_tomo:
             self.Te2Dmap.f0 = self.F1
             
             dPhi = self.n*(Phi_ece-self.Phi0)/self.m
-            print('shift_phi', self.Te2Dmap.shift_phi,'Phi_ece ', Phi_ece,'Phi0',self.Phi0)
+            #print('shift_phi', self.Te2Dmap.shift_phi,'Phi_ece ', Phi_ece,'Phi0',self.Phi0)
             self.Te2Dmap.shift_phi = self.shift_phi +dPhi+self.dPhi/self.n
             anim_obj += self.Te2Dmap.update(update_cax=False,update_mag=False,animate=animate,
                                 ax = self.ax, filled_contours=False)
