@@ -69,7 +69,7 @@ class loader_RIP(loader):
                 
  
             self.catch[tagname] = sig
-
+            #TODO use PTHEAD2!!
             if self.tvec is None:
                 self.tvec = self.MDSconn.get('dim_of(_x)').data()
                 self.tvec /= 1e3 #s
@@ -86,7 +86,12 @@ class loader_RIP(loader):
 
         R_start = array(2.6,ndmin=1)
         R_end = array(1,ndmin=1)
+
+        if len(names) > 1:
+           return np.array([self.get_rho(group,[n],time,dR=dR,dZ=dZ) for n in names]).T[0]
+
         name = names[0]
+        
         z = array(self.z[name-1],ndmin=1)
 
         rho_tg,theta_tg,R,Z = super(loader_RIP,self).get_rho(time,R_start,

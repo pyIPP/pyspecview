@@ -485,7 +485,7 @@ def get_calib(shot,calib_path,cam):
         print('Pinhole closed '+cam)
         pinhole = 1.95e3
 
-    print('%s\tRc:%.0e  Gain:%d pinhole:%.2g filter:%d'%(cam, Rc, Gain, pinhole,filter))
+    #print('%s\tRc:%.0e  Gain:%d pinhole:%.2g filter:%d'%(cam, Rc, Gain, pinhole,filter))
 
 
     return Rc, Gain, pinhole, filter
@@ -597,7 +597,7 @@ def get_calib_fact(shot, geometry_path,  toroidal=False):
         
 
         calib = 4*pi/term/(resistor*gain)/eff_resp/etendue
-        print('calib '+cam+' %.2e  W/m^2/V  '%mean(calib)+ ' %.2e  W/V  '%mean(calib*el_area))
+        #print('calib '+cam+' %.2e  W/m^2/V  '%mean(calib)+ ' %.2e  W/V  '%mean(calib*el_area))
         
         
         #W = C*plocha*Volty
@@ -623,7 +623,7 @@ def get_calib_fact(shot, geometry_path,  toroidal=False):
 ### UP TO HERE FROM OMFIT !!!!!!
 
 def mds_load(tmp):
-    (mds_server,   TDI) = tmp
+    mds_server,   TDI = tmp
     MDSconn = mds.Connection(mds_server )
     output = [MDSconn.get(tdi).data() for tdi in TDI]
     #mds.DisconnectFromMds()
@@ -640,7 +640,7 @@ def mds_par_load(mds_server,   TDI,  numTasks):
 
     pool = Pool(len(args))
     
-
+   
     out = pool.map(mds_load,args)
     pool.close()
     pool.join()
@@ -804,9 +804,10 @@ class loader_SXR(loader):
                 raise Exception('Fast SXR data are not availible')
      
         self.fast_data[group] = True
+  
    
-        indmin = np.where(self.time_header[1] > tmin)[0][0]
-        indmax = np.where(self.time_header[0] < tmax)[0][-1]+1
+        indmin = np.where(self.time_header[group][1] > tmin)[0][0]
+        indmax = np.where(self.time_header[group][0] < tmax)[0][-1]+1
 
         index = arange(indmin,indmax)
         if calib: 
@@ -817,7 +818,7 @@ class loader_SXR(loader):
         for ch in names:
             for i in index:
                 if self.cache_fast[group][ch][i] is None:
-                    TDI.append('PTDATA2("SX{group_}F{ch:02d}_{i}",self.shot,1)' )
+                    TDI.append(f'PTDATA2("SX{group_}F{ch:02d}_{i}",{self.shot},1)' )
                     
         if len(TDI) > 0:
             data = mds_par_load(MDSserver, TDI,  num_MDS_Tasks)
@@ -832,7 +833,7 @@ class loader_SXR(loader):
                     
     
         sig  = [hstack(self.cache_fast[group][n][indmin:indmax]) for n in names]
-        tvec = np.linspace(self.time_header[0,indmin], self.time_header[1,indmax-1], len(sig[0]))
+        tvec = np.linspace(self.time_header[group][0,indmin], self.time_header[group][1,indmax-1], len(sig[0]))
 
         imin,imax = tvec.searchsorted([tmin,tmax])
         ind = slice(imin,imax+1)
@@ -1014,19 +1015,23 @@ from matplotlib.pylab import *
 def main():
     
     mds_server = "localhost"
-    #mds_server = "atlas.gat.com"
+    mds_server = "atlas.gat.com"
 
     import MDSplus as mds
     MDSconn = mds.Connection(mds_server )
     
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
-    eqm.Open(175900,diag='EFIT01' )
-    sxr = loader_SXR(175900,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
+    eqm.Open(191870,diag='EFIT01' )
+    sxr = loader_SXR(191870,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
     #from ECE import loader_ECE
     #ece = loader_ECE(175900,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
   
-    tvec,data = sxr.get_signal( '90RP1',1, tmin=3, tmax = 3.1,calib=True) 
+    #tvec,data = sxr.get_signal( '90RP1',1, tmin=3, tmax = 3.1,calib=True)
+    names = sxr.get_names('90RP1')		
+    rho_tg, theta_tg,R,Z = sxr.get_rho('90RM1', names,3)
+    #plot(rho_tg);show()
+
     
     #embed()
     #fit = load('fit_t.npz')

@@ -1,4 +1,10 @@
-from loaders_DIIID.loader import * 
+try:
+    from loaders_DIIID.loader import * 
+except:
+    from loader import * 
+ 
+
+
 import os
 from multiprocessing import  Pool
 
@@ -24,17 +30,17 @@ def mds_load(tmp):
 
 class loader_BES(loader):
     radial_profile=True
+    tvec_fast = None
 
     def __init__(self,*args, **kargs):
         
         super(loader_BES,self).__init__(*args, **kargs)
 
-        self.names = {'BESFU': list(range(1,65)),'BESSU': list(range(1,65))}
-        self.groups =  list(self.names.keys())
+        self.names = {'BESFU': list(range(1,65)) }
+        self.groups =  ['BESFU']
 
-
-        self.tvec =  {'BESFU':None, 'BESSU':None }
-        self.catch = {'BESFU':{}, 'BESSU':{} }
+ 
+        self.catch = { }
         self.MDSconn.openTree('BES', self.shot)
         try:
             self.R = self.MDSconn.get('\\bes::bes_r').data()/100.
@@ -43,6 +49,7 @@ class loader_BES(loader):
             print('BES R,Z coordinates were not found')
             self.R = 0
             self.Z = 0
+
         self.MDSconn.closeTree('BES', self.shot)
 
     
@@ -56,71 +63,82 @@ class loader_BES(loader):
         if tmax is None:    tmax = self.tmax
         
         names = atleast_1d(names)
-        ch2load = []
-        for name in names:
-            if not name in self.catch[group]:
-                ch2load.append(name)
-            
-        TDIcall ='_x=PTDATA2("%s%.2d",%d,0)'    
+        ch2load = [n for n in names if not n in self.catch] 
         
+        #NOTE this PTsignal cannot be splitted in segments
+        TDIcall ='PTDATA2("%s%.2d",%d)' 
+
+ 
+        if self.tvec_fast is None:
+            header = self.MDSconn.get(f'PTHEAD2("BESFU{ch2load[0]:02d}",{self.shot}); __real64').data()
+            tbeg, tend, dt =  header[2:5]
+            self.tvec_fast = np.arange(tbeg, tend, dt)
+            header = self.MDSconn.get(f'PTHEAD2("BESSU{ch2load[0]:02d}",{self.shot}); __real64').data()
+            tbeg, tend, dt =  header[2:5]
+            self.tvec_slow = np.arange(tbeg, tend, dt)
+           
+         
         
         if  size(ch2load) == 1:
         
-            TDIcall = TDIcall%(group,ch2load[0],self.shot)
-            #print TDIcall
-            sig = self.MDSconn.get(TDIcall).data()
-            if len(sig) < 2:
+            fTDI = TDIcall%('BESFU',ch2load[0],self.shot)
+            fsig = self.MDSconn.get(fTDI).data()
+            if len(fsig) < 2:
                 raise Exception(group+' channel %d do not exist'%name)
+            assert len(fsig) == len(self.tvec_fast)
 
-            self.catch[group][name] = sig
-            if self.tvec[group] is None:
-                self.tvec[group] = self.MDSconn.get('dim_of(_x)').data()
-                self.tvec[group] /= 1e3 #s
-                
-                        
-            #imin,imax = self.tvec[group].searchsorted([tmin,tmax])
-            #ind = slice(imin,imax+1)
-            #return self.tvec[group][ind], sig[ind]
+            sTDI = TDIcall%('BESSU',ch2load[0],self.shot)
+            ssig = self.MDSconn.get(sTDI).data()
+ 
+            #relative perturbations
+            #self.catch[ch2load[0]] = np.single(fsig / np.interp(self.tvec_fast, self.tvec_slow, ssig))
+            ssig = maximum(ssig, ssig.max()/1e3)
+            islow = np.single(np.interp(self.tvec_fast, self.tvec_slow, ssig))
+            self.catch[ch2load[0]] = (fsig)/islow
                     
         elif size(ch2load) > 1:
             print( '\n fast parallel fetch...' )
             numTasks = 8
                             
+
+
+
             t = T()
             server = self.MDSconn.hostspec
-            TDI = [TDIcall%(group,n,self.shot) for n in ch2load]
+            TDI = [TDIcall%('BESFU',n,self.shot) for n in ch2load]
                         
             TDI = array_split(TDI, numTasks)
-            ch2load = array_split(ch2load, numTasks)
-
-            if self.tvec[group] is None:  
-                TDI[-1] = append(TDI[-1],'dim_of(_x)' )
-            
-            args = [(server, tdi) for tdi in TDI]
-            
-      
+ 
             pool = Pool()
-            out = pool.map(mds_load,args)
+            fast_out = pool.map(mds_load,[(server, tdi) for tdi in TDI])
+     
+            TDI = [TDIcall%('BESSU',n,self.shot) for n in ch2load]    
+            TDI = array_split(TDI, numTasks)
+       
+            slow_out = pool.map(mds_load,[(server, tdi) for tdi in TDI])
             pool.close()
             pool.join()
+            ch2load = array_split(ch2load, numTasks)
+
             print(( 'in %.1fs'%(T()-t)))
-    
-            if self.tvec[group] is None:  
-                self.tvec[group] = out[-1][-1]/1000#s
+     
         
-            for chnls, data in zip(ch2load, out):
-                for ch,sig in zip(chnls, data):
-                    self.catch[group][ch] = sig
+            for chnls, fdata, sdata in zip(ch2load, fast_out, slow_out):
+                for ch,fsig, ssig in zip(chnls, fdata, sdata):
+                    ssig = maximum(ssig, ssig.max()/1e3)
+                    islow = np.single(np.interp(self.tvec_fast, self.tvec_slow, ssig))
+                    self.catch[ch] = (fsig)/islow
          
-        imin,imax = self.tvec[group].searchsorted([tmin,tmax])
+
+        imin,imax = self.tvec_fast.searchsorted([tmin,tmax])
         ind = slice(imin,imax+1)
         
         
         if len(names) == 1:
-            return self.tvec[group][ind], self.catch[group][names[0]][ind]
+            return self.tvec_fast[ind], self.catch[names[0]][ind]
 
         
-        return [[self.tvec[group][ind], self.catch[group][n][ind]] for n in names]
+        return [[self.tvec_fast[ind], self.catch[n][ind]] for n in names]
 
         
 
@@ -144,13 +162,18 @@ def main():
     
 
     mds_server = "localhost"
-    #mds_server = "atlas.gat.com"
+    mds_server = "atlas.gat.com"
 
     import MDSplus as mds
     MDSconn = mds.Connection(mds_server )
-    from .map_equ import equ_map
+    from map_equ import equ_map
+    shot = 175860
     eqm = equ_map(MDSconn,debug=False)
-    
+
+    eqm.Open(shot,diag='EFIT01' )
+    bes = loader_BES(shot,exp='DIII-D',eqm=eqm,rho_lbl='rho_tor',MDSconn=MDSconn)
+    bes.get_signal('BESFU',bes.get_names('BESFU'),3, 3.2 )
+    exit()
     shots = r_[175849:175869, 175882:175890, 175898:175905]
     for shot in shots:
         #try:

@@ -1,1 +1,1 @@
-name: pyspecview_envdependencies:  - python=3.7  - numpy  - scipy  - matplotlib  - pyfftw=0.12  - pyqt=5.12  - configparser  - MDSplus
+name: pyspecview_envdependencies:  - python=3.7  - numpy  - scipy  - matplotlib  - pyfftw=0.12  - pyqt=5.12  - configparser  - MDSplus  - ffmpeg

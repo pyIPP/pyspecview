@@ -6,11 +6,8 @@ except:
 import os
 from multiprocessing import  Pool
 import MDSplus as mds
-
-#TODO lod only a data slice
-#TODO calibration for all diagnostics 
-#TODO 
-
+ 
+ 
 
 
 def check(shot):
@@ -46,8 +43,8 @@ def mds_load(tmp):
 
 def mds_load_par( MDSconn, TDI, numTasks=8):
     
-    if len(TDI) == 1:
-        return [MDSconn.get(TDI[0]).data()]
+    if len(TDI) <= 4:
+        return [MDSconn.get(tdi).data() for tdi in TDI]
     
     numTasks = 8
     server = MDSconn.hostspec
@@ -84,6 +81,8 @@ class loader_ECEI(loader):
         self.data_dict = {}
         self.groups = []
         self.tvec = {}
+        self.goodchannels = []
+        self.calib = {}
 
         
         #MDS values are probably not right 
@@ -166,6 +165,7 @@ class loader_ECEI(loader):
                 
         if not valid or not (self.HFSGOOD or self.LFSGOOD):
             print('ECEI is not available for this shot')
+            self.HFSGOOD = self.LFSGOOD = False
             return
 
         #print('Hardware settings of LFS array is loaded')
@@ -281,6 +281,7 @@ class loader_ECEI(loader):
         #it takes ~2s to fetch the header
         if self.time_header is None: 
             channel = f'{group}{names[0]}'
+            #https://diii-d.gat.com/diii-d/Ptdatacall
             time_header = self.MDSconn.get(f'PTHEAD2("{channel}",{self.shot}); __real64')[2:]
             self.time_header = time_header.reshape(-1,2).T
         
@@ -290,26 +291,38 @@ class loader_ECEI(loader):
         
         #use catch if possible 
         load_seg = []
+        load_name = []
         for n in atleast_1d(names):
             for it in time_intervals:
                 seg = f'{group+n}_{it}'
                 if seg not in self.data_dict:
                     load_seg.append(seg)
+                    load_name.append(n)
         
  
         TT = T()
 
         #fast paraell fetch 
         if len(load_seg) > 0:
-            
+            #fetch raw data as integeres and make calibration locally
+            #it allows to identify saturated timepoints
+            for n in load_name:
+                if n not in self.calib:
+                    #https://diii-d.gat.com/diii-d/Ptdatacall
+                    self.calib[n] = self.MDSconn.get(f'PTHEAD2("{group+n}",{self.shot}); __rarray').data()[4:6] 
+    
             #NOTE it is faster to fetch the whole time range than each segment one by one.
-            TDI = [f'PTDATA2("{s}", {self.shot})' for s in load_seg]
-            
+            TDI = [f'PTDATA2("{s}", {self.shot}, 0)' for s in load_seg]
             out = mds_load_par(self.MDSconn, TDI)
-      
-            for s,o in zip(load_seg,out):
-                self.data_dict[s] = o
-       
+           
+            #identify saturated data and calibrate signals
+            for s,n, o in zip(load_seg,load_name, out):
+                saturated  = np.abs(o) == 2**15
+                o -= int32(self.calib[n][1])
+                o = float32(o)
+                o*= -float32(self.calib[n][0])
+                self.data_dict[s] = ma.array(o, mask=saturated)
+ 
         for it in time_intervals:
             if it not in self.tvec:
                 nt = len(self.data_dict[ f'{group+names[0]}_{it}'])
@@ -323,21 +336,24 @@ class loader_ECEI(loader):
         output = []
         for n in names:
             #it could be done a bit more efficiently
-            Te = np.hstack([self.data_dict[f'{group+n}_{it}'] for it in time_intervals])
+            if len(time_intervals) > 1:
+            	Te = np.ma.hstack([self.data_dict[f'{group+n}_{it}'] for it in time_intervals])	
+            else:
+                Te = self.data_dict[f'{group+n}_{time_intervals[0]}']
             output.append([tvec[imin:imax], Te[imin:imax]])
-        
+ 
         #calibrate using zipfit data, offset is already set to be zero
         if calib:
             R,Z,Theta = self.get_RZ_theta((tmin+tmax)/2, group, names)
             rho,Te0 = self.get_Te0(tmin,tmax,R=R,Z=Z)
+
             if Te0 is not None:
                 for out, Te, n in zip(output, Te0, names):
                     #don't use inplace operation
-                    m = out[1].mean()
-                    out[1] = out[1]*(Te/out[1].mean())
+                    out[1] = out[1]*(Te/asarray(out[1]).mean())
             else:
                 print('ECEI data are not calibrated')
-         
+
         if len(names) == 1:
             return output[0]
         else:
@@ -452,9 +468,9 @@ from matplotlib.pylab import *
 def main():
    
  
-    
+    from time import time as T
     mds_server = "localhost"
-    #mds_server = "atlas.gat.com"
+    mds_server = "atlas.gat.com"
     import MDSplus as mds
 
     MDSconn = mds.Connection(mds_server )
@@ -464,23 +480,16 @@ def main():
     MDSconn2 = mds.Connection(mds_server )
 
 
-    ecei = loader_ECEI(191823 ,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
+    ecei = loader_ECEI(191827 ,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
     names = ecei.get_names('LFS')
-    R,Z,T = ecei.get_RZ_theta(2.1, 'LFS', names)
+    #R,Z,T = ecei.get_RZ_theta(2.1, 'LFS', names)
         #def get_RZ_theta(self, time, system, names,dR=0,dZ=0):
 
-    names2D = array(names).reshape(-1,8)
-    for i in range(10):
-        for j in range(8):
-            plot(R.reshape(-1,8)[i,j],Z.reshape(-1,8)[i,j], '.')
-            text(R.reshape(-1,8)[i,j],Z.reshape(-1,8)[i,j], names2D[i,j])
-    
-    show()
-    
-    
-    
-    
-    print(names)
+    TT =  T()
+    signals = ecei.get_signal('LFS',names, calib=True, tmin=3, tmax=3.6)
+    print(T()-TT)
+    exit()
+ 
      
     signals = ecei.get_signal('LFS',names, calib=True, tmin=-1.1, tmax=8)
     #embed()

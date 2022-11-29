@@ -10,8 +10,7 @@ import MDSplus as mds
 #TODO lod only a data slice
 #TODO calibration for all diagnostics 
 #TODO 
-
-
+ 
 
 def check(shot):
     #fastest check if the shotfile exist
@@ -134,7 +133,7 @@ class loader_ECE(loader):
         #print('ECE PHI', self.MDSconn.get(subnodes_phi).data())
         #self.Phi  =  21.#81.60 #from diagnostic webpage #self.MDSconn.get(subnodes_phi).data()#deg
         self.Phi = 81
-        self.Phi = 60        
+        #self.Phi = 60        
         self.MDSconn.closeTree(self.tree, self.shot)
 
         if self.freq is None or len(self.freq)<2:
@@ -212,7 +211,6 @@ class loader_ECE(loader):
             
      
         output = [[self.tvec[imin:imax],  self.data_dict[n][imin:imax]] for n in nch]
-        
         if len(nch) == 1:
             return output[0]
         else:
@@ -250,7 +248,7 @@ class loader_ECE(loader):
 
         nharm = 2
         R = interp(-2*pi*self.freq[ch_ind],-wce*nharm,self.eqm.Rmesh)
-        z = self.z*ones_like(R)+.04
+        z = self.z*ones_like(R)+.004
 
         r0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Rmag'])+dR
         z0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Zmag'])+dZ

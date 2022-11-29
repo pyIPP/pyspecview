@@ -1,4 +1,8 @@
-from loaders_DIIID.loader import * 
+try:
+    from loaders_DIIID.loader import * 
+except:
+    from loader import * 
+ 
 import os
 from multiprocessing import  Pool, cpu_count
 import MDSplus as mds
@@ -111,22 +115,20 @@ class loader_CO2(loader):
         node = 'PL1' if group == "PHASE" else 'DEN'
         TDI = '\\ELECTRONS::TOP.BCI.DPD.%s.%s:%s_UF_'%(name, group,node)+'%d'
         
-            
+        
         if not hasattr(self,'tvec'):
             index = list(range(self.n_chunks))
+     
             self.tvec = mds_par_load(self.MDSconn.hostspec,
                     self.tree,self.shot,'dim_of('+TDI+')',index)
         
             for i in range(self.n_chunks):
                 self.tvec[i] /= 1e3 #s
 
-        #print self.tvec
-        #print tmin, tmax
-        #print [t[-1] > tmin for t in self.tvec]
-        #print [t[ 0] < tmax for t in self.tvec]
+  
         indmin = where([t[-1] > tmin for t in self.tvec])[0][0]
         indmax = where([t[ 0] < tmax for t in self.tvec])[0][-1]+1
-        #print indmin,indmax
+      
         index = list(range(indmin,indmax))
         index_toload = []
         for i in index:
@@ -136,7 +138,7 @@ class loader_CO2(loader):
         if len(index_toload):
             data = mds_par_load(self.MDSconn.hostspec,self.tree,self.shot,TDI,index_toload)
             for i, d in zip(index_toload, data):
-                d*=1e6 #m^-2
+                d*=1e6/1e19 #10**19*m^-2
                 self.cache[group][name][i] = d 
         
         
@@ -146,10 +148,7 @@ class loader_CO2(loader):
 
         sig = self.remove_elms(tvec, sig)        
         
-        ##tvec=np.linspace(0,5,100000000*5)
-        ##sig = np.random.randint(0,2**16,100000000*5)
-        
-        ##return tvec,sig
+ 
         imin,imax = tvec.searchsorted([tmin,tmax])
         ind = slice(imin,imax+1)
         
@@ -208,7 +207,7 @@ def main():
 
     import MDSplus as mds
     MDSconn = mds.Connection(mds_server )
-    from .map_equ import equ_map
+    from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
     eqm.Open(153291,diag='EFIT01' )
     sxr = loader_CO2(153291,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)

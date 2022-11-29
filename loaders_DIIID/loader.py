@@ -412,7 +412,7 @@ class loader(object):
         
         #delete also 0.1ms before and after due to uncertainties in elm time
         ind_start = tvec.searchsorted(self.elm_start[valid]-1e-4)
-        ind_end = tvec.searchsorted(self.elm_peak[valid]+1e-4)
+        ind_end = np.minimum(tvec.searchsorted(self.elm_peak[valid]+1e-4), len(tvec)-1)
         
  
         corrected_signal = copy(signal)
