@@ -2643,9 +2643,9 @@ class MainGUI(QMainWindow):
         if hasattr(self,  'data_loader_2Dmap'):
             del self.data_loader_2Dmap
         if hasattr(self,  'data_loader_phase'):
-            del self.data_loader_phase
+            self.data_loader_phase = None
         if hasattr(self,  'data_loader'):
-            del self.data_loader
+            self.data_loader = None
      
         self.SpecWin.reset()
         self.SpecWin_phase.reset()
