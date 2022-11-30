@@ -1246,7 +1246,7 @@ class Roto_tomo:
         #from IPython import embed
         #embed()
         
-        np.savez('svdf', t=self.SVDF.tvec[-len(self.SVDF.retrofit):],y= self.SVDF.retrofit, d=self.SVDF.data[-len(self.SVDF.retrofit):], t0=self.SVDF.t0)
+       # np.savez('svdf', t=self.SVDF.tvec[-len(self.SVDF.retrofit):],y= self.SVDF.retrofit, d=self.SVDF.data[-len(self.SVDF.retrofit):], t0=self.SVDF.t0)
         
         self.F1 = self.SVDF.f0
         self.t0 = self.SVDF.t0

@@ -1105,8 +1105,6 @@ class STFTDisplay():
 def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=None):
     
     from scipy.signal import get_window
-
-    from IPython import embed 
     
     T = time.time()
     
@@ -1238,7 +1236,7 @@ def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=
     
 
     #get a 90 degrees shifted complex part 
-    cmplx_sig = hilbert(cross_signal, nfft)[:cross_signal.size]
+    cmplx_sig = hilbert(cross_signal, nfft)[:tvec.size]
 
     amplitude2 = np.zeros((n_harm, len(data)))
     phi2       = np.zeros((n_harm, len(data)))
@@ -1279,9 +1277,7 @@ def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=
     
     error *= np.sum(win**2)/np.sqrt(len(tvec))
         
-    corrupted |= amplitude2[0] == 0
-    #embed()
-   
+    corrupted |= amplitude2[0] == 0   
     
     return n_harm, amplitude, tvec, cross_signal, amplitude2, phi2, retro, offset, error, corrupted, cross_sig_num
 
@@ -1655,11 +1651,12 @@ class Diag2DMapping(object):
      
         
         rho[np.isnan(rho)|(R<1)] = 2   
-        nlfs = np.sum((np.abs(rho)<=1)&(rho>=0)&np.isfinite(amplitude2[0]))
-        nhfs = np.sum((np.abs(rho)<=1)&(rho<=0)&np.isfinite(amplitude2[0]))
+        #nlfs = np.sum((np.abs(rho)<=1)&(rho>=0)&np.isfinite(amplitude2[0]))
+        #nhfs = np.sum((np.abs(rho)<=1)&(rho<=0)&np.isfinite(amplitude2[0]))
         
-        rho_sign = 1 if nhfs <= nlfs else -1
-   
+        #rho_sign = 1 if nhfs <= nlfs else -1
+        rho_sign = 1 if use_LFS_data else -1
+            
         ind = (np.abs(rho)<=1)&(rho_sign*rho>=0)&np.isfinite(amplitude2[0])
         
         self.plot_ece_active.set_data( R[ ind], Z[ ind])
@@ -2147,6 +2144,7 @@ class MainGUI(QMainWindow):
         self.data_loader = None
         self.data_loader_radial = None
         self.data_loader_phase = None
+        self.signal_radial = None
         
         self.load_config()
         self.parent = parent
@@ -2636,7 +2634,19 @@ class MainGUI(QMainWindow):
         self.eqm_ready = False
         if self.tokamak != 'AUG':
             self.eqm.Close()
-
+            
+        #clear data from the previous discharge
+        if hasattr(self,  'data_loader_ECEI'):
+            del self.data_loader_ECEI
+        if hasattr(self,  'data_loader_radial'):
+            del self.data_loader_radial
+        if hasattr(self,  'data_loader_2Dmap'):
+            del self.data_loader_2Dmap
+        if hasattr(self,  'data_loader_phase'):
+            del self.data_loader_phase
+        if hasattr(self,  'data_loader'):
+            del self.data_loader
+     
         self.SpecWin.reset()
         self.SpecWin_phase.reset()
 
@@ -3221,6 +3231,8 @@ class MainGUI(QMainWindow):
             self.tomo_plot_ecei.setChecked(False)
             return   
         
+        
+        T = time.time()
 
         self.statusBar().showMessage('Loading ...' )
         QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -3247,9 +3259,7 @@ class MainGUI(QMainWindow):
         data = self.data_loader_ECEI.get_signal(group, names, calib=True, tmin=tmin, tmax=tmax)
         
         #make sure that chnage in data_loader will not affect data cached in data_loader_2Dmap
-        #if self.data_loader is self.data_loader_ECEI:
-        #    self.data_loader_ECEI = deepcopy(self.data_loader_ECEI)
-        
+
         t0 = (tmin+tmax)/2            
         rho, theta, R, Z = self.data_loader_ECEI.get_rho(group, names, t0, 
                     dR=self.dR_corr, dZ=self.dZ_corr)
@@ -3257,6 +3267,10 @@ class MainGUI(QMainWindow):
  
         self.Te2Dmap.set_data2D(R, Z, Phi,  data)
         self.Te2Dmap.update()
+        
+        
+        logger.info('ECEI profile data loaded in %5.2fs', (time.time()-T))
+
         
         
         QApplication.restoreOverrideCursor()

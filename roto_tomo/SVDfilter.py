@@ -100,9 +100,9 @@ class SVDFilter():
       
         pad = len(b)//2
 
-        cmpl_exp = np.zeros(2**int(np.ceil(np.log2(nt))),dtype='single')
-        cmpl_exp[(nmax*len(cmpl_exp))//nt] = 1
-        cmpl_exp = ifft(cmpl_exp)[:nt]*len(cmpl_exp)
+        #cmpl_exp = np.zeros(2**int(np.ceil(np.log2(nt))),dtype='single')
+        #cmpl_exp[(nmax*len(cmpl_exp))//nt] = 1
+        #cmpl_exp = ifft(cmpl_exp)[:nt]*len(cmpl_exp)
         
         data = np.copy(self.data)
         err = np.copy(self.err)
@@ -112,13 +112,13 @@ class SVDFilter():
         offset = np.mean(data,axis=0)
         data -= offset[None,:] 
 
-
+        #TODO use a reference signal as in PYSPECVIEW
         n_fft = next_fast_len(nt+len(b)-1)
         cmpl_exp = np.zeros(n_fft,dtype='single')
         cmpl_exp[(nmax*n_fft)//nt] = 1
         cmpl_exp = ifft(cmpl_exp)[:nt]*len(cmpl_exp)
 
-        fsig = fft(data,axis=0,n=n_fft)#použít RFFT? 
+        fsig = fft(data,axis=0,n=n_fft) #use RFFT? 
         fb   = fft(np.single(b),axis=0,n=n_fft)
 
         self.retrofit = np.zeros((nt-pad, self.ndets),dtype='single')
