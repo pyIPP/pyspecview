@@ -1,5 +1,5 @@
 import MDSplus
-from map_equ import equ_map
+from .map_equ import equ_map
 from time import time
 from IPython import embed
 import numpy as np

@@ -260,7 +260,7 @@ class loader_ECE(loader):
             R,z =  array(R), array(z) 
  
         except:
-            raise
+            #raise
             from scipy.constants import m_e, e, c
             wce = e*Btot/m_e
             nharm = 2

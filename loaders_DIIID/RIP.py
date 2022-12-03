@@ -63,7 +63,7 @@ class loader_RIP(loader):
             self.MDSconn.openTree(tree,self.shot)
 
             TDIcall ='_x= \\%s::%s'%(tree,tagname)
-            sig = self.MDSconn.get(TDIcall).data()
+            sig = self.MDSconn.get(TDIcall).data().astype('single', copy=False)
             if group == 'n_e':
                 sig *= 1.34e-3/2 #line-integral density in 10^19m^-2.
                 
