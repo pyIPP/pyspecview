@@ -6,7 +6,7 @@ except:
 import os
 from multiprocessing import  Pool
 import MDSplus as mds
- 
+import traceback
  
 
 
@@ -221,45 +221,57 @@ class loader_ECEI(loader):
         else:
             OpSpan = self.OpticsNarrow / 100 #m
 
-        Zc = np.linspace(-OpSpan, OpSpan, 20) 
+        Zmod = np.linspace(-OpSpan, OpSpan, 20) 
                 
         if self.time_header is not None:
             time = np.clip(time,self.time_header[0,0], self.time_header[1,-1])
-        
-         
-        B = self.eqm.rz2brzt(r_in=self.eqm.Rmesh, z_in=Zc, t_in=time)
-        Btot = squeeze(linalg.norm(B,axis=0)).T
-  
-        
-        from scipy.constants import m_e, e, c
+            
 
-        #Accounting for relativistic mass downshift
+        Rmesh = np.linspace(self.eqm.Rmesh[0], self.eqm.Rmesh[-1], 200)
+        Zmesh = np.linspace(self.eqm.Zmesh[0], self.eqm.Zmesh[-1], 300)
+
+        
+        #posistion including relativistic shift and refraction
         try:
-            Rcm,Zcm = np.meshgrid(self.eqm.Rmesh, Zc)
-            Te = self.get_Te0(time,time,R=Rcm,Z=Zcm)[1]
-            v = sqrt(2*Te*e/m_e)
-            gamma = 1/sqrt(1-(v/c)**2)
+            B = self.eqm.rz2brzt(r_in=Rmesh, z_in=Zmesh, t_in=time)
+            Btot = squeeze(linalg.norm(B,axis=0)).T
+            from _ECE_chord import ece_los
+            Rcm,Zcm = np.meshgrid(Rmesh, Zmesh)
+            _, Te, Ne = self.get_Te0(time,time,R=Rcm,Z=Zcm, returnTeNe=True)
+            #pcolor(Rcm, Zcm, Ne)
+            Rc,Zc = [],[]
+            for n in names:
+                z_los = Zmod[len(Zmod)-int(n[:2])+3-1]
+                f_los = fc[len(fc)-int(n[2:])+1-1]*1e9
+                r,z, R_res, Z_res = ece_los(f_los, z_los, Rmesh, Zmesh, Btot, Ne, Te)
+                Rc.append(R_res)
+                Zc.append(Z_res)
+                #plot(r,z,lw=.3)
+            #plot(Rc,Zc,'o')
+            #ylim(Zmesh[0], Zmesh[-1])
+            #oo
         except:
-            print( 'relativistic mass downshift could not be done')
-            gamma = 1
-        
-        
-        wce = e*Btot/(m_e*gamma)/1e9 #GHz
+            from scipy.constants import c, e,m_e, epsilon_0
 
-        nharm = 2
-  
-        Rc = np.zeros((len(Zc), len(fc)))
-        for i, wce_row in enumerate(wce):
-            Rc[i] = np.interp(-2*pi*fc,-wce_row*nharm,self.eqm.Rmesh)
-        
-        if not any(isfinite(Rc)):
-            exit()
-        
-         
-        Rc = np.array([Rc[len(Zc)-int(n[:2])+3-1,len(fc)-int(n[2:])+1-1] for n in names])
-        Zc = np.array([Zc[len(Zc)-int(n[:2])+3-1] for n in names])
+            B = self.eqm.rz2brzt(r_in=self.eqm.Rmesh, z_in=Zmod, t_in=time)
+            Btot = squeeze(linalg.norm(B,axis=0)).T
+            wce = e*Btot/m_e/1e9 #GHz
+
+            nharm = 2
     
+            Rc = np.zeros((len(Zmod), len(fc)))
+            for i, wce_row in enumerate(wce):
+                Rc[i] = np.interp(-2*pi*fc,-wce_row*nharm,self.eqm.Rmesh)
+            
 
+            Rc = [Rc[len(Zmod)-int(n[:2])+3-1,len(fc)-int(n[2:])+1-1] for n in names]
+            Zc = [Zmod[len(Zmod)-int(n[:2])+3-1] for n in names]
+             
+            #plot(Rc,Zc,'x')
+            #show()
+        
+        Rc,Zc = array(Rc),array(Zc)
+  
         r0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Rmag'])+dR
         z0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Zmag'])+dZ
 
@@ -270,7 +282,9 @@ class loader_ECEI(loader):
 
     
     def get_signal(self,group, names,calib=False,tmin=None,tmax=None):
-      
+        if len(names) == 0:
+            return [],[]
+
         if isinstance(names, str):
             names = [names]
  
@@ -295,7 +309,7 @@ class loader_ECEI(loader):
         for n in atleast_1d(names):
             for it in time_intervals:
                 seg = f'{group+n}_{it}'
-                if seg not in self.data_dict:
+                if len(self.data_dict.get(seg, [])) <= 1:
                     load_seg.append(seg)
                     load_name.append(n)
         
@@ -317,15 +331,20 @@ class loader_ECEI(loader):
            
             #identify saturated data and calibrate signals
             for s,n, o in zip(load_seg,load_name, out):
-                saturated  = np.abs(o) == 2**15
-                o -= int32(self.calib[n][1])
-                o = float32(o)
-                o*= -float32(self.calib[n][0])
-                self.data_dict[s] = ma.array(o, mask=saturated)
- 
+                if len(o) > 1:
+                    saturated  = np.abs(o) == 2**15
+                    o -= int32(self.calib[n][1])
+                    o = float32(o)
+                    o*= -float32(self.calib[n][0])
+                    self.data_dict[s] = ma.array(o, mask=saturated)
+                else:
+                    self.data_dict[s] = o
+    
         for it in time_intervals:
             if it not in self.tvec:
-                nt = len(self.data_dict[ f'{group+names[0]}_{it}'])
+                for n in names:
+                    nt = len(self.data_dict[ f'{group+n}_{it}'])
+                    if nt > 1: break
                 self.tvec[it] = np.linspace(self.time_header[0,it],self.time_header[1,it], nt)
         
         tvec = np.hstack([self.tvec[it] for it in time_intervals])
@@ -340,6 +359,10 @@ class loader_ECEI(loader):
             	Te = np.ma.hstack([self.data_dict[f'{group+n}_{it}'] for it in time_intervals])	
             else:
                 Te = self.data_dict[f'{group+n}_{time_intervals[0]}']
+            
+            if len(Te) != len(tvec):
+                print(f'data from  channel {n} are not available')
+                Te = np.zeros_like(tvec, dtype='single')
             output.append([tvec[imin:imax], Te[imin:imax]])
  
         #calibrate using zipfit data, offset is already set to be zero
@@ -365,7 +388,7 @@ class loader_ECEI(loader):
     
   
         
-    def get_Te0(self,tmin,tmax,dR=0,dZ=0,R=None,Z=None):
+    def get_Te0(self,tmin,tmax,dR=0,dZ=0,R=None,Z=None, returnTeNe=False):
         #load ziprofiles
         try:
             if not hasattr(self,'zipcache'):
@@ -380,7 +403,8 @@ class loader_ECEI(loader):
                 zip_tvec = self.MDSconn.get('dim_of(_x,1)').data()
                 zip_tvec/= 1e3#s
                 zip_rho = self.MDSconn.get('dim_of(_x,0)').data()
-                zip_rho = self.eqm.rho2rho(zip_rho,zip_tvec,coord_in='rho_tor', coord_out=self.rho_lbl)
+                
+                zip_rho = self.eqm.rho2rho(zip_rho,zip_tvec,coord_in='rho_tor', coord_out=self.rho_lbl, extrapolate=True)
                 self.MDSconn.closeTree('ELECTRONS',self.shot)
                 self.zipcache = zip_tvec,zip_rho, ZipTe, ZipNe
             
@@ -391,6 +415,8 @@ class loader_ECEI(loader):
             
             imin,imax = zip_tvec.searchsorted((tmin,tmax))
             Te = median(ZipTe[imin:imax+1], 0)
+            Ne = median(ZipNe[imin:imax+1], 0)
+
             zip_rho = mean(zip_rho[imin:imax+1], 0)
             time = (tmin+tmax)/2
             
@@ -399,13 +425,19 @@ class loader_ECEI(loader):
             else:
                 rho = self.eqm.rz2rho(R[None],Z[None],time,self.rho_lbl)[0]
 
-            
-            Te_ece = interp(abs(rho), zip_rho,Te )
+       
+            Te = interp(abs(rho), zip_rho,Te )
+            Ne = interp(abs(rho), zip_rho,Ne )
+      
+
         except Exception as e:
             print('Zipfit error', e)
             return None,None
         
-        return rho,Te_ece
+        if returnTeNe:
+            return rho,Te, Ne
+        
+        return rho,Te
         
         
     
@@ -451,7 +483,7 @@ class loader_ECEI(loader):
         try:
             info = 'sys: '+group+ ' ch: '+str(name)+'  R:%.3f m   '%R+self.rho_lbl+': %.3f'%rho
         except:
-            print( 'signal_info err')
+            print( traceback.format_exc())
             info = ''
         return info
     
@@ -470,7 +502,7 @@ def main():
  
     from time import time as T
     mds_server = "localhost"
-    mds_server = "atlas.gat.com"
+    #mds_server = "atlas.gat.com"
     import MDSplus as mds
 
     MDSconn = mds.Connection(mds_server )
@@ -480,14 +512,14 @@ def main():
     MDSconn2 = mds.Connection(mds_server )
 
 
-    ecei = loader_ECEI(191827 ,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
+    ecei = loader_ECEI(191823 ,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
     names = ecei.get_names('LFS')
-    #R,Z,T = ecei.get_RZ_theta(2.1, 'LFS', names)
+    R,Z,T = ecei.get_RZ_theta(2.1, 'LFS', names)
         #def get_RZ_theta(self, time, system, names,dR=0,dZ=0):
 
-    TT =  T()
-    signals = ecei.get_signal('LFS',names, calib=True, tmin=3, tmax=3.6)
-    print(T()-TT)
+    #TT =  T()
+    #signals = ecei.get_signal('LFS',names, calib=True, tmin=3, tmax=3.6)
+    #print(T()-TT)
     exit()
  
      

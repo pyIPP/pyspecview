@@ -6,6 +6,7 @@ except:
 import os
 from multiprocessing import  Pool
 import MDSplus as mds
+import traceback
 
 #TODO lod only a data slice
 #TODO calibration for all diagnostics 
@@ -157,7 +158,7 @@ class loader_ECE(loader):
         nch = atleast_1d(int_(names))
         
          
-        load_ch = [n for n in nch if n not in self.data_dict]
+        load_ch = [n for n in nch if len(self.data_dict.get(n,[])) <= 1]
 
 
         #BUG https://diii-d.gat.com/diii-d/ECE#pointnames
@@ -167,9 +168,8 @@ class loader_ECE(loader):
             #NOTE ece data can be splitted in halve and fetch separatelly
             
             TDI = [f'PTDATA2("{self.channels[n-1]}", {self.shot}, 4)' for n in load_ch]
-            tt = T()
-            out = mds_load_par( self.MDSconn, TDI)
-            for n, Te in zip(load_ch, out ):
+            out = mds_load_par(self.MDSconn, TDI)
+            for n, Te in zip(load_ch, out):
                 self.data_dict[n] = Te
      
         
@@ -185,8 +185,8 @@ class loader_ECE(loader):
         #calibrate data locally, faster then fetching of calibrated data
         for n in load_ch:
             Te  = self.data_dict[n]
-            if len(Te) in [0,1]: 
-                self.data_dict[n] = np.zeros_like(self.tvec, dtype='single')
+            #fast data not availible 
+            if len(Te) <= 1: 
                 continue
          
             C1 = float(self.cc1f[n-1])
@@ -209,8 +209,14 @@ class loader_ECE(loader):
                 
             self.data_dict[n] = Te
             
-     
-        output = [[self.tvec[imin:imax],  self.data_dict[n][imin:imax]] for n in nch]
+            
+        output = []
+        for n in nch:
+            if len(self.data_dict[n]) > 1:
+                output.append([self.tvec[imin:imax],  self.data_dict[n][imin:imax]])
+            else:
+                output.append([self.tvec[imin:imax],  self.zeros(imax-imin, dtype='single')])
+ 
         if len(nch) == 1:
             return output[0]
         else:
@@ -223,7 +229,7 @@ class loader_ECE(loader):
     
     def get_RZ_theta(self, time,names,dR=0,dZ=0):
 
-        if hasattr(self,'tvec'):
+        if self.tvec is not None:
             time = clip(time, *self.tvec[[0,-1]])
   
         B = self.eqm.rz2brzt(r_in=self.eqm.Rmesh, z_in=self.z, t_in=time)
@@ -231,31 +237,43 @@ class loader_ECE(loader):
         
         ch_ind = atleast_1d(in1d(self.names, int_(names)))
         
-        from scipy.constants import m_e, e, c
+        Zlos = .004
+                    
 
-        #Accounting for relativistic mass downshift
+        Rmesh = np.linspace(self.eqm.Rmesh[0], self.eqm.Rmesh[-1], 200)
+        Zmesh = np.linspace(self.eqm.Zmesh[0], self.eqm.Zmesh[-1], 300)
+
+        
+        #position including relativistic shift and diffraction
         try:
-            Te =  self.get_Te0(time,time,R=self.eqm.Rmesh,
-                                Z=self.z*ones_like(self.eqm.Rmesh))[1][0]
-
-            v=sqrt(2*Te*e/m_e)
-            gamma = 1/sqrt(1-(v/c)**2)
+            B = self.eqm.rz2brzt(r_in=Rmesh, z_in=Zmesh, t_in=time)
+            Btot = squeeze(linalg.norm(B,axis=0)).T
+            from ._ECE_chord import ece_los
+            Rcm,Zcm = np.meshgrid(Rmesh, Zmesh)
+            _, Te, Ne = self.get_Te0(time,time,R=Rcm,Z=Zcm, returnTeNe=True)
+         
+            R,z = [],[]
+            for f_los in self.freq[ch_ind]:
+                _,_, R_res, Z_res = ece_los(f_los, Zlos, Rmesh, Zmesh, Btot, Ne, Te)
+                R.append(R_res)
+                z.append(Z_res)
+            R,z =  array(R), array(z) 
+ 
         except:
-            print( 'relativistic mass downshift could not be done')
-            gamma = 1
-            
-        wce = e*Btot/(m_e*gamma)
-
-        nharm = 2
-        R = interp(-2*pi*self.freq[ch_ind],-wce*nharm,self.eqm.Rmesh)
-        z = self.z*ones_like(R)+.004
+            raise
+            from scipy.constants import m_e, e, c
+            wce = e*Btot/m_e
+            nharm = 2
+            R = interp(-2*pi*self.freq[ch_ind],-wce*nharm,self.eqm.Rmesh)
+            z = self.z*ones_like(R)+Zlos
 
         r0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Rmag'])+dR
         z0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Zmag'])+dZ
 
         return R,z, arctan2(z-z0, R-r0)
         
-    def get_Te0(self,tmin,tmax,IDA=True,dR=0,dZ=0,R=None,Z=None):
+ 
+    def get_Te0(self,tmin,tmax,dR=0,dZ=0,R=None,Z=None, returnTeNe=False):
         #load ziprofiles
         try:
             if not hasattr(self,'zipcache'):
@@ -270,7 +288,8 @@ class loader_ECE(loader):
                 zip_tvec = self.MDSconn.get('dim_of(_x,1)').data()
                 zip_tvec/= 1e3#s
                 zip_rho = self.MDSconn.get('dim_of(_x,0)').data()
-                zip_rho = self.eqm.rho2rho(zip_rho,zip_tvec,coord_in='rho_tor', coord_out=self.rho_lbl)
+                
+                zip_rho = self.eqm.rho2rho(zip_rho,zip_tvec,coord_in='rho_tor', coord_out=self.rho_lbl, extrapolate=True)
                 self.MDSconn.closeTree('ELECTRONS',self.shot)
                 self.zipcache = zip_tvec,zip_rho, ZipTe, ZipNe
             
@@ -281,21 +300,29 @@ class loader_ECE(loader):
             
             imin,imax = zip_tvec.searchsorted((tmin,tmax))
             Te = median(ZipTe[imin:imax+1], 0)
+            Ne = median(ZipNe[imin:imax+1], 0)
+
             zip_rho = mean(zip_rho[imin:imax+1], 0)
             time = (tmin+tmax)/2
             
             if R is None and Z is None:
                 rho = self.get_rho('',self.names,time,dR=dR,dZ=dZ)[0]
             else:
-                rho = self.eqm.rz2rho(R,Z,time,self.rho_lbl)
-    
-            
-            Te_ece = interp(abs(rho), zip_rho,Te )
+                rho = self.eqm.rz2rho(R[None],Z[None],time,self.rho_lbl)[0]
+
+       
+            Te = interp(abs(rho), zip_rho,Te )
+            Ne = interp(abs(rho), zip_rho,Ne )
+      
+
         except Exception as e:
             print('Zipfit error', e)
-            return 
+            return None,None
         
-        return rho,Te_ece
+        if returnTeNe:
+            return rho,Te, Ne
+        
+        return rho,Te
         
         
     
@@ -338,7 +365,7 @@ class loader_ECE(loader):
         try:
             info = 'ch: '+str(name)+'  R:%.3f m   '%R+self.rho_lbl+': %.3f'%rho
         except:
-            print( 'signal_info err')
+            print( traceback.format_exc())
             info = ''
         return info
     
@@ -362,13 +389,13 @@ def main():
     MDSconn = mds.Connection(mds_server )
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
-    eqm.Open(178924,diag='EFIT01' )
+    eqm.Open( 191823 ,diag='EFIT01' )
     MDSconn2 = mds.Connection(mds_server )
 
 
-    ece = loader_ECE(178924,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
+    ece = loader_ECE( 191823 ,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
     #cd 
-    #ece.get_RZ_theta( 3,range(1,40),dR=0,dZ=0)
+    ece.get_RZ_theta( 3,range(1,40),dR=0,dZ=0)
     #ece.get_Te0(2,3)
     
     #print ece.get_rho('ece', ece.names,0.1)
@@ -382,7 +409,7 @@ def main():
 
     #import IPython
     #IPython.embed()
-    #exit()
+    exit()
 
     #f = file('pokus', 'wb')
     #pickle.dump(MDSconn , f, 2)

@@ -1102,6 +1102,56 @@ class STFTDisplay():
             self.im_ax.set_xlim(xstart, xend)
         
 
+def calculate_cmplx_phase(tvec, cross_signal,  f_range):
+    
+    
+    f_nq = (len(tvec)-1)/(tvec[-1]-tvec[0])/2
+ 
+    f0 = np.mean(f_range)
+    nfft = next_fast_len(cross_signal.size)
+
+    cross_signal = detrend(cross_signal)
+ 
+    # filter crosscorrelation signal in the selected frequency window
+    fcross_signal = np.fft.rfft(cross_signal, nfft)
+    
+    df = f_nq/(nfft//2+1)
+    ifmin = int(max(1, round(f_range[0]/df)))
+    ifmax = int(min(len(cross_signal)//2+1, round(f_range[1]/df)))
+    #sharp rectangular window in fourier space
+
+    fcross_signal[:ifmin] = 0
+    fcross_signal[ifmax:] = 0
+    
+    cross_signal_fband = np.fft.irfft(fcross_signal)[:len(cross_signal)]
+    
+    #get an envelope
+    from scipy.signal import argrelmax
+    i = argrelmax(np.abs(cross_signal_fband), mode='wrap')[0][1:-1]
+    try:
+        envelope = np.interp(arange(len(cross_signal)), i, np.abs(cross_signal_fband)[i])
+    except:
+        envelope = np.abs(cross_signal_fband)
+    
+
+    #normalize the aplitude
+    b, a = butter(3, f0/f_nq*.5, 'lowpass')
+    padlen = min(len(cross_signal)//2, 100)
+    if not np.any(np.abs(np.roots(a))>=1):   envelope = filtfilt(b, a, envelope, padtype='even', padlen=padlen)
+
+    cross_signal = np.copy(cross_signal_fband)
+    cross_signal/= np.maximum(envelope, envelope.max()/20)[:len(cross_signal)]
+    #signal whitening 
+    cross_signal-= np.mean(cross_signal)
+    cross_signal/= np.std(cross_signal)*np.sqrt(2)
+    
+
+    #get a 90 degrees shifted complex part 
+    cmplx_sig = hilbert(cross_signal, nfft)[:cross_signal.size]
+
+    return cmplx_sig
+ 
+ 
 def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=None):
     
     from scipy.signal import get_window
@@ -1129,7 +1179,7 @@ def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=
     
     f0 = np.mean(f_range)
     df = np.diff(f_range)[0]
-    
+ 
     if0 = fvec[1:].searchsorted(f0)
     idf  = fvec[1:].searchsorted(df)
     
@@ -1194,65 +1244,33 @@ def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=
         #measure a cross phase with respect to the strongest signal
         cross_sig_num = np.argmax(amplitude[0]/(fft_signoise+np.nanmean(fft_signoise)*1e-6+corrupted))      
         cross_signal = data[cross_sig_num]
-        
-
-        
-    dt = (tvec[-1]-tvec[0])/(len(tvec)-1)
-    f_nq = .5/dt 
-    cross_signal = detrend(cross_signal)
  
-    # filter crosscorrelation signal in the selected frequency window
-    fcross_signal = np.fft.rfft(cross_signal, nfft)
-    
-    df = f_nq/(nfft//2+1)
-    ifmin = int(max(1, round(f_range[0]/df)))
-    ifmax = int(min(len(cross_signal)//2+1, round(f_range[1]/df)))
-    #sharp rectangular window in fourier space
+    #demodulation signal from the measured signal 
+    cmplx_sig = calculate_cmplx_phase(tvec, cross_signal,  f_range)
+ 
 
-    fcross_signal[:ifmin] = 0
-    fcross_signal[ifmax:] = 0
     
-    cross_signal_fband = np.fft.irfft(fcross_signal)[:len(cross_signal)]
-    
-    #get an envelope
-    from scipy.signal import argrelmax
-    i = argrelmax(np.abs(cross_signal_fband), mode='wrap')[0][1:-1]
-    try:
-        envelope = np.interp(tvec, tvec[i], np.abs(cross_signal_fband)[i])
-    except:
-        envelope = np.abs(cross_signal_fband)
-    
-
-    #normalize the aplitude
-    b, a = butter(3, f0/f_nq*.5, 'lowpass')
-    padlen = min(len(cross_signal)//2, 100)
-    if not np.any(np.abs(np.roots(a))>=1):   envelope = filtfilt(b, a, envelope, padtype='even', padlen=padlen)
-
-    cross_signal = np.copy(cross_signal_fband)
-    cross_signal/= np.maximum(envelope, envelope.max()/20)[:len(cross_signal)]
-    #signal whitening 
-    cross_signal-= np.mean(cross_signal)
-    cross_signal/= np.std(cross_signal)*np.sqrt(2)
-    
-
-    #get a 90 degrees shifted complex part 
-    cmplx_sig = hilbert(cross_signal, nfft)[:tvec.size]
-
-    amplitude2 = np.zeros((n_harm, len(data)))
-    phi2       = np.zeros((n_harm, len(data)))
     #demodulate signal and find the first component
-
-    
     complex_harm = np.zeros((n_harm, tvec.size), dtype='complex')
     complex_harm[0] = cmplx_sig
     for i in range(1, n_harm):
         complex_harm[i] = complex_harm[i-1]*cmplx_sig
     #make it more othogonal
     complex_harm, _ = np.linalg.qr(complex_harm.T)
+    
+    #calculated harmonics will exactly corresponds to 
+    it = len(tvec)//2
+    t0 = tvec[it]
+    complex_harm *= np.conj(complex_harm[it])/np.abs(complex_harm[it])
+        
+    #estimate average modulation frequency
+    zero_crossings = np.where(np.diff(np.sign(cmplx_sig.real)))[0]
+    f0 = 1/np.median(np.diff(tvec[zero_crossings]))
             
     retro = np.zeros((tvec.size, len(data)))
     error = np.zeros(len(data))
-    
+    harm  = np.zeros((n_harm, len(data)), dtype='complex')
+
     #remove issues with boundary effects
     win = get_window('hann', tvec.size, fftbins=False).astype('single')   
     win /= np.sum(win)/np.sqrt(len(win))
@@ -1266,20 +1284,19 @@ def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=
         #perform a least squares fit of the orthonormal complex prototype to the measured signal
         sig_ = win*(sig-offset[j])
         #harm = 2*np.dot(win*(sig-offset[j]), np.conj(complex_harm))   
-        harm = np.array([2*(sig_*np.conj(ch)).sum() for ch in complex_harm.T])
-        amplitude2[:, j] = np.abs(harm)
-        phi2[:, j] = np.angle(harm)
+        harm[:,j] = [2*(sig_*np.conj(ch)).sum() for ch in complex_harm.T]
         #retrofit of the measured signal 
-        retro[:, j] = np.dot(complex_harm, harm*np.sqrt(len(win))).real
+        retro[:, j] = np.dot(complex_harm, harm[:,j]*np.sqrt(len(win))).real
         retro[:, j] += offset[j]
         #this might be wrong if there is another non-random signal
-        error[j] = (sig-retro[:, j]).std()
-    
-    error *= np.sum(win**2)/np.sqrt(len(tvec))
+        error[j] = (sig-retro[:, j]).std() #sqrt(chi2/n)
         
-    corrupted |= amplitude2[0] == 0   
     
-    return n_harm, amplitude, tvec, cross_signal, amplitude2, phi2, retro, offset, error, corrupted, cross_sig_num
+    error *= np.sum(win**2)/np.sqrt(len(tvec)) #first term accounts for window weights, should be one for rectangular? , secomd term is just for averaging of normally distributed noise
+        
+    corrupted |= np.abs(harm[0]) == 0   
+    
+    return n_harm, amplitude, tvec, cross_signal, harm, retro, offset, error, corrupted, f0, t0
 
 
 class RadialViewer:
@@ -1390,6 +1407,7 @@ class RadialViewer:
         #reset when the shot number is changed
         if self.initialized:
             self.fig.clf()
+            self.cross_signal = None
             self.__init__( self.parent, self.fig, self.n_harm_max, self.rho_lbl)
         
     def set_data(self, diag, rho, theta0, signal, R, Z, Phi, mag_coord_diag, mag_coord_data, qsurfs, units):
@@ -1436,8 +1454,13 @@ class RadialViewer:
         
         out = extract_harmonics(self.data,self.t_range,self.f_range,
                                 self.n_harm_max,  self.cross_signal)
+        n_harm, amplitude, self.tvec, _, harm, _, offset, error, corrupted, f0, t0 = out
+        
+        self.phi2 = np.angle(harm)
+        self.amplitude2 = np.abs(harm)
+        
 
-        n_harm, amplitude, self.tvec, cross_signal, self.amplitude2, self.phi2, self.retro, offset, error, corrupted, cross_sig_num = out
+        #n_harm, amplitude, self.tvec, cross_signal, self.amplitude2, self.phi2, self.retro, offset, error, corrupted, cross_sig_num = out
 
         #map poloidal theta of the diagnostic to the theta_star (WARNING theta star from CLISTE is not very accurate!!)
         theta_star0 = np.zeros_like(self.theta0)
@@ -1630,6 +1653,8 @@ class Diag2DMapping(object):
     def reset(self):
         if self.initialized:
             self.fig.clf()
+            self.show_ecei.setChecked(False)
+            self.cross_signal = None
             self.__init__( self.parent, self.fig, self.n_contour, self.remback_button, self.show_ecei)
 
             
@@ -1647,17 +1672,15 @@ class Diag2DMapping(object):
 
  
         out = extract_harmonics(data,self.t_range, self.f_range,n_harm, cross_tvec_signal=self.cross_signal)
-        n_harm, amplitude, tvec, cross_signal, amplitude2, phi2, retro, offset, error, corrupted, cross_sig_num = out
+        _, _, tvec, _, harm, retro, _, _, _, f0, t0 = out
+
      
         
         rho[np.isnan(rho)|(R<1)] = 2   
-        #nlfs = np.sum((np.abs(rho)<=1)&(rho>=0)&np.isfinite(amplitude2[0]))
-        #nhfs = np.sum((np.abs(rho)<=1)&(rho<=0)&np.isfinite(amplitude2[0]))
-        
-        #rho_sign = 1 if nhfs <= nlfs else -1
+
         rho_sign = 1 if use_LFS_data else -1
             
-        ind = (np.abs(rho)<=1)&(rho_sign*rho>=0)&np.isfinite(amplitude2[0])
+        ind = (np.abs(rho)<=1)&(rho_sign*rho>=0)&np.isfinite(harm[0])
         
         self.plot_ece_active.set_data( R[ ind], Z[ ind])
         self.plot_ece_ignored.set_data(R[~ind], Z[~ind])
@@ -1708,9 +1731,9 @@ class Diag2DMapping(object):
  
         out = extract_harmonics(data, self.t_range, self.f_range, self.n_harm,
                               cross_tvec_signal=self.cross_signal)
-        n_harm, amplitude, tvec, cross_signal, amplitude2, phi2, \
-                          retro, offset, error, corrupted, cross_sig_num = out
         
+        _, _, tvec, _, _, retro, offset, _, corrupted, f0, t0 = out
+ 
                 
         nrad = 8
         npol = R.size//nrad
@@ -1798,7 +1821,6 @@ class Diag2DMapping(object):
                 it = np.argmin(np.abs(t-np.mean(self.t_range)))
                 R.append(r[it])
                 Z.append(z[it])
-            logger.info( 'Replot ECH location')
             self.ech_location.set_data(R,Z)
  
         
@@ -1953,10 +1975,8 @@ class Diag2DMapping(object):
         mode_Te = self.shiftTe()/self.fact
 
         if not filled_contours or self.sxr_emiss is not None:
-            if self.substract:
-                levels=np.linspace(self.vmin, self.vmax, 15)
             ax.Te_contour = ax.contour(self.Rmag_ece, self.Zmag_ece, mode_Te, extend='both', linewidths = .5, 
-                            vmin=self.vmin, vmax=self.vmax, levels=levels, colors='k')
+                            vmin=self.vmin, vmax=self.vmax, levels=self.levels, colors='k')
             collections += (ax.Te_contour.collections, )
 
         else:
@@ -1987,6 +2007,7 @@ class Diag2DMapping(object):
             R,Z,Phi = self.coord2D
             #BUG just guess of the most common mode!!
             n = (0, 1, 1, 2, 3, 3)[np.abs(self.m)]  
+            #logger.debug(f'Assume mode m/n = {self.m}/{n}')
 
             #toroidal shift betwen ECE and ECEI results in some time shift between the data            
             dPhi = -Phi + self.Phi0    
@@ -2374,21 +2395,31 @@ class MainGUI(QMainWindow):
             self.save_anim_action.setEnabled(True)
                 
         elif new_panel == '2D SXR':
-            
-            tmin, tmax = selected_trange
-            fmin, fmax = selected_frange
-            
+ 
             if self.SpecWin.initialized:
-                sig0 = self.SpecWin.stft_disp.signal
-                tvec0 = self.SpecWin.stft_disp.tvec
-                if self.roto_tomo.initialized and self.roto_tomo.tmin == tmin and self.roto_tomo.tmax == tmax\
-                    and self.roto_tomo.fmin == fmin and self.roto_tomo.fmax == fmax and self.shot == self.roto_tomo.shot:
-                        pass  #if nothing has changed, just continue 
+                
+                if self.signal_radial is None:
+                    #use the signal shown in the spectrogram
+                    cross_sig = self.SpecWin.stft_disp.tvec, self.SpecWin.stft_disp.signal 
+                else:
+                    cross_sig = self.data_loader_radial.get_signal(self.diag_group_radial, 
+                                    self.signal_radial, calib=False, tmin=selected_trange[0], tmax=selected_trange[1])
+                
+                #get signal for demodulation of experimental data 
+                cmplx_sig = calculate_cmplx_phase(cross_sig[0], cross_sig[1], selected_frange)
+
+ 
+                if self.roto_tomo.initialized and self.roto_tomo.selected_trange == selected_trange\
+                        and self.roto_tomo.selected_frange == selected_frange\
+                        and self.shot == self.roto_tomo.shot:
+                        pass  #if nothing has changed, just continue
+                    
                 elif self.shot is not None:
   
                     #update also tomography
                     try:
-                        self.roto_tomo.prepare_tomo(self.tokamak, self.shot, tmin, tmax, fmin, fmax, self.eqm, tvec0, sig0)
+                        self.roto_tomo.prepare_tomo(self.tokamak, self.shot,  selected_trange,
+                                                    selected_frange, self.eqm, [cross_sig[0], cmplx_sig])
                     except:
                         print('rotation tomography failed')
                         print( traceback.format_exc())
@@ -2397,7 +2428,6 @@ class MainGUI(QMainWindow):
                         return 
 
                     if self.roto_tomo.showTe:
-                        logger.info('prepare ECE')
                         #update also 2D Te 
                         curr_tab = self.curr_tab
                         self.updatePanels(self.tables_names.index('2D Te'))
@@ -3049,6 +3079,7 @@ class MainGUI(QMainWindow):
 
 
         if not self.signal_radial is None:
+            T = time.time()
             cross_sig = self.data_loader_radial.get_signal(self.diag_group_radial, 
                                     self.signal_radial, calib=False, tmin=tmin, tmax=tmax)
 
@@ -3057,6 +3088,9 @@ class MainGUI(QMainWindow):
                                     self.signal_radial, t0)
             InfoThread = GetInfoThread(self, self.data_loader_radial.signal_info, 
                             self.diag_group_radial, self.signal_radial, t0)
+            
+            if time.time()-T  > 0.1:
+                logger.info('Cross-signal data loaded in %5.2fs', (time.time()-T))
 
         else:
             InfoThread = GetInfoThread(self, self.data_loader.signal_info, self.diag_group, self.signal, t0)
@@ -3154,10 +3188,11 @@ class MainGUI(QMainWindow):
                                     self.signal_radial, t0)
             InfoThread = GetInfoThread(self, self.data_loader_radial.signal_info, 
                             self.diag_group_radial, self.signal_radial, t0)
-
-        else:
-            #TODO what was this doing?
-            InfoThread = GetInfoThread(self, self.data_loader_2Dmap.signal_info, group, self.signal, t0)
+            InfoThread.finished.connect(self.statusBar().showMessage)
+            InfoThread.start()
+        #else:
+            ##TODO what was this doing?
+            #InfoThread = GetInfoThread(self, self.data_loader_2Dmap.signal_info, group, self.signal, t0)
 
 
 
@@ -3203,8 +3238,7 @@ class MainGUI(QMainWindow):
         
 
 
-        InfoThread.finished.connect(self.statusBar().showMessage)
-        InfoThread.start()
+
 
         try:
             description = self.data_loader_2Dmap.get_description(group, 'all')
@@ -3251,12 +3285,15 @@ class MainGUI(QMainWindow):
         if not (self.data_loader_ECEI.LFSGOOD or self.data_loader_ECEI.HFSGOOD):
             QMessageBox.warning(self, "NO ECEI data",
                         'ECEI data are not availible for this shot', QMessageBox.Ok)
+            self.show_ecei.setChecked(False)
+
             return 
 
         #teh HFS system on DIII-D is broken, but can be added in the future
         group = 'LFS'
         names = self.data_loader_ECEI.get_names(group)
-        data = self.data_loader_ECEI.get_signal(group, names, calib=True, tmin=tmin, tmax=tmax)
+        data = self.data_loader_ECEI.get_signal(group, names, calib=True,
+                                                    tmin=tmin, tmax=tmax)
         
         #make sure that chnage in data_loader will not affect data cached in data_loader_2Dmap
 

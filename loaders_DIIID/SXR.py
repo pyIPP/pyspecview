@@ -469,7 +469,8 @@ def get_calib(shot,calib_path,cam):
     except Exception:
         print('Calibration shot is last shot!')
         whs = len(shots)-1
-
+        
+ 
     Rc, Gain, filter = Rc[whs], Gain[whs], Filt[whs]
     
 
@@ -619,37 +620,44 @@ def get_calib_fact(shot, geometry_path,  toroidal=False):
 
 
 
-
-### UP TO HERE FROM OMFIT !!!!!!
-
+ 
 def mds_load(tmp):
-    mds_server,   TDI = tmp
+    mds_server,  TDI = tmp
     MDSconn = mds.Connection(mds_server )
-    output = [MDSconn.get(tdi).data() for tdi in TDI]
-    #mds.DisconnectFromMds()
+    data = []
+    for tdi in TDI:
+        try:
+            data.append(MDSconn.get(tdi).data())
+        except:
+            data.append([])
+    return data
 
-    return output
 
-def mds_par_load(mds_server,   TDI,  numTasks):
+def mds_par_load(MDSconn,   TDI,  numTasks=8):
+    mds_server = MDSconn.hostspec
+
+    if len(TDI)  == 1:
+        return [MDSconn.get(TDI[0])]
+        
 
     #load a junks of a single vector
-
     TDI = array_split(TDI, min(numTasks, len(TDI)))
 
     args = [(mds_server,  tdi) for tdi in TDI]
 
     pool = Pool(len(args))
-    
-   
     out = pool.map(mds_load,args)
+    
+    
+    out = []
+    pool = Pool()
+    for o in pool.map(mds_load,args):
+        out.extend(o)
+        
     pool.close()
     pool.join()
 
-    output = []
-    for o in out:output+= o
-
-    
-    return  output
+    return  out
     
 
 
@@ -675,8 +683,9 @@ class loader_SXR(loader):
         
         self.fast_data = {}
         self.catch={}
+        self.time_header_pol = None
+        self.time_header_tor = None
         self.time_header = {}
-
 
         
         self.names = {}
@@ -686,7 +695,7 @@ class loader_SXR(loader):
         self.names['90RM1'] = arange(1,33)
         self.names['90RP1'] = arange(1,33)
         
-        self.n_chunks = {'165R1':5,'45R1':5,'195R1':5,'90RM1':4,'90RP1':4}
+        #self.n_chunks = {'165R1':5,'45R1':5,'195R1':5,'90RM1':4,'90RP1':4}
 
         
         if self.shot > 168847: #only one toroidal camera is operational
@@ -763,12 +772,19 @@ class loader_SXR(loader):
                        '45R1':xangle_t[0:12],'165R1':xangle_t[12:24],'195R1':xangle_t[24:36]}
         
         
+        self.time_header_pol
+        time_header = self.MDSconn.get(f'PTHEAD2("SX90F01",{self.shot}); __real64').data()[2:]
+        self.time_header_pol = time_header.reshape(-1,2).T    
         
+        time_header = self.MDSconn.get(f'PTHEAD2("SX195F01",{self.shot}); __real64').data()[2:]
+        self.time_header_tor = time_header.reshape(-1,2).T    
+        
+
         
         self.cache_fast = {}
         self.cache_slow = {}
         for cam,names in list(self.names.items()):
-            self.cache_fast[cam] = {n:empty(self.n_chunks[cam],dtype=object) for n in names}
+            self.cache_fast[cam] = {}#{n:empty(self.n_chunks[cam],dtype=object) for n in names}
             self.cache_slow[cam] = {}
      
 
@@ -779,91 +795,173 @@ class loader_SXR(loader):
         
         
     def get_signal_fast(self,group, names,calib=False,tmin=None,tmax=None):
-        
-        
+        print('----------------')
+        tt = T()
                 
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
      
         if size(names) == 1 and not isinstance(names,tuple):
             names = (names,)
+            
+            
+
         
         names = atleast_1d(squeeze(int_(names)))
-        num_MDS_Tasks = 8
-        MDSserver = self.MDSconn.hostspec
+        #MDSserver = self.MDSconn.hostspec
         group_ = group.split('R')
         
         group_ = group_[0]+group_[1][:-1]
         
-        n_chunks = self.n_chunks[group]
-  
+        
+        
+ 
+     
         if not group in self.time_header:
             time_header = self.MDSconn.get(f'PTHEAD2("SX{group_}F01",{self.shot}); __real64').data()[2:]
             self.time_header[group] = time_header.reshape(-1,2).T
             if all(self.time_header[group]==0):
                 raise Exception('Fast SXR data are not availible')
-     
+ 
+        if all(self.time_header[group]==0):
+            raise Exception('Fast SXR data are not availible')
+    
+        
         self.fast_data[group] = True
-  
+        print('timeheader', T()-tt)
    
         indmin = np.where(self.time_header[group][1] > tmin)[0][0]
         indmax = np.where(self.time_header[group][0] < tmax)[0][-1]+1
 
         index = arange(indmin,indmax)
+        #need the first time slice for  background substraction
         if calib: 
             index = unique(r_[0,index])
         
  
-        TDI = []
+        load_names = []
         for ch in names:
             for i in index:
-                if self.cache_fast[group][ch][i] is None:
-                    TDI.append(f'PTDATA2("SX{group_}F{ch:02d}_{i}",{self.shot},1)' )
-                    
+                name = f'{ch:02d}_{i}'
+                if len(self.cache_fast[group].get(name,[])) <= 1:
+                    load_names.append(name)
+        
+        
+        TDI = [f'PTDATA2("SX{group_}F{n}",{self.shot},1)' for n in load_names]
+        print(TDI)
+        print(T()-tt)
+       
         if len(TDI) > 0:
-            data = mds_par_load(MDSserver, TDI,  num_MDS_Tasks)
-
-     
-        j = 0
+            out = mds_par_load(self.MDSconn, TDI)
+            for n, o in zip(load_names, out):
+                self.cache_fast[group][n] = o
+                
+        print('--', T()-tt)
+        #embed()
+        #collect all data
+        data = []
         for ch in names:
-            for i in index:
-                if self.cache_fast[group][ch][i] is None:
-                    self.cache_fast[group][ch][i] = data[j]
-                    j+= 1
-                    
-    
-        sig  = [hstack(self.cache_fast[group][n][indmin:indmax]) for n in names]
-        tvec = np.linspace(self.time_header[group][0,indmin], self.time_header[group][1,indmax-1], len(sig[0]))
-
+            #sig = []
+            #for i in arange(indmin,indmax):
+                #sig.append(self.cache_fast[group][f'{ch:02d}_{i}'])
+            sig = [self.cache_fast[group][f'{ch:02d}_{i}'] for i in arange(indmin,indmax)]
+            if  any([len(s) <= 1  for s in sig]):
+                print('data for SXR {group}{ch} are not availible')
+                sig = None
+            elif len(sig) == 1:
+                sig = sig[0]
+            else:
+                sig = np.hstack(sig)
+            data.append(sig)
+   
+        #prepare time vectors
+        nt = max([len(o) for o in data])
+        tvec = np.linspace(self.time_header[group][0,indmin], self.time_header[group][1,indmax-1], nt)
         imin,imax = tvec.searchsorted([tmin,tmax])
         ind = slice(imin,imax+1)
         
- 
-        
+        #calibrate data
         if calib:
             data_offset = self.get_signal_fast(group, names,calib=False,tmin=-infty,tmax=0)
             if len(names) == 1:
                 data_offset = [data_offset]
 
             for i,n in enumerate(names):
-                sig[i] = sig[i]-data_offset[i][1].mean()
-                if group in self.calib:
-                    sig[i] *= self.calib[group][int(n)-1]
-        
-        
+                if len(data[i]):
+                    data[i] = data[i]-data_offset[i][1].mean()
+                    if group in self.calib:
+                        data[i] *= self.calib[group][int(n)-1]
             
-        if len(sig) == 1:
-            return tvec[ind], sig[0][ind]
         
-        
+        output = []
+ 
+        for sxr in data:
+            if len(sxr):
+                sxr = sxr[ind]
+            else:
+                sxr = np.zeros(imax-imin, dtype='single')
+            output.append([tvec[ind], sxr]) 
+     
+        print(T()-tt)
 
-        
-        return [(tvec[ind], s[ind]) for s in sig]
+        output = self.hardcoded_corrections(output, group, names, True)
+        print(T()-tt)
+        print('====================')
+
+        #embed()
+
+        if len(output) == 1:
+            return output[0]
+        else:
+            return output
             
     
                  
    
+    def hardcoded_corrections(self,output, camera, channels, fast_data):
+        channels = list(channels)
         
+        if self.shot < 166887 and camera == '90RP1' and 16 in channels:
+            output[channels.index(16)] *= 1.1
+            
+            
+        if self.shot < 166887 and not fast_data and camera == '90RM1' and 10 in channels and 11 in channels:
+            ch1 = channels.index(10) 
+            ch2 = channels.index(11 ) 
+            output[ch1], output[ch2] = output[ch2], output[ch1] 
+      
+            
+        #signal is inversed? 
+        if camera == '90RP1' and 22 in channels:
+            output[channels.index(22)][1] *= sign(output[channels.index(22)][1])
+            
+            
+        
+        if camera == '45R1' and 1 in channels and self.shot  < 180000:
+            #BUG od 166566 je to uz vetsi korekce  167451 to zase sedi? 
+            output[channels.index(1)][1]*= 1.17
+             
+            
+            
+            
+        if camera == '195R1':
+            if self.shot < 168847 and 1 in channels:
+                output[channels.index(1)][1] *= 2*0.96  #od 169350 je to horsi, zeby uz od 168847, od 169593zase prestrelene
+            elif self.shot < 175669 and 1 in channels:# 169593:
+                output[channels.index(1)][1] *= 2*0.96/1.53
+                
+            elif self.shot <  181100 and 1 in channels:
+                output[channels.index(1)][1] *= 2*0.96/1.53/1.1
+            elif 1 in channels:
+                output[channels.index(1)][1] *= 2*0.96/1.53/1.1*1.1
+            if self.shot >  181100 and 2 in channels:
+                output[channels.index(2)][1] *=   1.1
+            if fast_data and 11 in channels:
+                output[channels.index(11)][1] *=   -1#BUG? in shot 172221
+
+        
+        return output
+    
         
         
     def get_signal(self,group, names,calib=False,tmin=None,tmax=None, slow=False):
@@ -872,6 +970,7 @@ class loader_SXR(loader):
             try:
                 return self.get_signal_fast(group, names,calib=calib,tmin=tmin,tmax=tmax)
             except Exception as e:
+                raise
                 print(( 'SXR Error: '+ str(e)))
                     
         return self.get_signal_slow(group, names,calib=calib,tmin=tmin,tmax=tmax)
@@ -936,10 +1035,8 @@ class loader_SXR(loader):
             if n not in self.cache_slow[group]:
                 load_nch.append(n)
         if len(load_nch) > 0:
-            server = self.MDSconn.hostspec
-            numTasks = 8
             TDI = [TDIcall%n for n in  load_nch]
-            out = mds_par_load(server,   TDI,  numTasks)
+            out = mds_par_load(self.MDSconn ,   TDI)
 
             #print(( 'data loaded in %.2f'%( T()-t)))
 
@@ -1022,12 +1119,15 @@ def main():
     
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
-    eqm.Open(191870,diag='EFIT01' )
-    sxr = loader_SXR(191870,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
+    eqm.Open(175860,diag='EFIT01' )
+    sxr = loader_SXR(175860,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
     #from ECE import loader_ECE
     #ece = loader_ECE(175900,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
   
-    #tvec,data = sxr.get_signal( '90RP1',1, tmin=3, tmax = 3.1,calib=True)
+    out = sxr.get_signal( '195R1',arange(1,10), tmin=4.8, tmax = 4.9,calib=True)
+    embed()
+    
+    exit()
     names = sxr.get_names('90RP1')		
     rho_tg, theta_tg,R,Z = sxr.get_rho('90RM1', names,3)
     #plot(rho_tg);show()
