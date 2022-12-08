@@ -15,6 +15,7 @@ from matplotlib.ticker import MaxNLocator
 from matplotlib.widgets import MultiCursor
 #from .pyspecview import extract_harmonics
 
+from IPython import embed
 from copy import deepcopy
 try: #only for AUG
     import aug_sfutils as sf
@@ -87,23 +88,36 @@ class NavigationToolbar2(NavigationToolbar2QT):
 
 class DataSettingWindow(QMainWindow):
     dpi = 100
-    font_size = 10
+    fontsize = 10
     def __init__(self, parent, tomo):
         QMainWindow.__init__(self, parent)
         self.tomo = tomo
-        #self.tomo.SVDF = SVDF
-        self.setWindowTitle('Data preprocessing tool')
-
+        self.show_harm = False
+        if self.tomo.sxr_harmonics is not None:
+            self.show_harm = True
+        elif not hasattr(self.tomo,'tvec'):
+            QMessageBox.warning(self.parent,"No data",
+                    "Data wre not loaded! Missing fast SXR?",QMessageBox.Ok)
+            return
+        
+            
+        
         self.parent = parent
         self.det_num = []
         cWidget = QWidget(self)
         self.bg_col = cWidget.palette().color(QPalette.Base)
 
+        self.setWindowTitle('Data preprocessing tool')
         self.create_status_bar()
         self.create_main_frame()
-        self.create_Data_table()
-        self.create_SVD_table()
-        self.create_residuum_table()
+
+        if self.show_harm:
+            self.create_Harm_table()
+        else:
+            #self.tomo.SVDF = SVDF
+            self.create_Data_table()
+            self.create_SVD_table()
+            self.create_residuum_table()
         
         self.main_tab.setCurrentIndex(0)
         self.main_tab.setTabEnabled(0,True)
@@ -132,6 +146,136 @@ class DataSettingWindow(QMainWindow):
         frect.moveCenter(QDesktopWidget().availableGeometry(self).center());
         self.move(frect.topLeft())
             
+
+   
+    def create_Harm_table(self):
+        #plot 0th and 1-n th harmonics of the input data
+        self.tab_widget_harm = QWidget(self)
+        
+        self.main_tab.insertTab(0,self.tab_widget_harm, 'Data Harmonics')
+
+        self.tab_widget_harm.setSizePolicy(self.Expand)
+        self.verticalLayout_harm = QVBoxLayout(self.tab_widget_harm)
+        self.horizontalLayout_harm = QHBoxLayout()
+
+
+        self.fig_harm = plt.Figure((7.0, 5.0), dpi=self.dpi)
+        self.tab_widget_harm.setToolTip('Use left/right mouse button to remove/return point')
+
+        self.canvas_harm = FigureCanvas(self.fig_harm)
+        self.canvas_harm.setParent(self.cWidget)
+        
+        self.fig_harm.patch.set_facecolor((self.bg_col.red()/255., 
+                                           self.bg_col.green()/255., 
+                                           self.bg_col.blue()/255.))
+
+        self.canvas_harm.setSizePolicy(self.Expand)
+
+        self.verticalLayout_harm.addWidget(self.canvas_harm)
+
+        self.link = self.fig_harm.canvas.mpl_connect('pick_event', self.onpick_data)
+    
+        #prepare first data
+        self.groupBox = QGroupBox("")
+        self.gridLayout = QGridLayout(self.groupBox)
+        self.labelDetectors = QLabel( "Wrong detectors:")
+        self.Edit_wrongDetectors = QLineEdit()
+        self.gridLayout.addWidget(self.labelDetectors, 0, 0)
+        self.gridLayout.addWidget(self.Edit_wrongDetectors, 0, 1)
+
+        self.verticalLayout_harm.addWidget(self.groupBox)
+
+        self.OkButton=QPushButton("Close")
+    
+        self.gridLayout.addWidget(self.OkButton, 0, 2)
+
+
+        #self.mpl_toolbar_harm = NavigationToolbar2QT(self.canvas_harm, self.cWidget)
+        #self.verticalLayout_harm.addWidget(self.mpl_toolbar_harm)
+
+
+        #tooltips
+        self.Edit_wrongDetectors.setToolTip('Insert wrong detectors, use ":" for the intervals - 1,,3,5:40,...')
+        self.Edit_wrongDetectors.editingFinished.connect(self.dets_list_edited)
+
+  
+        plt.rcParams['xtick.direction'] = 'out'
+        plt.rcParams['ytick.direction'] = 'out'
+        self.fig_harm.clf()
+        self.fig_harm.subplots_adjust(left=.15 ,top=.90,right=.97,bottom=.05, hspace=0.03, wspace = 0.03)
+
+        self.ax_harm0 = self.fig_harm.add_subplot(211)
+        self.ax_harm1 = self.fig_harm.add_subplot(212, sharex=self.ax_harm0)
+
+        self.ax_harm0.point_label = self.ax_harm0.text(0,0,'', fontsize=8 ,zorder=99)
+        self.ax_harm1.point_label = self.ax_harm1.text(0,0,'', fontsize=8 ,zorder=99)
+
+        
+        self.nharm, self.nch = np.shape(self.tomo.all_bb)
+ 
+        self.err_plots = []
+
+        self.err_plots.append( self.ax_harm0.errorbar(0, 0, 0, fmt='.-',picker=True,
+                                capsize=0, label='0. harmonic'))
+
+
+        self.invalid_plot, = self.ax_harm0.plot([], [], 'ro',picker=True)
+
+
+        c = 'b', 'g', 'r', 'y', 'm'
+        for iharm in range(1,self.nharm):
+            self.err_plots.append(self.ax_harm1.errorbar(0, 0, 0, fmt='.-'+c[iharm%len(c)], 
+                            capsize=0, zorder=self.nharm-iharm, picker=True,
+                            label=f'{iharm}. harmonic'))
+
+        self.ax_harm0.legend(loc='upper right', fontsize  =  self.fontsize) 
+        self.ax_harm1.legend(loc='upper right', fontsize  =  self.fontsize) 
+        
+        self.ax_harm1.set_xlabel('Channel',fontsize= self.fontsize)
+
+        self.ax_harm0.xaxis.set_pickradius(2)
+        self.ax_harm0.yaxis.set_pickradius(2)
+        self.ax_harm1.xaxis.set_pickradius(2)
+        self.ax_harm1.yaxis.set_pickradius(2)
+
+
+            
+        for ind in self.tomo.tok.dets_index[:-1]:
+            self.ax_harm0.axvline(x=1.5+np.amax(ind), linestyle='--' ,color='k')
+            self.ax_harm1.axvline(x=1.5+np.amax(ind), linestyle='--',color='k')
+
+        for label in (self.ax_harm0.get_yticklabels() +self.ax_harm0.get_xticklabels()\
+                     + self.ax_harm1.get_yticklabels() + self.ax_harm1.get_xticklabels()):
+            label.set_fontsize( self.fontsize) # Size here overrides font_prop
+    
+        self.ax_harm1.xaxis.set_major_locator(MaxNLocator(12))
+
+        xax = self.ax_harm0.axes.get_xaxis()
+        xax = xax.set_visible(False)
+
+        #add upper axis with camera names 
+        xlabels = [np.median(ind) for ind in self.tomo.tok.dets_index]
+        labels = list(self.tomo.tok.detectors_dict.keys())
+        ax2 = self.ax_harm0.twiny()
+        ax2.set_xticks(xlabels)
+        ax2.set_xticklabels(labels,fontsize= self.fontsize)
+        ax2.set_xlim(0,self.nch)
+        ax2.tick_params(axis='x', which='major', pad=0) 
+        # critical for picking!!!! 
+        ax2.set_zorder(0) 
+        ax2.set_autoscaley_on(True) 
+        self.ax_harm0.set_zorder(1) 
+        self.fig_harm.sca(self.ax_harm0) 
+        self.multi_harm = MultiCursor(self.canvas_harm, [self.ax_harm0,self.ax_harm1], horizOn=False, color='k', lw=1)
+
+        self.ax_harm0.set_xlim(0,self.nch)
+
+        wrong =  self.ReadWrongDets(init=True)
+        self.SetWrongDets(wrong)
+        
+        #fill plots with data
+        self.RefreshEvent()
+        self.OkButton.clicked.connect(self.closeEvent)
         
     def create_Data_table(self):
         
@@ -159,7 +303,7 @@ class DataSettingWindow(QMainWindow):
         self.verticalLayout_data.addWidget(self.canvas_data )
 
         self.link = self.fig_data.canvas.mpl_connect('pick_event', self.onpick_data)
-        self.wrong_dets_mouse = []
+      
 
         #prepare first data
         self.groupBox = QGroupBox("")
@@ -202,16 +346,17 @@ class DataSettingWindow(QMainWindow):
         self.ax_data.point_label = self.ax_data.text(0,0,'', fontsize=8 ,zorder=99)
         extent = (0.5, self.nch+.5,tvec[0],tvec[-1])
         self.data_im = self.ax_data.imshow(np.ones((2,2)),cmap = 'jet',extent=extent
-                    ,interpolation='nearest', origin='lower', picker=1)
+                    ,interpolation='nearest', origin='lower', picker=True)
         self.ax_data.axis('tight')
-        self.ax_data.set_ylabel('Time [s]',fontsize=self.font_size)
-        self.ax_data.set_xlabel('Channel',fontsize=self.font_size)
-
+        self.ax_data.set_ylabel('Time [s]',fontsize= self.fontsize)
+        self.ax_data.set_xlabel('Channel',fontsize= self.fontsize)
+        self.ax_data.xaxis.set_pickradius(2)
+        self.ax_data.yaxis.set_pickradius(2)
         from make_graphs import LogFormatterTeXExponent
 
         cbar = self.fig_data.colorbar(self.data_im,format=LogFormatterTeXExponent('%.2e'))
         self.ax_data.axis((0.5, self.nch+.5,tvec[0],tvec[-1]))
-        cbar.ax.tick_params(labelsize=self.font_size ) 
+        cbar.ax.tick_params(labelsize= self.fontsize ) 
         cbar.locator = MaxNLocator(nbins=5)
         cbar.update_ticks()
 
@@ -222,7 +367,7 @@ class DataSettingWindow(QMainWindow):
             self.ax_data.axvline(x=1.5+np.amax(ind), linestyle='--',color='w')
 
         for label in (self.ax_data.get_xticklabels() + self.ax_data.get_yticklabels()):
-            label.set_fontsize(self.font_size) # Size here overrides font_prop
+            label.set_fontsize( self.fontsize) # Size here overrides font_prop
     
         self.ax_data.xaxis.set_major_locator(MaxNLocator(12))
 
@@ -231,8 +376,8 @@ class DataSettingWindow(QMainWindow):
         labels = list(self.tomo.tok.detectors_dict.keys())
         ax2 = self.ax_data.twiny()
         ax2.set_xticks(xlabels)
-        ax2.set_xticklabels(labels,fontsize=self.font_size)
-        ax2.set_xlim(0,self.nch)
+        ax2.set_xticklabels(labels,fontsize= self.fontsize)
+        ax2.set_xlim(0, self.nch)
         ax2.tick_params(axis='x', which='major', pad=0) 
         # critical for picking!!!! 
         ax2.set_zorder(0) 
@@ -241,38 +386,87 @@ class DataSettingWindow(QMainWindow):
         self.fig_data.sca(self.ax_data) 
 
 
-        wrong =  self.ReadWrongDets(init=True)
+        wrong = self.ReadWrongDets(init=True)
         self.SetWrongDets(wrong)
 
         self.RefreshEvent()
         self.OkButton.clicked.connect(self.closeEvent)
 
-    def RefreshEvent(self):   
-        tvec = self.tomo.tvec
-        data = np.copy(self.tomo.signals)
-        if np.nanmax(data) > 2e5:
-            fact,pre = 1e6, 'MW'
-        elif np.nanmax(data) > 2e2:
-            fact,pre = 1e3, 'kW'
+    def RefreshEvent(self): 
+
+        if self.show_harm:
+           bb = np.copy(self.tomo.all_bb)
+           bb_err = np.copy(self.tomo.all_bb_err)
+           x = np.arange(self.nch)+1
+           
+           ind_correct = self.tomo.tok.get_correct_dets()
+ 
+
+           data_max = np.nanmax(np.abs(bb[0][ind_correct]))
+           if data_max > 2e5:
+               fact,pre = 1e6, 'MW'
+           elif  data_max > 2e2:
+               fact,pre = 1e3, 'kW'
+           else:
+               fact,pre = 1e0, 'W'
+
+
+           self.ax_harm0.set_ylabel( 'Mean signal  ['+pre+'/m$^2$]', fontsize=self.fontsize)
+           self.ax_harm1.set_ylabel('Amplitudes ['+pre+'/m$^2$]', fontsize=self.fontsize)
+           self.invalid_plot.set_data(x[~ind_correct], np.abs(bb[0,~ind_correct])/fact)
+           bb[:,~ind_correct] = np.nan
+           #TODO plot also phase?
+           for i, err_plot in enumerate(self.err_plots):
+               y,yerr = np.abs(bb[i])/fact, bb_err[i]/fact
+               plotline, caplines, barlinecols = err_plot
+               plotline.set_data(x, y)
+               # Find the ending points of the errorbars
+               error_positions = (x, y-yerr), (x, y+yerr)
+               # Update the error bars
+               barlinecols[0].set_segments(zip(zip(x, y-yerr), zip(x, y+yerr)))
+     
+           self.ax_harm0.set_ylim(0, data_max/fact)
+           self.ax_harm1.set_ylim(0, np.nanmax(np.abs(bb[1:]))/fact)
+           self.canvas_harm.draw()
+           #load data with new set of enabled detectors by self.dets
+           #ind_correct = self.tomo.tok.get_correct_dets()
+
+           #self.tok.dets = self.dets = np.array(dets)
+           #self.tomo.bb = [bb[ind_correct] for bb in self.tomo.all_bb]
+           #self.tomo.bb_err = [be[ind_correct] for be in self.tomo.all_bb_err]
+
+
         else:
-            fact,pre = 1e0, 'W'
+            tvec = self.tomo.tvec
+            data = np.copy(self.tomo.signals)
+            if np.nanmax(data) > 2e5:
+                fact,pre = 1e6, 'MW'
+            elif np.nanmax(data) > 2e2:
+                fact,pre = 1e3, 'kW'
+            else:
+                fact,pre = 1e0, 'W'
 
-        ind_correct = self.tomo.tok.get_correct_dets(data.T)
-        data[:,~ind_correct] = np.nan
-        ind = slice(None,None, max(1, len(tvec)//2000)) #downsample if necessary
-        data = data[ind]
-        tvec = tvec[ind]
-        vmax = mquantiles(data[np.isfinite(data)], 0.99)[0]
+            ind_correct = self.tomo.tok.get_correct_dets(data.T)
+            data[:,~ind_correct] = np.nan
+            #ind = slice(None,None, max(1, len(tvec)//2000)) #downsample if necessary
+            ndown = int(np.ceil(len(tvec)/1000))
+            nt = len(tvec)//ndown*ndown
+            #BUG test it!!!
+            data = data[:nt].reshape(nt//ndown, -1, len(data.T)).mean(1)
+            tvec = tvec[:nt].reshape(nt//ndown, -1).mean(1)
+            vmax = mquantiles(data[np.isfinite(data)], 0.99)[0]
 
-        self.data_im.set_array(data/fact)
-        self.data_im.set_clim(0,vmax/fact)
-        self.canvas_data.draw()
-        if hasattr(self.tomo,'SVDF'):
-            self.tomo.SVDF.set_corrupted_ch(~ind_correct)
+            self.data_im.set_array(data/fact)
+            self.data_im.set_clim(0,vmax/fact)
+            self.canvas_data.draw()
+ 
+            if hasattr(self.tomo,'SVDF'):
+                self.tomo.SVDF.set_corrupted_ch(~ind_correct)
         
         #write back to roto_tomo
         self.tomo.dets = self.tomo.tok.dets[ind_correct]
- 
+        
+     
 
     def dets_list_edited(self,event=None):    
         wrong = self.ReadWrongDets()
@@ -283,9 +477,8 @@ class DataSettingWindow(QMainWindow):
     def onpick_data(self,event):
         #mouse interaction, remove corrupted channels
         ax = event.mouseevent.inaxes
-        ch = int(round(event.mouseevent.xdata))
+        ch = int(round(event.mouseevent.xdata)) 
 
-        #print 'event', event
         if event.mouseevent.dblclick:
             wrong = list(self.ReadWrongDets())
             
@@ -316,9 +509,11 @@ class DataSettingWindow(QMainWindow):
                 #raise
         elif init:     # do not remove on init
             wrong_dets_pref = np.int_(config.wrong_dets_pref)
-     
+        
         wrong = self.tomo.tok.dets[~self.tomo.tok.get_correct_dets(include_pref=False)]
+      
         config.wrong_dets_pref  = np.unique(np.setdiff1d( wrong_dets_pref,wrong))
+        
         return  wrong_dets_pref
     
     def SetWrongDets(self, wrong):
@@ -739,7 +934,7 @@ class HarmSolver(Process):
    
         
     def run(self):
-        t = time.time()
+
         H = self.Hper +  self.Hpar  
         if self.n > 0:
             H = H + self.Ht.H*self.Ht#TODO set ration between them?
@@ -796,7 +991,7 @@ class HarmSolver(Process):
             
             if lam is None:
                 return
-            elif lam <= 0:
+            elif lam <= 0.05:
                 g = self.guess_lam(U,S,wrong_dets)
             else:
                 g = mquantiles(2*np.log(S),lam)
@@ -824,8 +1019,6 @@ class HarmSolver(Process):
             lam = np.interp(g, 2*np.log(S)[::-1], np.linspace(0,1,len(S)))
 
             self.qout.put((G,retro,lam,chi2 ))
-            
-            print('hsolver', time.time()-t, time.time()-t2)
 
 
 def OptimizeF0( tvec, sig, f0,df0 = 200,n_steps=400):
@@ -891,7 +1084,8 @@ class Roto_tomo:
     loaded = False
 
     def __init__(self, parent, fig,m_num,n_num,add_back, TeOver,show_flux,
-                 plot_limit, reg, n_harm,n_svd,map_equ,rho_lbl, show_contours):
+                 plot_limit, reg, n_harm,n_svd,map_equ,rho_lbl, show_contours ):
+
         
         self.m_num = m_num
         self.n_num = n_num
@@ -900,7 +1094,7 @@ class Roto_tomo:
         self.slider_lim = plot_limit
         self.slider_reg = reg
         self.add_back = add_back
-        self.map_equ = map_equ
+        self.eqm = map_equ
         self.rho_lbl = rho_lbl
         self.show_contours = show_contours
         self.t_range = 0, np.inf
@@ -916,7 +1110,7 @@ class Roto_tomo:
 
         self.n_harm = n_harm
         self.n_svd = n_svd
-        self.tau = 2 #time resolution for signal extraction
+        self.tau = 4 #time resolution for signal extraction
         self.nr = 100 #radial resulution for calculation of magnetic equalibrium in radial/ poloidal coordinates
         self.ntheta = 120 #angular resulution for calculation of magnetic equalibrium in radial/ poloidal coordinates
         self.dtheta =  2*np.pi/30 #poloidal step for regularisation matrix
@@ -931,12 +1125,12 @@ class Roto_tomo:
         self.n_rho_plot = 10  #number of plotted radial magnetic contours
         self.n_theta_plot = 16#number of plotted poloidal magnetic contours
         self.n_contour = 15 #numberof Te contours 
-        self.font_size = 10
+        self.fontsize = 10
         self.hsolvers = []
         self.t0 = np.nan
         self.showTe = False
         self.cmap = my_cmap
-        
+ 
    
         if self.show_contours:
             self.levels = np.linspace(0, 1, self.n_contour)            
@@ -965,23 +1159,23 @@ class Roto_tomo:
                self.ax.plot(gc_r[key], gc_z[key], '0.5', lw=.5)
 
         for label in (self.ax.get_xticklabels() + self.ax.get_yticklabels()):
-            label.set_fontsize(self.font_size) # Size here overrides font_prop
+            label.set_fontsize( self.fontsize) # Size here overrides font_prop
 
         self.cbar_ax = self.fig.add_axes([0.85, 0.1, 0.04, 0.85])
         self.cbar_ax.xaxis.set_major_formatter(plt.NullFormatter())
         self.cbar_ax.yaxis.set_major_formatter(plt.NullFormatter())
-        self.cbar_ax.tick_params(labelsize= self.font_size) 
+        self.cbar_ax.tick_params(labelsize=  self.fontsize) 
         
         self.update_colorbar()
         #self.cbar = self.fig.colorbar(self.tomo_img, cax=self.cbar_ax)
-        self.ax.set_title('SXR emissivity [kW/m$^3$]',fontsize=self.font_size)
+        self.ax.set_title('SXR emissivity [kW/m$^3$]',fontsize= self.fontsize)
         self.plot_description = self.ax.text(1.008,.05,'',rotation='vertical', 
                 transform=self.ax.transAxes,verticalalignment='bottom',
                 size='xx-small',backgroundcolor='none')
         
         self.ax.axis('equal')
-        self.ax.set_xlabel('R [m]',fontsize=self.font_size)
-        self.ax.set_ylabel('z [m]',fontsize=self.font_size)
+        self.ax.set_xlabel('R [m]',fontsize= self.fontsize)
+        self.ax.set_ylabel('z [m]',fontsize= self.fontsize)
         self.ax.yaxis.labelpad = -5
         
         self.ax.patch.set_facecolor(self.cmap(0))
@@ -995,50 +1189,14 @@ class Roto_tomo:
         self.cid_scroll  = self.fig.canvas.mpl_connect('scroll_event',self.MouseWheelInteraction)
         self.cid_press   = self.fig.canvas.mpl_connect('key_press_event',   self.onKeyPress)
         self.cid_release = self.fig.canvas.mpl_connect('key_release_event', self.onKeyRelease)
-        
+
   
-        
-    def prepare_tomo(self, tok_lbl, shot, t_range, f_range, eqm, cross_signal):
-        t = time.time()
-        self.shot = shot
-        self.t_range = t_range
-        self.cross_signal = cross_signal
-        t0 = np.mean(t_range)
 
-        if t0 is np.nan:
-            print( 'Select valid time range')
-            return 
 
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+    def prepare_tok_object(self, tok_lbl, shot):
 
-        self.eqm  = eqm
-        self.f_range = f_range
-        self.rhop = np.linspace(0,1,self.nr)
-        theta_in  = np.linspace(0,2*np.pi,self.ntheta)
+       
 
-        if tok_lbl == 'AUG':
-            magr, magz = sf.rhoTheta2rz(eqm, self.rhop,theta_in,t0,coord_in=self.rho_lbl)
-            self.rho = sf.rho2rho(eqm, self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
-        elif tok_lbl == 'DIIID':
-            magr, magz = eqm.rhoTheta2rz(self.rhop,theta_in,t0,coord_in=self.rho_lbl)
-            self.rho = eqm.rho2rho(self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
-        self.magr = magr[0]
-        self.magz = magz[0]
-        
-        #set view to contain rho = 0.7 contour 
-        ir = np.argmin(np.abs(self.rhop - 0.5))
-        self.ax.axis([self.magr[:,ir].min(),self.magr[:,ir].max(),self.magz[:,ir].min(),self.magz[:,ir].max()])
-
-        if hasattr(eqm, 'getQuantity'): #different eqm_map version on DIII-D
-            self.q_prof = eqm.getQuantity(self.rhop, 'Qpsi', t_in=t0)	
-        else:#  and AUG
-            jtq = np.argmin(abs(eqm.time - t0))
-            nrho = np.max(self.eqm.lpfp) + 1
-            psi = eqm.pfl[jtq, :nrho]
-            q   = eqm.q[jtq, :nrho]
-            rhop_q = sf.rho2rho(self.eqm, psi, t_in=t0, coord_in='Psi', coord_out='rho_pol')[0]
-            self.q_prof = np.interp(self.rhop, rhop_q, q)
- 
         #Prepare tokamak object from original tomography code
         input_parameters = read_config(tomo_code_path+"tomography.cfg")
         input_parameters['shot'] = shot
@@ -1053,7 +1211,10 @@ class Roto_tomo:
 
         if tok_lbl == 'DIIID':
             import geometry.DIIID as Tok
+            #if self.sxr_harmonics is None:
             diag = 'SXR fast'
+            #else:
+             #   diag = 'SXR'
             diag_path = tomo_local_path+ 'geometry/DIIID/SXR'
         elif tok_lbl == 'AUG':
             import geometry.ASDEX as Tok
@@ -1065,7 +1226,8 @@ class Roto_tomo:
         logger.debug('diag_path %s', diag_path)
         if not os.path.exists(diag_path):
             os.makedirs(diag_path)
-  
+        
+         
         try:
             self.tok = Tok(diag, input_parameters, load_data_only=True, only_prepare=True)#BUG 
         except:
@@ -1073,6 +1235,66 @@ class Roto_tomo:
             print( traceback.format_exc())
             QMessageBox.warning(self.parent,"Load SXR data issue", "Fast SXR data probably do not exist",QMessageBox.Ok)
             return 
+
+        #calculate complex geometry matrix including all informations about diagnostic            
+        self.T_full = geom_mat_setting( self.tok,self.nx, self.ny, 
+                             self.tok.virt_chord, path=None)[0]
+       
+
+        
+  
+        
+    def prepare_tomo(self, tok_lbl, shot ,t_range, f_range, t0, f0,  cross_sig_name = None, 
+                              sxr_harmonics=None, cmplx_cross_sig=None):
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+
+        t = time.time()
+
+      
+        self.t_range = t_range
+        self.f_range = f_range
+        self.t0 = t0  #time where exactly sxr_harmonics are evaluated
+        self.F0 = self.F1 = f0  #median frequency in the t_range
+        self.sxr_harmonics = sxr_harmonics
+        self.cmplx_cross_sig = cmplx_cross_sig
+        self.cross_sig_name  = cross_sig_name
+        self.shot = shot
+        self.tok_lbl = tok_lbl
+  
+
+        self.rhop = np.linspace(0,1,self.nr)
+        theta_in  = np.linspace(0,2*np.pi,self.ntheta)
+
+        if not hasattr(self, 'tok'):
+            self.prepare_tok_object(tok_lbl, shot)
+
+
+        if self.tok_lbl == 'AUG':
+            magr, magz = sf.rhoTheta2rz(self.eqm, self.rhop,theta_in,t0,coord_in=self.rho_lbl)
+            self.rho = sf.rho2rho(self.eqm, self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
+        elif self.tok_lbl == 'DIIID':
+            magr, magz = self.eqm.rhoTheta2rz(self.rhop,theta_in,t0,coord_in=self.rho_lbl)
+            self.rho = self.eqm.rho2rho(self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
+        self.magr = magr[0]
+        self.magz = magz[0]
+        
+        #set view to contain rho = 0.7 contour 
+        ir = np.argmin(np.abs(self.rhop - 0.5))
+        self.ax.axis([self.magr[:,ir].min(),self.magr[:,ir].max(),self.magz[:,ir].min(),self.magz[:,ir].max()])
+
+        if hasattr(self.eqm, 'getQuantity'): #different eqm_map version on DIII-D
+            self.q_prof = self.eqm.getQuantity(self.rhop, 'Qpsi', t_in=t0)	
+        else:#  and AUG
+            jtq = np.argmin(abs(eqm.time - t0))
+            nrho = np.max(self.eqm.lpfp) + 1
+            psi = self.eqm.pfl[jtq, :nrho]
+            q   = self.eqm.q[jtq, :nrho]
+            rhop_q = sf.rho2rho(self.eqm, psi, t_in=t0, coord_in='Psi', coord_out='rho_pol')[0]
+            self.q_prof = np.interp(self.rhop, rhop_q, q)
+ 
+        
+        
         
         self.xgridc = (self.tok.xgrid+self.tok.dx/2)/self.tok.norm  #centers of the pixels
         self.ygridc = (self.tok.ygrid+self.tok.dy/2)/self.tok.norm  #centers of the pixels
@@ -1081,30 +1303,17 @@ class Roto_tomo:
         if not self.show_contours:
             self.tomo_img.set_extent([self.tok.xgrid[0],self.tok.xgrid[-1]+self.tok.dx,
                                       self.tok.ygrid[0],self.tok.ygrid[-1]+self.tok.dy])
+
         
-        if tok_lbl == 'DIIID':
-            config.useCache = False  #force not using catchd SXR geometry
-        print('setup done', time.time()-t)
+        if self.tok_lbl == 'DIIID':
+            config.useCache = False  #force not using cached SXR geometry
+ 
         
-        #calculate complex geometry matrix including all informations about diagnostic            
-        self.T_full = geom_mat_setting( self.tok,self.nx, self.ny, 
-                             self.tok.virt_chord, path=None)[0]
-        print('geom_mat_setting done', time.time()-t)
+
 
         #Auxiliarly tokamak to avoid loading of equilibrium from tomography
         self.aux_tok = tokamak(self.rhop,self.magr, self.magz,self.tok.xgrid,self.tok.ygrid)
         self.aux_tok.vessel_boundary = self.tok.vessel_boundary
-        print('aux_tok done', time.time()-t)
-
-
-        #find a mean frequency of the mode
-        #identify strongest mode frequency in the selected range
-        #tind = slice(*tvec0.searchsorted(t_range))
-        self.F0 = np.mean(self.f_range)
-        #self.F0 = OptimizeF0(cross_signal[0], cross_signal[1].real,
-                             #np.mean(self.f_range),df0= self.f_range[1]-self.f_range[0] ,n_steps=200)
-   
-        print('F0 done', time.time()-t)
 
         #Load diagnostic infomation
         n_harm_max = 10
@@ -1114,7 +1323,8 @@ class Roto_tomo:
         self.Phi0 = np.median(self.Phi) #toroidal position of SXR cameras in radians!
 
         #add correction for finite DAS IIR
-        if tok_lbl == 'AUG':
+        if self.tok_lbl == 'AUG':
+
             slow_das = np.loadtxt(loc_dir+'/slow_sxr_diag.txt' )
             fast_das = np.loadtxt(loc_dir+'/fast_sxr_das.txt'  )
             SampFreq =  self.tok.SampFreq 
@@ -1124,7 +1334,9 @@ class Roto_tomo:
             #phase shift of DAS IIR
             self.phi[SampFreq == 5e5] = np.interp(self.F0*np.arange(1,n_harm_max),slow_das[:,0],slow_das[:,2])
             self.phi[SampFreq == 2e6] = np.interp(self.F0*np.arange(1,n_harm_max),fast_das[:,0],fast_das[:,2])
-
+        if self.tok_lbl == 'DIIID':
+            pass
+            #response of unknown... :( 
 
         #calculate equilibrium related properties
         theta_star_rz, theta_star = self.tok.mag_theta_star(t0,self.rhop,self.magr,self.magz,rz_grid=True)
@@ -1134,14 +1346,12 @@ class Roto_tomo:
 
         #self.BdMat|= self.theta_star_rz==0 
         #remove points outside of boundary
-        self.T_full = prune_geo_matrix(self.T_full,self.BdMat)
+        self.T_full_prunned = prune_geo_matrix(self.T_full,self.BdMat)
  
         #regularization matrix
         self.Bmat, diag_mat = mat_deriv_B(self.aux_tok, 0, 1,None)
         self.Ht = build_reg_mat_time(self.rho_mat,self.theta_star_rz,theta_star,self.rhop,self.magr,
                                 self.magz,self.xgridc,self.ygridc,self.BdMat,self.dtheta)
-
-        print('Ht done', print(time.time()-t))
 
         #contours of constant theta star
         t = np.linspace(0,2*np.pi,self.n_theta_plot,endpoint=False)
@@ -1161,16 +1371,12 @@ class Roto_tomo:
         for ip,p in enumerate(self.plot_mag_rho):
             p.set_data(self.isoflux_R[ip],self.isoflux_Z[ip])
         
-        print('maf surfaces done', print(time.time()-t))
-
+      
         self.initialized = True
-        try:
-            self.load_data()
-        except:
-            import traceback
-            print( traceback.format_exc())
-            return
-        print('load done', print(time.time()-t))
+        
+        self.load_data()
+
+
 
         self.calculate_tomo()
         
@@ -1190,6 +1396,7 @@ class Roto_tomo:
 
         for h in self.hsolvers:
             h.qin.put(None) #send kill signal
+            h.terminate()
             h.join(1e-2)  #join process
             h.qin.close()
             h.qout.close()
@@ -1197,7 +1404,7 @@ class Roto_tomo:
             
         self.hsolvers = []
         QApplication.restoreOverrideCursor()
-        
+         
         #convert time dependent signals in complex harmonics 
         self.prepare_harms()
         #prepare inversion
@@ -1205,171 +1412,106 @@ class Roto_tomo:
         #use m and n number from the GUI and evaluate tomography 
         self.update_mode_number()
         
-        print( 'Inversion calculated in %.1fs'%(time.time()-tcalc))
+        print( 'Tomographic inversion calculated in %.1fs'%(time.time()-tcalc))
 
         
-    def load_data(self):
-        print( 'Loading SXR data ... ')
-
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        config.useCache = True  #force storing of the data
-
-        #load SXR data 
-        t =  time.time()
-        signals,error_sig, self.tvec, dets,_,_ = self.tok.prepare_data(self.t_range[0],self.t_range[1],1,1,1,detsCutOff=False)
-        
-        print(time.time()-t)
-        t =  time.time()
-
-        #path = os.path.dirname(os.path.realpath(__file__))
-        #current_path = os.getcwd()
-        #print('path',path.rsplit('\\', 1)[0] )
-        #os.chdir( path.rsplit('\\', 1)[0])
-     
-
-        ##read a modules for data loading
-        #self.tokamak = 'DIIID'
-        #filelist = os.listdir('loaders_'+self.tokamak)  
-        #filelist = [file[:-3] for file in filelist if file.endswith('.py')] 
-        #data_rutines = __import__('loaders_'+self.tokamak, fromlist=filelist)
-
-        #diag_loaders = {}
-        #for k, v in data_rutines.__dict__.items():
-            #if k.startswith('_'): continue
-            #check, loader = None, None
-        
-            #for k2, v2 in v.__dict__.items():
-                #if k2.startswith('loader_'): #find loader
-                    #loader = v2
-                #if k2.startswith('check'):  #find a shotfile check routine 
-                    #check = v2
-            #if loader is not None:
-                #diag_loaders[k] = loader, check
-    
-        #os.chdir(current_path)  
-
-        #from collections import OrderedDict
-        #self.diag_loaders = OrderedDict(sorted(diag_loaders.items(), key=lambda t: t[0]))
-        
-        #mds_server = "localhost"
-        #import MDSplus as mds
-        #MDSconn = mds.Connection(mds_server )
-        #t =  time.time()
-
-        #loader = self.diag_loaders['SXR'][0](self.shot,  eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=MDSconn)
-        
-        #groups =  [  '195R1', '45R1', '90RM1', '90RP1']
-        #for g in groups:
-            #names = loader.get_names(g)
-            #loader.get_signal(g, names, calib=True, tmin=self.t_range[0],  tmax=self.t_range[1])
-        
-        
-        #print(time.time()-t)
-        #from IPython import embed
-        #embed()
- 
-        #TDI = \
-        #['PTDATA2("SX195F01_0",175900,1)', 'PTDATA2("SX195F01_1",175900,1)', 'PTDATA2("SX195F02_0",175900,1)', 'PTDATA2("SX195F02_1",175900,1)', 'PTDATA2("SX195F03_0",175900,1)', 'PTDATA2("SX195F03_1",175900,1)', 'PTDATA2("SX195F04_0",175900,1)', 'PTDATA2("SX195F04_1",175900,1)', 'PTDATA2("SX195F05_0",175900,1)', 'PTDATA2("SX195F05_1",175900,1)', 'PTDATA2("SX195F06_0",175900,1)', 'PTDATA2("SX195F06_1",175900,1)', 'PTDATA2("SX195F07_0",175900,1)', 'PTDATA2("SX195F07_1",175900,1)', 'PTDATA2("SX195F08_0",175900,1)', 'PTDATA2("SX195F08_1",175900,1)', 'PTDATA2("SX195F09_0",175900,1)', 'PTDATA2("SX195F09_1",175900,1)', 'PTDATA2("SX195F10_0",175900,1)', 'PTDATA2("SX195F10_1",175900,1)', 'PTDATA2("SX195F11_0",175900,1)', 'PTDATA2("SX195F11_1",175900,1)', 'PTDATA2("SX195F12_0",175900,1)', 'PTDATA2("SX195F12_1",175900,1)',
-        #'PTDATA2("SX45F01_0",175900,1)',  'PTDATA2("SX45F01_1",175900,1)',  'PTDATA2("SX45F02_0",175900,1)', 'PTDATA2("SX45F02_1",175900,1)',  'PTDATA2("SX45F03_0",175900,1)',  'PTDATA2("SX45F03_1",175900,1)', 'PTDATA2("SX45F04_0",175900,1)',  'PTDATA2("SX45F04_1",175900,1)',  'PTDATA2("SX45F05_0",175900,1)', 'PTDATA2("SX45F05_1",175900,1)',  'PTDATA2("SX45F06_0",175900,1)',  'PTDATA2("SX45F06_1",175900,1)', 'PTDATA2("SX45F07_0",175900,1)',  'PTDATA2("SX45F07_1",175900,1)',  'PTDATA2("SX45F08_0",175900,1)', 'PTDATA2("SX45F08_1",175900,1)',  'PTDATA2("SX45F09_0",175900,1)',  'PTDATA2("SX45F09_1",175900,1)', 'PTDATA2("SX45F10_0",175900,1)',  'PTDATA2("SX45F10_1",175900,1)',  'PTDATA2("SX45F11_0",175900,1)', 'PTDATA2("SX45F11_1",175900,1)',  'PTDATA2("SX45F12_0",175900,1)',  'PTDATA2("SX45F12_1",175900,1)',
-        #'PTDATA2("SX90MF01_0",175900,1)', 'PTDATA2("SX90MF01_1",175900,1)', 'PTDATA2("SX90MF02_0",175900,1)', 'PTDATA2("SX90MF02_1",175900,1)', 'PTDATA2("SX90MF03_0",175900,1)', 'PTDATA2("SX90MF03_1",175900,1)', 'PTDATA2("SX90MF04_0",175900,1)', 'PTDATA2("SX90MF04_1",175900,1)', 'PTDATA2("SX90MF05_0",175900,1)', 'PTDATA2("SX90MF05_1",175900,1)', 'PTDATA2("SX90MF06_0",175900,1)', 'PTDATA2("SX90MF06_1",175900,1)', 'PTDATA2("SX90MF07_0",175900,1)', 'PTDATA2("SX90MF07_1",175900,1)', 'PTDATA2("SX90MF08_0",175900,1)', 'PTDATA2("SX90MF08_1",175900,1)', 'PTDATA2("SX90MF09_0",175900,1)', 'PTDATA2("SX90MF09_1",175900,1)', 'PTDATA2("SX90MF10_0",175900,1)', 'PTDATA2("SX90MF10_1",175900,1)', 'PTDATA2("SX90MF11_0",175900,1)', 'PTDATA2("SX90MF11_1",175900,1)', 'PTDATA2("SX90MF12_0",175900,1)', 'PTDATA2("SX90MF12_1",175900,1)', 'PTDATA2("SX90MF13_0",175900,1)', 'PTDATA2("SX90MF13_1",175900,1)', 'PTDATA2("SX90MF14_0",175900,1)', 'PTDATA2("SX90MF14_1",175900,1)', 'PTDATA2("SX90MF15_0",175900,1)', 'PTDATA2("SX90MF15_1",175900,1)', 'PTDATA2("SX90MF16_0",175900,1)', 'PTDATA2("SX90MF16_1",175900,1)', 'PTDATA2("SX90MF17_0",175900,1)', 'PTDATA2("SX90MF17_1",175900,1)', 'PTDATA2("SX90MF18_0",175900,1)', 'PTDATA2("SX90MF18_1",175900,1)', 'PTDATA2("SX90MF19_0",175900,1)', 'PTDATA2("SX90MF19_1",175900,1)', 'PTDATA2("SX90MF20_0",175900,1)', 'PTDATA2("SX90MF20_1",175900,1)', 'PTDATA2("SX90MF21_0",175900,1)', 'PTDATA2("SX90MF21_1",175900,1)', 'PTDATA2("SX90MF22_0",175900,1)', 'PTDATA2("SX90MF22_1",175900,1)', 'PTDATA2("SX90MF23_0",175900,1)', 'PTDATA2("SX90MF23_1",175900,1)', 'PTDATA2("SX90MF24_0",175900,1)', 'PTDATA2("SX90MF24_1",175900,1)', 'PTDATA2("SX90MF25_0",175900,1)', 'PTDATA2("SX90MF25_1",175900,1)', 'PTDATA2("SX90MF26_0",175900,1)', 'PTDATA2("SX90MF26_1",175900,1)', 'PTDATA2("SX90MF27_0",175900,1)', 'PTDATA2("SX90MF27_1",175900,1)', 'PTDATA2("SX90MF28_0",175900,1)', 'PTDATA2("SX90MF28_1",175900,1)', 'PTDATA2("SX90MF29_0",175900,1)', 'PTDATA2("SX90MF29_1",175900,1)', 'PTDATA2("SX90MF30_0",175900,1)', 'PTDATA2("SX90MF30_1",175900,1)', 'PTDATA2("SX90MF31_0",175900,1)', 'PTDATA2("SX90MF31_1",175900,1)', 'PTDATA2("SX90MF32_0",175900,1)', 'PTDATA2("SX90MF32_1",175900,1)', 'PTDATA2("SX90PF01_0",175900,1)', 'PTDATA2("SX90PF01_1",175900,1)', 'PTDATA2("SX90PF02_0",175900,1)', 'PTDATA2("SX90PF02_1",175900,1)', 'PTDATA2("SX90PF03_0",175900,1)', 'PTDATA2("SX90PF03_1",175900,1)', 'PTDATA2("SX90PF04_0",175900,1)', 'PTDATA2("SX90PF04_1",175900,1)', 'PTDATA2("SX90PF05_0",175900,1)', 'PTDATA2("SX90PF05_1",175900,1)', 'PTDATA2("SX90PF06_0",175900,1)', 'PTDATA2("SX90PF06_1",175900,1)', 'PTDATA2("SX90PF07_0",175900,1)', 'PTDATA2("SX90PF07_1",175900,1)', 'PTDATA2("SX90PF08_0",175900,1)', 'PTDATA2("SX90PF08_1",175900,1)', 'PTDATA2("SX90PF09_0",175900,1)', 'PTDATA2("SX90PF09_1",175900,1)', 'PTDATA2("SX90PF10_0",175900,1)', 'PTDATA2("SX90PF10_1",175900,1)', 'PTDATA2("SX90PF11_0",175900,1)', 'PTDATA2("SX90PF11_1",175900,1)', 'PTDATA2("SX90PF12_0",175900,1)', 'PTDATA2("SX90PF12_1",175900,1)', 'PTDATA2("SX90PF13_0",175900,1)', 'PTDATA2("SX90PF13_1",175900,1)', 'PTDATA2("SX90PF14_0",175900,1)', 'PTDATA2("SX90PF14_1",175900,1)', 'PTDATA2("SX90PF15_0",175900,1)', 'PTDATA2("SX90PF15_1",175900,1)', 'PTDATA2("SX90PF16_0",175900,1)', 'PTDATA2("SX90PF16_1",175900,1)', 'PTDATA2("SX90PF17_0",175900,1)', 'PTDATA2("SX90PF17_1",175900,1)', 'PTDATA2("SX90PF18_0",175900,1)', 'PTDATA2("SX90PF18_1",175900,1)', 'PTDATA2("SX90PF19_0",175900,1)', 'PTDATA2("SX90PF19_1",175900,1)', 'PTDATA2("SX90PF20_0",175900,1)', 'PTDATA2("SX90PF20_1",175900,1)', 'PTDATA2("SX90PF21_0",175900,1)', 'PTDATA2("SX90PF21_1",175900,1)', 'PTDATA2("SX90PF22_0",175900,1)', 'PTDATA2("SX90PF22_1",175900,1)', 'PTDATA2("SX90PF23_0",175900,1)', 'PTDATA2("SX90PF23_1",175900,1)', 'PTDATA2("SX90PF24_0",175900,1)', 'PTDATA2("SX90PF24_1",175900,1)', 'PTDATA2("SX90PF25_0",175900,1)', 'PTDATA2("SX90PF25_1",175900,1)', 'PTDATA2("SX90PF26_0",175900,1)', 'PTDATA2("SX90PF26_1",175900,1)', 'PTDATA2("SX90PF27_0",175900,1)', 'PTDATA2("SX90PF27_1",175900,1)', 'PTDATA2("SX90PF28_0",175900,1)', 'PTDATA2("SX90PF28_1",175900,1)', 'PTDATA2("SX90PF29_0",175900,1)', 'PTDATA2("SX90PF29_1",175900,1)', 'PTDATA2("SX90PF30_0",175900,1)', 'PTDATA2("SX90PF30_1",175900,1)', 'PTDATA2("SX90PF31_0",175900,1)', 'PTDATA2("SX90PF31_1",175900,1)', 'PTDATA2("SX90PF32_0",175900,1)', 'PTDATA2("SX90PF32_1",175900,1)']
-        
-        #import MDSplus as mds
-
-                
-        #def mds_load(tmp):
-            #mds_server,  TDI = tmp
-        
-            #MDSconn = mds.Connection(mds_server)
-            #TT = T()
-            #data = []
-            #for tdi in TDI:
-                #try:
-                    #data.append(MDSconn.get(tdi).data())
-                #except:
-                    #data.append([])
-            #return data
-
-
-        #def mds_load_par( MDSconn, TDI, numTasks=8):
-
-            #numTasks = 8
-            #server = MDSconn.hostspec
-            #TDI = array_split(TDI, min(numTasks,len(TDI)))
-
-            #args = [(server, tdi) for tdi in TDI]
-            
-            #out = []
-            #pool = Pool()
-            #for o in pool.map(mds_load,args):
-                #out.extend(o)
-            #pool.close()
-            #pool.join()
-            
-            #return out 
-        
-        
-        #t =  time.time()
-        #out =  mds_load_par( MDSconn, TDI)
-        #print(time.time()-t)
-
-        from IPython import embed
-        embed()
- 
-        
-        self.signals,self.error_sig = signals.T,error_sig.T
-      
-        self.dets = dets[np.all(np.isfinite(error_sig),1)[dets]]
-   
-        #initialise it only once 
-        dets_index = self.tok.dets_index[:-1]  
-        dF = np.diff(self.f_range)[0]/2
-        self.SVDF = SVDFilter(self.tvec, self.signals,np.nanmean(self.error_sig ,0),dets_index,
-                            self.F0, dF, self.n_harm,self.n_svd)
-        invalid = ~np.in1d(np.arange(self.signals.shape[1]), self.dets)
-        self.SVDF.set_corrupted_ch(invalid)       
-       
-        QApplication.restoreOverrideCursor()
-
-
     def prepare_harms(self):
         #calculate complex harmonics out of the measured signals
-                                                
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        
-        
-        #from .pyspecview import extract_harmonics
+        if self.sxr_harmonics is not None:
+ 
+            ind_correct = self.tok.get_correct_dets()
 
-        
-        #def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=None):
+            self.dets = np.where(ind_correct)[0]
+            self.bb = [bb[ind_correct] for bb in self.all_bb]
+            self.bb_err = [be[ind_correct] for be in self.all_bb_err]
+            
+        else:
 
 
-        #TODO pak se to musi asi pronasobit conj(cross_tvec_signal) signalnalem v cas co si preju abych ziskal spravny uhel
-        #vypocet errorbaru 
-        #vykresleni vysledku, n=0, n > 0 graf fluktuaci pro kazdou kameru
-        #
-        embed()
-        
-        
 
-        #apply SVD filter to get complex harmonic 
-        self.SVDF.run_filter(update_plots=False)
-        #from IPython import embed
-        
-       # np.savez('svdf', t=self.SVDF.tvec[-len(self.SVDF.retrofit):],y= self.SVDF.retrofit, d=self.SVDF.data[-len(self.SVDF.retrofit):], t0=self.SVDF.t0)
-        
-        self.F1 = self.SVDF.f0
-        self.t0 = self.SVDF.t0
-        self.bb = list(self.SVDF.harm)
-        self.bb[0] = self.bb[0].real
-        self.bb_err = [np.copy(self.SVDF.harm_err)+1e-6 for h in self.bb]
-        
-        #NOTE errorbars found this ways are too small for zeroth and first harmonics
-        self.bb_err[0] += self.SVDF.err[~self.SVDF.invalid]
-        self.bb_err[0] += np.abs(self.bb[0])*0.01+0.005*np.abs(self.bb[0]).mean()#add at least 1% noise
+            #apply SVD filter to get complex harmonic 
+            self.SVDF.run_filter(update_plots=False)
+            
+            self.F1 = self.SVDF.f0
+            self.t0 = self.SVDF.t0
+            self.bb = list(self.SVDF.harm)
+            self.bb[0] = self.bb[0].real
+            self.bb_err = [np.copy(self.SVDF.harm_err)+1e-6 for h in self.bb]
+            
+            #NOTE errorbars found this ways are too small for zeroth and first harmonics
+            self.bb_err[0] += self.SVDF.err[~self.SVDF.invalid]
+
+            QApplication.restoreOverrideCursor()
+ 
+            #add at least 5% noise to zero'th harmonics    
+            self.bb_err[0] += np.abs(self.bb[0])*0.05+0.03*np.abs(self.bb[0]).mean()
+
+
         QApplication.restoreOverrideCursor()
 
+
+    def load_data(self):
+
+
+        if self.sxr_harmonics is not None:
+            
+            #SXR data were loaded directly by PYSPECVIEW, works only for DIII-D now
+
+            bb = []
+            bb_err = []
+            dets = []
+            idet = 0
+            #calibration factors for each camera estimated by PYTOMO 
+            camera_calib = self.tok.get_calb()
+            #sort signals n the order expected by the geometry matrix 
+            for c, (cam, channels) in zip(camera_calib, self.tok.detectors_dict.items()):
+                for ch in channels:
+                    ch = int(ch.split('_')[1])
+                    hdata = self.sxr_harmonics[(cam[:5], ch)]
+                    bb.append([h*c for h in hdata['harm']])
+                    bb_err.append([c*hdata['error']]*len(bb[-1]))
+                    if hdata['valid'] and idet in self.tok.dets:
+                        dets.append(idet)
+                    idet += 1 
+            self.all_bb = [np.array(bb) for bb in zip(*bb)]
+            self.all_bb_err = [np.array(be)+1e-6 for be in zip(*bb_err)]
+
+            #add at least 5% noise to 0th an 1th harmonics    
+            self.all_bb_err[0] += np.abs(self.all_bb[0])*0.05+0.03*np.abs(self.all_bb[0]).mean()
+            self.all_bb_err[1] += np.abs(self.all_bb[1])*0.05+0.03*np.abs(self.all_bb[1]).mean()
+            self.tok.dets = np.array(dets)
+
+        else:
+            print( 'Loading SXR data ... ')
+
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            config.useCache = True  #force storing of the data
+
+            #load SXR data 
+            t =  time.time()
+            signals,error_sig, self.tvec, dets,_,_ = self.tok.prepare_data(self.t_range[0],self.t_range[1],1,1,1,detsCutOff=False)
+
+            
+            self.signals,self.error_sig = signals.T,error_sig.T
+
+        
+            self.dets = dets[np.all(np.isfinite(error_sig),1)[dets]]
+    
+            #initialise it only once 
+            dets_index = self.tok.dets_index[:-1]  
+            dF = np.diff(self.f_range)[0]/2
+            self.SVDF = SVDFilter(self.tvec, self.signals,np.nanmean(self.error_sig ,0),dets_index,
+                                self.F0, dF, self.n_harm,self.n_svd, self.tau, self.cmplx_cross_sig)
+            invalid = ~np.in1d(np.arange(self.signals.shape[1]), self.dets)
+            self.SVDF.set_corrupted_ch(invalid)       
+               
+
+   
+
     def precalc_tomo(self):
+       
         #first iterations of the tomography algorithm
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
@@ -1380,8 +1522,8 @@ class Roto_tomo:
         G0[self.BdMat] = 0
    
         #use only valid detectors
-        self.T = self.T_full[self.dets]
-
+        self.T = self.T_full_prunned[self.dets]
+     
         #solution of tomography for stationary profile 
         t = time.time()
 
@@ -1398,6 +1540,7 @@ class Roto_tomo:
                 qin.put(None) #kill process
                 qin.close()
                 qout.close()
+                h.terminate()
                 h.join(1e-2)
                 
                 
@@ -1453,6 +1596,7 @@ class Roto_tomo:
 
     def set_reg(self, val):
         if self.lam0*100 == val: return
+
         self.lam0 = val/100.
         self.eval_tomo()
         self.update(update_cax=True)
@@ -1508,8 +1652,7 @@ class Roto_tomo:
 
         self.Te2Dmap.UpdateModeM(np.searchsorted(self.parent.m_numbers,self.m), animate=True)
         self.fig.canvas.draw_idle()
-
-    
+        self.update( update_mag=False)
         QApplication.restoreOverrideCursor()
 
         
@@ -1614,6 +1757,7 @@ class Roto_tomo:
 
         
     def set_mode_numbes(self):
+   
         #do reconstruction assuming certain M and N mode number
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
@@ -1634,6 +1778,7 @@ class Roto_tomo:
         #close threats from previous calculation
         for h in self.hsolvers:
             h.qin.put(None) #send kill signal
+            h.terminate()
             h.join(1e-2)  #join process
             h.qin.close()
             h.qout.close()
@@ -1680,14 +1825,15 @@ class Roto_tomo:
         return
     
         #rest is just for debugging
-        
+
         cmplx_phase = np.exp(2*np.pi*self.F1*1j*(self.tvec-self.t0))
         
+
         #retrofit in time domain
         self.retro_t    = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.retro)],0).T
         #filtered data in time domain
-        self.filtered_t = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.bb)],0).T
-
+        self.filtered_t = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(np.conj(self.bb))],0).T
+ 
         #this is exactly equal to self.retro_t
         self.retro_gt = np.sum([np.real(self.T*g.flatten(order='F')*cmplx_phase**i) for i,g in enumerate(self.G)],0).T
 
@@ -1742,6 +1888,7 @@ class Roto_tomo:
             self.Te2Dmap.f0 = self.F1
             
             dPhi = self.n*(Phi_ece-self.Phi0)/self.m
+
             self.Te2Dmap.shift_phi = self.shift_phi +dPhi+self.dPhi/self.n
             anim_obj += self.Te2Dmap.update(update_cax=False,update_mag=False,animate=animate,
                                 ax = self.ax, filled_contours=False)
@@ -1754,11 +1901,11 @@ class Roto_tomo:
  
  
     def MouseWheelInteraction(self,event):
-        if event.inaxes == self.ax:
-            
+        if event.inaxes is self.ax:
             if self.keyCtrl:
                 self.dPhi += event.step*2*np.pi/360 
-                print('ECE is shifted by %d deg'&(np.rad2deg(self.dPhi)))
+                print('ECE is shifted by %d deg'%(np.rad2deg(self.dPhi)%360))
+
             else:
                 steps = 360 if self.keyCtrl else 36
                 self.shift_phi +=  event.step*2*np.pi/steps
@@ -1798,6 +1945,7 @@ class Roto_tomo:
         try:
             for h in self.hsolvers:
                 h.qin.put(None) #send kill signal
+                h.terminate()
                 h.join(1e-2)  #join process
                 h.qin.close()
                 h.qout.close()
@@ -1813,5 +1961,4 @@ class Roto_tomo:
         except Exception as e:
             print('Error __del__', e)
             
-
 

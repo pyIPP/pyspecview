@@ -231,11 +231,11 @@ class loader_ECEI(loader):
         Zmesh = np.linspace(self.eqm.Zmesh[0], self.eqm.Zmesh[-1], 300)
 
         
-        #posistion including relativistic shift and refraction
+        #position including relativistic shift and refraction
         try:
             B = self.eqm.rz2brzt(r_in=Rmesh, z_in=Zmesh, t_in=time)
             Btot = squeeze(linalg.norm(B,axis=0)).T
-            from _ECE_chord import ece_los
+            from ._ECE_chord import ece_los
             Rcm,Zcm = np.meshgrid(Rmesh, Zmesh)
             _, Te, Ne = self.get_Te0(time,time,R=Rcm,Z=Zcm, returnTeNe=True)
             #pcolor(Rcm, Zcm, Ne)
@@ -250,7 +250,8 @@ class loader_ECEI(loader):
             #plot(Rc,Zc,'o')
             #ylim(Zmesh[0], Zmesh[-1])
             #oo
-        except:
+        except Exception as e:
+            print(e)
             from scipy.constants import c, e,m_e, epsilon_0
 
             B = self.eqm.rz2brzt(r_in=self.eqm.Rmesh, z_in=Zmod, t_in=time)

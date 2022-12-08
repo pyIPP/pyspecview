@@ -12,6 +12,7 @@ from time import time as T
 #TODO geometry for all diags
 from  IPython import embed
 
+from collections import OrderedDict
 
 
 def check(shot):
@@ -486,7 +487,7 @@ def get_calib(shot,calib_path,cam):
         print('Pinhole closed '+cam)
         pinhole = 1.95e3
 
-    #print('%s\tRc:%.0e  Gain:%d pinhole:%.2g filter:%d'%(cam, Rc, Gain, pinhole,filter))
+ 
 
 
     return Rc, Gain, pinhole, filter
@@ -598,14 +599,7 @@ def get_calib_fact(shot, geometry_path,  toroidal=False):
         
 
         calib = 4*pi/term/(resistor*gain)/eff_resp/etendue
-        #print('calib '+cam+' %.2e  W/m^2/V  '%mean(calib)+ ' %.2e  W/V  '%mean(calib*el_area))
-        
-        
-        #W = C*plocha*Volty
-        #volty = W/plocha/C
-        
-        #plot(calib);show()
-        #calib[:] = 1
+ 
         #### Done computing calibration ####
         if pol_array:
             calib_dict[cam+'a'] = calib[:16]
@@ -670,10 +664,9 @@ class loader_SXR(loader):
     mode_range = (-3,4)
     radial_profile=True
     units = 'W/m$^2$'
-    slow_network = False
+
 
     def __init__(self,*args, **kargs):
-        
         super(loader_SXR,self).__init__(*args, **kargs)
 
    
@@ -681,239 +674,193 @@ class loader_SXR(loader):
         self.phase_diags = '45R1','195R1'
  
         
-        self.fast_data = {}
-        self.catch={}
-        self.time_header_pol = None
-        self.time_header_tor = None
-        self.time_header = {}
+        self.names = OrderedDict()
+        self.names['90RP1'] = self.names['90RM1'] = arange(1,33)
+        self.names['45R1' ] = self.names['195R1'] = arange(1,13)
 
         
-        self.names = {}
-        self.names['165R1'] = arange(1,13)
-        self.names['45R1' ] = arange(1,13)
-        self.names['195R1'] = arange(1,13)
-        self.names['90RM1'] = arange(1,33)
-        self.names['90RP1'] = arange(1,33)
-        
-        #self.n_chunks = {'165R1':5,'45R1':5,'195R1':5,'90RM1':4,'90RP1':4}
 
         
         if self.shot > 168847: #only one toroidal camera is operational
-            tor_mode_num = False
+            self.tor_mode_num = False
         
-        #self.n_chunks = 5
 
-        self.groups = sort(list(self.names.keys()))
+        self.groups = sorted(list(self.names.keys()))
         path = os.path.dirname(os.path.realpath(__file__))
  
-        self.calib = get_calib_fact(self.shot,path)
-                            #sig[i] *= self.calib[group][int(n)-1]
-                            
+        
+        self.calib = get_calib_fact(self.shot,path, True)
+        self.calib.update(get_calib_fact(self.shot,path, False))
+
+                
         self.calib['90RM1'] = np.hstack((self.calib.pop('90RM1a'),self.calib.pop('90RM1b')))
         self.calib['90RP1'] = np.hstack((self.calib.pop('90RP1a'),self.calib.pop('90RP1b')))
-        self.calib['90RM1'][2] = 0 #corrupted channel
+        #self.calib['90RM1'][2] = 0 #corrupted channel
+ 
         # Geometry from
         # /usc-data/c/idl/source/efitviewdiagnoses/DIII-D/xraypaths.pro
-        
-        #rxray_t,zxray_t,rxray2_t,zxray2_t,xangle_t = xraypaths(self.shot, toroidal=True)
-        #rxray_p,zxray_p,rxray2_p,zxray2_p,xangle_p = xraypaths(self.shot, toroidal=False)
+ 
         r_p,z_p,r2_p,z2_p,xangle_p = xraypaths(self.shot, toroidal=False)
         r_t,z_t,r2_t,z2_t,xangle_t = xraypaths(self.shot, toroidal=True)
 
-        # Start with R+1 #1-32 then R-1 #1-32
-        # angle of view from R in degrees
-        #angleP = [270.8, 267.2, 263.3, 259.2, 254.8, 250.3, 245.6, 240.9,
-                #236.1, 231.4, 226.7, 222.3, 218.0, 214.0, 210.2, 206.7,
-                #217.8, 214.3, 210.6, 206.5, 202.3, 197.8, 193.2, 188.4,
-                #183.6, 178.9, 174.2, 169.7, 165.3, 161.2, 157.4, 153.3]
-        #angleM = [89.2, 92.8, 96.7, 100.8, 105.2, 109.7, 114.4, 119.1,
-                #123.9, 128.6, 133.3, 137.7, 142.0, 146.0, 149.8, 153.3,
-                #142.2, 145.7, 149.4, 153.5, 157.7, 162.2, 166.8, 171.6,
-                #176.3, 181.1, 185.8, 190.3, 194.6, 198.8, 202.6, 206.7]
-        ## R of aperture (m)
-        #RP = array([2.304]*16 + [2.272]*16)
-        #RM = array([2.304]*16 + [2.272]*16)
-
-        ## Z of aperture (m)
-        #ZP = array([0.731]*16 + [0.781]*16)
-        #ZM = array([-0.731]*16 + [-0.781]*16)
-
-        ## Create second point to define a line (2.5 m is sufficient)
-        #RP2 = RP + 2.5 * cos(deg2rad(angleP))
-        #RM2 = RM + 2.5 * cos(deg2rad(angleM))
-
-        #ZP2 = ZP + 2.5 * sin(deg2rad(angleP))
-        #ZM2 = ZM + 2.5 * sin(deg2rad(angleM))
-
-        #self.Phi = {'165R1':165, '195R1':195,
-                    #'45R1':45, '90RM1':90, '90RP1':90 }           
-        #self.R_start= {"90RM1":rxray_p[32:],"90RP1":rxray_p[:32],
-                       #'45R1':rxray_t,'165R1':rxray_t,'195R1':rxray_t}
-        #self.R_end=   {"90RM1":rxray2_p[32:],"90RP1":rxray2_p[:32],
-                       #'45R1':rxray2_t,'165R1':rxray2_t,'195R1':rxray2_t}
-        #self.z_start= {"90RM1":zxray_p[32:],"90RP1":zxray_p[:32],
-                       #'45R1':zxray_t,'165R1':zxray_t,'195R1':rxray_t}
-        #self.z_end=   {"90RM1":zxray2_p[32:],"90RP1":zxray2_p[:32],
-                       #'45R1':zxray2_t,'165R1':zxray2_t,'195R1':zxray2_t}
-        #self.theta =   {"90RM1":xangle_p[32:],"90RP1":xangle_p[:32],
-                #'45R1':xangle_t,'165R1':xangle_t,'195R1':xangle_t}
+       
         
-        self.Phi = {'165R1':165, '195R1':195,
-                    '45R1':45, '90RM1':90, '90RP1':90 }           
-        self.R_start= {"90RM1":r_p[32:],"90RP1":r_p[:32],
+        self.Phi = {'165R1':165, '195R1':195, '45R1':45, '90RM1':90, '90RP1':90 }           
+        self.R_start = {"90RM1":r_p[32:],"90RP1":r_p[:32],
                        '45R1':r_t[0:12],'165R1':r_t[12:24],'195R1':r_t[24:36]}
-        self.R_end=   {"90RM1":r2_p[32:],"90RP1":r2_p[:32],
+        self.R_end =   {"90RM1":r2_p[32:],"90RP1":r2_p[:32],
                        '45R1':r2_t[0:12],'165R1':r2_t[12:24],'195R1':r2_t[24:36]}
-        self.z_start= {"90RM1":z_p[32:],"90RP1":z_p[:32],
+        self.z_start = {"90RM1":z_p[32:],"90RP1":z_p[:32],
                        '45R1':z_t[0:12],'165R1':z_t[12:24],'195R1':z_t[24:36]}
-        self.z_end=   {"90RM1":z2_p[32:],"90RP1":z2_p[:32],
+        self.z_end =   {"90RM1":z2_p[32:],"90RP1":z2_p[:32],
                        '45R1':z2_t[0:12],'165R1':z2_t[12:24],'195R1':z2_t[24:36]}
-        self.theta=   {"90RM1":xangle_p[32:],"90RP1":xangle_p[:32],
+        self.theta =   {"90RM1":xangle_p[32:],"90RP1":xangle_p[:32],
                        '45R1':xangle_t[0:12],'165R1':xangle_t[12:24],'195R1':xangle_t[24:36]}
         
-        
-        self.time_header_pol
-        time_header = self.MDSconn.get(f'PTHEAD2("SX90F01",{self.shot}); __real64').data()[2:]
-        self.time_header_pol = time_header.reshape(-1,2).T    
-        
+ 
+
+        self.time_header = {}
+        time_header = self.MDSconn.get(f'PTHEAD2("SX90MF01",{self.shot}); __real64').data()[2:]
+        self.time_header["90RM1"] = self.time_header["90RP1"] = time_header.reshape(-1,2).T    
         time_header = self.MDSconn.get(f'PTHEAD2("SX195F01",{self.shot}); __real64').data()[2:]
-        self.time_header_tor = time_header.reshape(-1,2).T    
-        
+        self.time_header["45R1"] = self.time_header["165R1"] = self.time_header["195R1"] = time_header.reshape(-1,2).T    
 
         
-        self.cache_fast = {}
-        self.cache_slow = {}
-        for cam,names in list(self.names.items()):
-            self.cache_fast[cam] = {}#{n:empty(self.n_chunks[cam],dtype=object) for n in names}
-            self.cache_slow[cam] = {}
-     
+        for group, timeh in self.time_header.items():
+            if all(timeh==0):
+                self.groups.remove(group)
+        
+        if len(self.groups) == 0:
+            raise Exception('Fast SXR data are not availible')
+
+        
+        self.cache = {cam: {} for cam in self.names.keys()}
+        
+
 
         
     def get_names(self,group):
         return self.names[group]
+                                                    
         
         
-        
-    def get_signal_fast(self,group, names,calib=False,tmin=None,tmax=None):
-        print('----------------')
-        tt = T()
+    def get_signal(self,groups, names,calib=False,tmin=None,tmax=None):
+ 
                 
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
      
         if size(names) == 1 and not isinstance(names,tuple):
             names = (names,)
-            
-            
-
-        
-        names = atleast_1d(squeeze(int_(names)))
-        #MDSserver = self.MDSconn.hostspec
-        group_ = group.split('R')
-        
-        group_ = group_[0]+group_[1][:-1]
-        
-        
-        
- 
-     
-        if not group in self.time_header:
-            time_header = self.MDSconn.get(f'PTHEAD2("SX{group_}F01",{self.shot}); __real64').data()[2:]
-            self.time_header[group] = time_header.reshape(-1,2).T
-            if all(self.time_header[group]==0):
-                raise Exception('Fast SXR data are not availible')
- 
-        if all(self.time_header[group]==0):
-            raise Exception('Fast SXR data are not availible')
-    
-        
-        self.fast_data[group] = True
-        print('timeheader', T()-tt)
-   
-        indmin = np.where(self.time_header[group][1] > tmin)[0][0]
-        indmax = np.where(self.time_header[group][0] < tmax)[0][-1]+1
-
-        index = arange(indmin,indmax)
-        #need the first time slice for  background substraction
-        if calib: 
-            index = unique(r_[0,index])
-        
- 
-        load_names = []
-        for ch in names:
-            for i in index:
-                name = f'{ch:02d}_{i}'
-                if len(self.cache_fast[group].get(name,[])) <= 1:
-                    load_names.append(name)
-        
-        
-        TDI = [f'PTDATA2("SX{group_}F{n}",{self.shot},1)' for n in load_names]
-        print(TDI)
-        print(T()-tt)
        
+        if groups == 'all':
+            groups = list(self.names.keys())
+
+        if isinstance(groups,str):
+            groups = (groups,)
+                        
+            
+            
+        idx = []
+        TDI = []     
+        for group in groups:
+            if len(names) == 0:
+                channels = self.names[group]
+            else:
+                channels = np.atleast_1d(np.squeeze(np.int_(names)))
+        
+            group_ = group.split('R')        
+            group_ = group_[0]+group_[1][:-1]
+    
+
+            indmin = np.where(self.time_header[group][1] > tmin)[0][0]
+            indmax = np.where(self.time_header[group][0] < tmax)[0][-1]+1
+
+            index = np.arange(indmin,indmax)
+            #need the first time slice for  background substraction
+            if calib: 
+                index = unique(r_[0,index])
+            
+    
+            for ch in channels:
+                for i in index:
+                    name = f'{ch:02d}_{i}'
+                    if len(self.cache[group].get(name,[])) <= 1:
+                        idx.append([group, ch, i])
+                        TDI.append(f'PTDATA2("SX{group_}F{name}",{self.shot},1)')
+       
+
+
         if len(TDI) > 0:
             out = mds_par_load(self.MDSconn, TDI)
-            for n, o in zip(load_names, out):
-                self.cache_fast[group][n] = o
-                
-        print('--', T()-tt)
-        #embed()
+            for [g,ch,i], o in zip(idx, out):
+                self.cache[g][f'{ch:02d}_{i}'] = o
+  
         #collect all data
-        data = []
-        for ch in names:
-            #sig = []
-            #for i in arange(indmin,indmax):
-                #sig.append(self.cache_fast[group][f'{ch:02d}_{i}'])
-            sig = [self.cache_fast[group][f'{ch:02d}_{i}'] for i in arange(indmin,indmax)]
-            if  any([len(s) <= 1  for s in sig]):
-                print('data for SXR {group}{ch} are not availible')
-                sig = None
-            elif len(sig) == 1:
-                sig = sig[0]
-            else:
-                sig = np.hstack(sig)
-            data.append(sig)
-   
-        #prepare time vectors
-        nt = max([len(o) for o in data])
-        tvec = np.linspace(self.time_header[group][0,indmin], self.time_header[group][1,indmax-1], nt)
-        imin,imax = tvec.searchsorted([tmin,tmax])
-        ind = slice(imin,imax+1)
-        
-        #calibrate data
-        if calib:
-            data_offset = self.get_signal_fast(group, names,calib=False,tmin=-infty,tmax=0)
-            if len(names) == 1:
-                data_offset = [data_offset]
+        outputs = []
 
-            for i,n in enumerate(names):
-                if len(data[i]):
-                    data[i] = data[i]-data_offset[i][1].mean()
-                    if group in self.calib:
-                        data[i] *= self.calib[group][int(n)-1]
+       
+        for g in groups:
+
+            if len(names) == 0:
+                channels = self.names[g]
+            else:
+                channels = np.atleast_1d(np.squeeze(np.int_(names)))
             
+            indmin = np.where(self.time_header[g][1] > tmin)[0][0]
+            indmax = np.where(self.time_header[g][0] < tmax)[0][-1]+1
+
+            
+
+                
+            #collect all data
+            data = []
+            for ch in channels:
+                sig = [self.cache[g][f'{ch:02d}_{i}'] for i in np.arange(indmin,indmax)]
+                if  any([len(s) <= 1  for s in sig]):
+                    print('data for SXR {g}{ch} are not availible')
+                    sig = None
+                elif len(sig) == 1:
+                    sig = sig[0]
+                else:
+                    sig = np.hstack(sig)
+                data.append(sig)
+   
+            #prepare time vectors
+            nt = max([len(o) for o in data])
+            tvec = np.linspace(self.time_header[g][0,indmin], 
+                              self.time_header[g][1,indmax-1], nt)
+            imin,imax = tvec.searchsorted([tmin,tmax])
+            ind = slice(imin,imax+1)
+            
+            #calibrate data
+            if calib:
+                data_offset = self.get_signal(g, channels ,calib=False,tmin=-infty,tmax=0)
+                if len(names) == 1:
+                    data_offset = [data_offset]
+
+                for i,n in enumerate(channels):
+                    if len(data[i]):
+                        data[i] = data[i]-data_offset[i][1].mean()
+                        #if g in self.calib:
+                        data[i] *= self.calib[g][int(n)-1]
+                
         
-        output = []
- 
-        for sxr in data:
-            if len(sxr):
-                sxr = sxr[ind]
-            else:
-                sxr = np.zeros(imax-imin, dtype='single')
-            output.append([tvec[ind], sxr]) 
-     
-        print(T()-tt)
+            output = []    
+            for sxr in data:
+                if len(sxr):
+                    sxr = sxr[ind]
+                else:
+                    sxr = np.zeros(imax-imin, dtype='single')
+                output.append([tvec[ind], sxr]) 
 
-        output = self.hardcoded_corrections(output, group, names, True)
-        print(T()-tt)
-        print('====================')
+            outputs += self.hardcoded_corrections(output, g, names, True)
 
-        #embed()
 
         if len(output) == 1:
-            return output[0]
+            return outputs[0]
         else:
-            return output
+            return outputs
             
     
                  
@@ -963,98 +910,6 @@ class loader_SXR(loader):
         return output
     
         
-        
-    def get_signal(self,group, names,calib=False,tmin=None,tmax=None, slow=False):
-        
-        if (not group in self.fast_data or self.fast_data[group]) and not slow:
-            try:
-                return self.get_signal_fast(group, names,calib=calib,tmin=tmin,tmax=tmax)
-            except Exception as e:
-                raise
-                print(( 'SXR Error: '+ str(e)))
-                    
-        return self.get_signal_slow(group, names,calib=calib,tmin=tmin,tmax=tmax)
-
-        
-    def get_signal_slow(self,group, names,calib=False,tmin=None,tmax=None):
-        
-        if tmin is None:    tmin = self.tmin
-        if tmax is None:    tmax = self.tmax
-     
-     
-        nch = int_(names)
-
-   
-   
-   
-        if not hasattr(self, 'tvec_slow'):
-            self.MDSconn.openTree(self.tree,self.shot)
-            TDIcall = "\\SPECTROSCOPY::TOP.SXR:SX%s%s:TIMEBASE"%(group,'S')
-            self.tvec_slow = self.MDSconn.get(TDIcall).data()/1e3
-            self.MDSconn.closeTree(self.tree,self.shot)
-            self.fast_data[group] = False
-
- 
-       
-        offset_t = .1 # last 100ms of the signal
-        imin,ioff,imax = self.tvec_slow.searchsorted([tmin,self.tvec_slow[-1]-offset_t,tmax])
-        ind = slice(imin,imax+1)
-        tvec = self.tvec_slow[ind]
-        
-        #these channels are not measured by the slow DAS
-        if group in ['90RM1', '90RP1']:
-            for i in range(29,33):
-                if not i in self.cache_slow[group]:
-                    self.cache_slow[group][i] = zeros_like(self.tvec_slow)
-        
-        TDIcall = 'PTDATA2("SX%sS%s",%d,1)'%(group,'%d',self.shot)
-
-        t = T()
-        if size(nch) == 1:
-            if nch in self.cache_slow[group]:
-                return tvec[ind], self.cache_slow[group][nch][ind]
-        
-        
-        
-            self.MDSconn.openTree(self.tree,self.shot)
-            sig = self.MDSconn.get(TDIcall%nch).data()
-            self.MDSconn.closeTree(self.tree,self.shot)
-
-            #print(( 'data loaded in %.2f'%( T()-t)))
-        
-            self.cache_slow[group][nch] = sig
-
-            return tvec, sig[ind]
-                
-
-            
-        
-              
-        load_nch = []
-        for n in nch:
-            if n not in self.cache_slow[group]:
-                load_nch.append(n)
-        if len(load_nch) > 0:
-            TDI = [TDIcall%n for n in  load_nch]
-            out = mds_par_load(self.MDSconn ,   TDI)
-
-            #print(( 'data loaded in %.2f'%( T()-t)))
-
-            for n, sxr in zip(load_nch, out):
-                self.cache_slow[group][n] = sxr
-                    
-        output = [self.cache_slow[group][n][ind] for n in nch]
-
-        
-        if calib:
-            for i,n in enumerate(nch):
-                output[i] = output[i]-mean(self.cache_slow[group][n][ioff:])
-                
-                if group in self.calib:
-                    output[i] *= self.calib[group][int(n)-1]
-
-        
-        return [(tvec,sig) for sig in output]
      
         
      
@@ -1124,7 +979,9 @@ def main():
     #from ECE import loader_ECE
     #ece = loader_ECE(175900,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
   
-    out = sxr.get_signal( '195R1',arange(1,10), tmin=4.8, tmax = 4.9,calib=True)
+    t = T()
+    out = sxr.get_signal( 'all',[], tmin=4.8, tmax = 4.9,calib=True)
+    print(T()-t)
     embed()
     
     exit()

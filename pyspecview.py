@@ -21,6 +21,7 @@ logger = logging.getLogger('pyspecview')
 logger.addHandler(hnd)
 logger.setLevel(logging.DEBUG)
 #logger.setLevel(logging.INFO)
+import MDSplus as mds
 
 
  
@@ -89,6 +90,40 @@ def excepthook(exc_type, exc_value, exc_tb):
  
 sys.excepthook = excepthook
 
+
+
+from multiprocessing import  Pool
+
+                
+def mds_load(tmp):
+            mds_server,  TDI = tmp
+        
+            MDSconn = mds.Connection(mds_server)
+            data = []
+            for tdi in TDI:
+                try:
+                    data.append(MDSconn.get(tdi).data())
+                except:
+                    data.append([])
+            return data
+
+
+def mds_load_par( MDSconn, TDI, numTasks=8):
+
+            numTasks = 8
+            server = MDSconn.hostspec
+            TDI = np.array_split(TDI, min(numTasks,len(TDI)))
+
+            args = [(server, tdi) for tdi in TDI]
+            
+            out = []
+            pool = Pool()
+            for o in pool.map(mds_load,args):
+                out.extend(o)
+            pool.close()
+            pool.join()
+            
+            return out 
 
 
 class colorize:
@@ -249,7 +284,7 @@ class SpectraViewer(object):
         #self.plt_plasma_freq_n2, = self.ax.plot([], [], c=c, zorder=99, lw=.5,ls='--')
 
         if allow_selector:
-            rectprops = dict(facecolor='gray', edgecolor='black', alpha=0.5, fill=True, zorder=99)
+            rectprops = dict(facecolor='gray', edgecolor='black', alpha=0.5, fill=True, zorder=1000)
             self.RS1 = RectangleSelector(self.ax, self.line_select_callback, 
                                         drawtype='box', useblit=True, 
                                         button=[1, ], # don't use middle button
@@ -1137,7 +1172,8 @@ def calculate_cmplx_phase(tvec, cross_signal,  f_range):
     #normalize the aplitude
     b, a = butter(3, f0/f_nq*.5, 'lowpass')
     padlen = min(len(cross_signal)//2, 100)
-    if not np.any(np.abs(np.roots(a))>=1):   envelope = filtfilt(b, a, envelope, padtype='even', padlen=padlen)
+    if not np.any(np.abs(np.roots(a))>=1):   
+        envelope = filtfilt(b, a, envelope, padtype='even', padlen=padlen)
 
     cross_signal = np.copy(cross_signal_fband)
     cross_signal/= np.maximum(envelope, envelope.max()/20)[:len(cross_signal)]
@@ -1149,10 +1185,21 @@ def calculate_cmplx_phase(tvec, cross_signal,  f_range):
     #get a 90 degrees shifted complex part 
     cmplx_sig = hilbert(cross_signal, nfft)[:cross_signal.size]
 
-    return cmplx_sig
+
+    #calculated harmonics will exactly corresponds to 
+    it = len(tvec)//2
+    t0 = tvec[it]
+    cmplx_sig *= np.conj(cmplx_sig[it])/np.abs(cmplx_sig[it])
+        
+    #estimate average modulation frequency
+    zero_crossings = np.where(np.diff(np.sign(cmplx_sig.real)))[0]
+    f0 = 1/np.median(np.diff(tvec[zero_crossings]))/2
+
+
+    return t0,f0, cmplx_sig
  
  
-def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=None):
+def extract_harmonics(tvec_data,t_range, f_range,n_harm_max, cross_tvec_signal=None):
     
     from scipy.signal import get_window
     
@@ -1182,7 +1229,10 @@ def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=
  
     if0 = fvec[1:].searchsorted(f0)
     idf  = fvec[1:].searchsorted(df)
-    
+    #Nyquist frequency
+    fnq = (len(tvec)-1)/(tvec[-1]-tvec[0])/2
+
+
     ind_f = [slice(*(if0*(n+1)+np.r_[-idf//2, idf//2+1])) for n in range(n_harm_max)]
     ind_f = [ind for ind in ind_f if np.size(fvec[ind])>0]
     n_harm = len(ind_f)
@@ -1246,26 +1296,21 @@ def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=
         cross_signal = data[cross_sig_num]
  
     #demodulation signal from the measured signal 
-    cmplx_sig = calculate_cmplx_phase(tvec, cross_signal,  f_range)
+    t0,f0,cmplx_sig = calculate_cmplx_phase(tvec, cross_signal,  f_range)
  
 
-    
+
+    from scipy.signal import butter, sosfiltfilt
+    sosbutter = butter(5,f0/5, btype='low',  output='sos', fs=fnq)
+
     #demodulate signal and find the first component
     complex_harm = np.zeros((n_harm, tvec.size), dtype='complex')
     complex_harm[0] = cmplx_sig
     for i in range(1, n_harm):
         complex_harm[i] = complex_harm[i-1]*cmplx_sig
     #make it more othogonal
-    complex_harm, _ = np.linalg.qr(complex_harm.T)
-    
-    #calculated harmonics will exactly corresponds to 
-    it = len(tvec)//2
-    t0 = tvec[it]
-    complex_harm *= np.conj(complex_harm[it])/np.abs(complex_harm[it])
-        
-    #estimate average modulation frequency
-    zero_crossings = np.where(np.diff(np.sign(cmplx_sig.real)))[0]
-    f0 = 1/np.median(np.diff(tvec[zero_crossings]))
+    complex_harm, r = np.linalg.qr(complex_harm.T)
+    complex_harm *= np.diag(r)
             
     retro = np.zeros((tvec.size, len(data)))
     error = np.zeros(len(data))
@@ -1273,7 +1318,7 @@ def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=
 
     #remove issues with boundary effects
     win = get_window('hann', tvec.size, fftbins=False).astype('single')   
-    win /= np.sum(win)/np.sqrt(len(win))
+    win /= np.sum(win)#/np.sqrt(len(win))
 
     for j, sig in enumerate(data):
         mask = np.ma.getmask(sig)
@@ -1283,19 +1328,24 @@ def extract_harmonics(tvec_data,t_range, f_range,n_harm_max,  cross_tvec_signal=
   
         #perform a least squares fit of the orthonormal complex prototype to the measured signal
         sig_ = win*(sig-offset[j])
-        #harm = 2*np.dot(win*(sig-offset[j]), np.conj(complex_harm))   
-        harm[:,j] = [2*(sig_*np.conj(ch)).sum() for ch in complex_harm.T]
+        harm[:,j] = 2*np.dot(win*(sig-offset[j]), np.conj(complex_harm))   
+
         #retrofit of the measured signal 
-        retro[:, j] = np.dot(complex_harm, harm[:,j]*np.sqrt(len(win))).real
-        retro[:, j] += offset[j]
+        retro[:, j] = np.dot(complex_harm, harm[:,j]).real
         #this might be wrong if there is another non-random signal
-        error[j] = (sig-retro[:, j]).std() #sqrt(chi2/n)
-        
+        error[j] = np.std(sosfiltfilt(sosbutter, sig-retro[:, j], padtype='even')) #sqrt(chi2/n)
     
-    error *= np.sum(win**2)/np.sqrt(len(tvec)) #first term accounts for window weights, should be one for rectangular? , secomd term is just for averaging of normally distributed noise
+    retro += offset
+    error *= np.sum(win**2)*np.sqrt(len(tvec)) #first term accounts for window weights, should be one for rectangular? , secomd term is just for averaging of normally distributed noise
         
     corrupted |= np.abs(harm[0]) == 0   
-    
+    #print('BUG')
+    #retro1 = np.outer(harm[0], np.exp(1j*2*np.pi*f0*(tvec-t0))).real
+    #retro2 = (harm[[0]]*complex_harm[:,[0]]).real*np.sqrt(len(win))
+    #embed()
+    #np.savez('harm', retro_ = retro_, harm=harm,tvec=tvec,data=data, f0=f0, t0=t0,cmplx_sig=cmplx_sig, retro1=retro1,complex_harm=complex_harm,  retro2=retro2, exps = np.exp(1j*2*np.pi*f0*(tvec-t0)))
+
+
     return n_harm, amplitude, tvec, cross_signal, harm, retro, offset, error, corrupted, f0, t0
 
 
@@ -1655,7 +1705,8 @@ class Diag2DMapping(object):
             self.fig.clf()
             self.show_ecei.setChecked(False)
             self.cross_signal = None
-            self.__init__( self.parent, self.fig, self.n_contour, self.remback_button, self.show_ecei)
+            self.__init__( self.parent, self.fig, self.n_contour, 
+                              self.remback_button, self.show_ecei)
 
             
     def set_data(self,rho,R, Z, theta0,  Phi, data, mag_coord_diag, mag_coord_data,
@@ -1924,7 +1975,8 @@ class Diag2DMapping(object):
                     except ValueError: pass#Everything is not removed for some reason!    
 
     
-    def update(self, update_cax=True, update_mag=True, animate=False, ax = None, filled_contours = True):
+    def update(self, update_cax=True, update_mag=True, animate=False, 
+                        ax = None, filled_contours = True):
 
         if not self.initialized: return 
  
@@ -2010,7 +2062,8 @@ class Diag2DMapping(object):
             #logger.debug(f'Assume mode m/n = {self.m}/{n}')
 
             #toroidal shift betwen ECE and ECEI results in some time shift between the data            
-            dPhi = -Phi + self.Phi0    
+            dPhi = -Phi + self.Phi0   
+            print('dPhi', dPhi) 
             dT = dPhi/(self.f0*2*np.pi)*n/self.m  
             t = time.time()
 
@@ -2025,7 +2078,7 @@ class Diag2DMapping(object):
             if np.any(self.invalid2D):
                 from scipy.interpolate import griddata
                 Te2D[self.invalid2D] = griddata((R[~self.invalid2D], Z[~self.invalid2D]),
-                                           Te2D[~self.invalid2D], (R[self.invalid2D],Z[self.invalid2D]))
+                                     Te2D[~self.invalid2D], (R[self.invalid2D],Z[self.invalid2D]))
        
     
             ax.Te2D_contourf = ax.contourf(R, Z, Te2D, extend='both', zorder = 10,
@@ -2171,8 +2224,6 @@ class MainGUI(QMainWindow):
         self.parent = parent
         self.MDSconn = None
         if self.tokamak == "AUG":
-            #import map_equ_20200306 as map_equ
-            #self.eqm = map_equ.equ_map()
             pass
         elif self.tokamak == "DIIID":
             from loaders_DIIID import map_equ
@@ -2254,37 +2305,7 @@ class MainGUI(QMainWindow):
 
         self.closeEvent = self.__del__
         
-            #######################################
-        #from time import time
-        #t = time()
-        #from multiprocessing import  Pool
-
-        #def mds_load(tmp):
-            #mds_server,  TDI = tmp
-            #MDSconn = mds.Connection(mds_server )
-            #data = []
-            #for tdi in TDI:
-                #try:
-                    #data.append(MDSconn.get(tdi).data())
-                #except:
-                    #data.append([])
-            #return data
-        #group = 'LFS'
-        #names = ['0301', '0302', '0303', '0304', '0305', '0306', '0307', '0308', '0501', '0502', '0503', '0504', '0505', '0506', '0507', '0508', '0701', '0702', '0703', '0704', '0705', '0706', '0707', '0708', '1101', '1102', '1103', '1104', '1105', '1106', '1107', '1108', '1201', '1202', '1203', '1204', '1205', '1206', '1207', '1208', '1301', '1302', '1303', '1304', '1305', '1306', '1307', '1308', '1501', '1502', '1503', '1504', '1505', '1506', '1507', '1508', '1701', '1702', '1703', '1704', '1705', '1706', '1707', '1708', '1901', '1902', '1903', '1904', '1905', '1906', '1907', '1908', '2101', '2102', '2103', '2104', '2105', '2106', '2107', '2108']
-        #shot = 180180
-        #numTasks = 8
-        #TDI = [f'PTDATA2("{group+n}", {shot})' for n in names]
-        #TDI = np.array_split(TDI, numTasks)
-        #args = [("localhost", tdi) for tdi in TDI]
-        
-        #out = []
-        #pool = Pool()
-        #for o in pool.map(mds_load,args):
-            #out.extend(o)
-        #pool.close()
-        #pool.join()
-        #print(time()-t)
-        
+          
         
     
     def __del__(self, event=None):
@@ -2330,8 +2351,8 @@ class MainGUI(QMainWindow):
             selected_frange = self.Te2Dmap.f_range 
          
         if prew_panel == '2D SXR' and self.roto_tomo.initialized:
-            selected_trange = self.roto_tomo.tmin, self.roto_tomo.tmax
-            selected_frange = self.roto_tomo.fmin, self.roto_tomo.fmax
+            selected_trange = self.roto_tomo.t_range
+            selected_frange = self.roto_tomo.f_range
             
         #check if setting are valid
                     
@@ -2397,34 +2418,51 @@ class MainGUI(QMainWindow):
         elif new_panel == '2D SXR':
  
             if self.SpecWin.initialized:
-                
-                if self.signal_radial is None:
-                    #use the signal shown in the spectrogram
-                    cross_sig = self.SpecWin.stft_disp.tvec, self.SpecWin.stft_disp.signal 
-                else:
-                    cross_sig = self.data_loader_radial.get_signal(self.diag_group_radial, 
-                                    self.signal_radial, calib=False, tmin=selected_trange[0], tmax=selected_trange[1])
-                
-                #get signal for demodulation of experimental data 
-                cmplx_sig = calculate_cmplx_phase(cross_sig[0], cross_sig[1], selected_frange)
 
  
-                if self.roto_tomo.initialized and self.roto_tomo.selected_trange == selected_trange\
-                        and self.roto_tomo.selected_frange == selected_frange\
-                        and self.shot == self.roto_tomo.shot:
+                if self.roto_tomo.initialized and self.roto_tomo.t_range is selected_trange\
+                        and self.roto_tomo.f_range is selected_frange\
+                        and self.shot == self.roto_tomo.shot\
+                        and self.signal_radial is self.roto_tomo.cross_sig_name:
                         pass  #if nothing has changed, just continue
                     
                 elif self.shot is not None:
-  
+                    if self.signal_radial is None:
+                        #use the signal shown in the spectrogram
+                        cross_sig = self.SpecWin.stft_disp.tvec, self.SpecWin.stft_disp.signal 
+                    else:
+                        cross_sig = self.data_loader_radial.get_signal(self.diag_group_radial, 
+                                        self.signal_radial, calib=False, tmin=selected_trange[0],
+                                        tmax=selected_trange[1])
+                
+
+                    #get signal for demodulation of experimental data 
+     
+                    #TODO check that it updates when the reference signal is changed
+                    harm_data = None
+                    cmplx_sig = None
+
+                    if self.tokamak == 'DIIID' and True:
+
+                        t0, f0, harm_data = self.load_SXR_data(selected_trange, selected_frange,
+                                                            cross_tvec_signal = cross_sig)
+                    else:
+                        t0, f0, cmplx_sig = calculate_cmplx_phase(cross_sig[0], cross_sig[1],
+                                                                  selected_frange)
+                        cmplx_sig = [cross_sig[0], cmplx_sig]
+                
                     #update also tomography
                     try:
-                        self.roto_tomo.prepare_tomo(self.tokamak, self.shot,  selected_trange,
-                                                    selected_frange, self.eqm, [cross_sig[0], cmplx_sig])
+                        self.roto_tomo.prepare_tomo(self.tokamak, self.shot, 
+                                                    selected_trange, selected_frange, t0, f0,
+                                                    self.signal_radial, harm_data, cmplx_sig) 
+
                     except:
                         print('rotation tomography failed')
                         print( traceback.format_exc())
 
-                        QMessageBox.warning(self, "rotation tomography ", traceback.format_exc(), QMessageBox.Ok)
+                        QMessageBox.warning(self, "rotation tomography ",
+                                                    traceback.format_exc(), QMessageBox.Ok)
                         return 
 
                     if self.roto_tomo.showTe:
@@ -3251,6 +3289,54 @@ class MainGUI(QMainWindow):
         #self.Te2Dmap.update()
         QApplication.restoreOverrideCursor()
 
+
+
+    def load_SXR_data(self, t_range, f_range, cross_tvec_signal= None):
+
+
+        #special case, load data 2D image with ECE
+        if self.tokamak != 'DIIID':
+            raise Exception('Use only on DIII-D')
+        logger.info('Fetching SXR data ... ' )
+        T = time.time()
+
+        self.statusBar().showMessage('Loading SXR ...' )
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+       
+
+        #do not load data again, if is not necessary 
+        if  hasattr(self, 'data_loader_SXR'):
+            pass
+        elif  not hasattr(self, 'data_loader_SXR') and self.data_loader.__class__.__name__ == 'loader_SXR':
+
+            self.data_loader_SXR = self.data_loader
+        else:
+            self.data_loader_SXR = self.diag_loaders['SXR'][0](self.shot, eqm=self.eqm, 
+                                            rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)            
+            
+        #fetch all SXR data
+        data  = self.data_loader_SXR.get_signal('all', [], calib=True,
+                                               tmin=t_range[0],tmax=t_range[1])
+       
+
+        #calculate harminics of the mode signal
+        _, _, _, _, harm, _, offset, error, corrupted, f0, t0 = extract_harmonics(data, 
+			t_range, f_range, self.rtomo_n_harm, cross_tvec_signal=cross_tvec_signal)
+     
+        sxr_names = [(g,n) for g,names in self.data_loader_SXR.names.items() for n in names]
+        harm_data =  {}
+        for i, n in enumerate(sxr_names):
+            harm_data[n] = {'harm': [offset[i]]+list(harm[:,i]), 'error': error[i], 
+                              'valid': ~corrupted[i]}
+ 
+        if (time.time()-T) > 0.1:
+            logger.info('SXR data loaded in %5.2fs', (time.time()-T))
+
+        QApplication.restoreOverrideCursor()
+
+        return t0,  f0, harm_data
+        
+
     def load_ECEI_data(self):
 
         if not self.tomo_plot_ecei.isChecked():
@@ -3285,8 +3371,8 @@ class MainGUI(QMainWindow):
         if not (self.data_loader_ECEI.LFSGOOD or self.data_loader_ECEI.HFSGOOD):
             QMessageBox.warning(self, "NO ECEI data",
                         'ECEI data are not availible for this shot', QMessageBox.Ok)
-            self.show_ecei.setChecked(False)
 
+            self.tomo_plot_ecei.setChecked(False)
             return 
 
         #teh HFS system on DIII-D is broken, but can be added in the future
@@ -3307,6 +3393,8 @@ class MainGUI(QMainWindow):
         
         
         logger.info('ECEI profile data loaded in %5.2fs', (time.time()-T))
+
+       
 
         
         
@@ -4084,7 +4172,7 @@ class MainGUI(QMainWindow):
                         self.rototomo_n_num, self.rototomo_plot_bcg, 
                         self.rototomo_TeOver, self.rototomo_mag_flx, self.rototomo_limit, 
                         self.rototomo_reg, self.rtomo_n_harm, self.rtomo_n_svd, 
-                        self.eqm, self.rho_lbl, self.rtomo_show_contours)
+                        self.eqm, self.rho_lbl, self.rtomo_show_contours )
 
         self.rototomo_m_num.currentIndexChanged.connect(self.roto_tomo.update_node_m_number)
         self.rototomo_n_num.currentIndexChanged.connect(self.roto_tomo.update_node_n_number)                    
