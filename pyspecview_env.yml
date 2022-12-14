@@ -4,7 +4,7 @@ dependencies:
   - python=3.7
   - numpy
   - scipy
-  - matplotlib
+  - matplotlib<=3.5
   - pyfftw=0.12
   - pyqt=5.12
   - configparser
