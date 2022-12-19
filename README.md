@@ -6,8 +6,13 @@ this short manual was prepared:
 DIII-D, NSTX, ASDEX Upgrade
 
 ## How to start the program
+AUG
     Execute command 'pyspecview' in the linux clusters toks01-06 or toki01-07. 
     Make sure that the server is not heavily loaded by other users. (command htop)
+DIII-D
+   module load pyspecview; pyspecview
+NSTX
+   module load mod_pyspecview pyspecview; pyspecview
 
 ## Spectrogram panel
     1) set shot, diagnostic, group, and signal
