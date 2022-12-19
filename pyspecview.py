@@ -286,9 +286,11 @@ class SpectraViewer(object):
         if allow_selector:
             rectprops = dict(facecolor='gray', edgecolor='black', alpha=0.5, fill=True, zorder=1000)
             self.RS1 = RectangleSelector(self.ax, self.line_select_callback, 
-                                        drawtype='box', useblit=True, 
+                                        #drawtype='box',
+                                        useblit=True, 
                                         button=[1, ], # don't use middle button
-                                       minspanx=5, minspany=5, rectprops=rectprops, 
+                                       minspanx=5, minspany=5,
+                                       rectprops=rectprops, 
                                        spancoords='pixels')
         
     def __del__(self):
@@ -2744,7 +2746,8 @@ class MainGUI(QMainWindow):
 
         #clear and prepare the plots
         self.radial_view.reset()
-        self.Te2Dmap.reset()
+        if hasattr(self,'Te2Dmap'):
+            self.Te2Dmap.reset()
 
 
         def init_equlibrium():
