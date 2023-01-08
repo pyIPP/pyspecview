@@ -40,7 +40,7 @@ def ece_los(f_los, z_los, Rgrid, Zgrid, B0, ne, Te):
     
 
     #calculate Z_los in 3 iterations
-    for i in range(1):
+    for i in range(3):
         dNdZ_los = Nspline.ev(Z_los, R_los, dx=1)
         intdNdz = cumtrapz(dNdZ_los, R_los,initial=0)
         N_los = np.maximum(Nspline.ev(Z_los, R_los), 1e-6) #to avoid issues at n=1 resonance

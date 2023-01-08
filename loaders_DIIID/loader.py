@@ -141,7 +141,7 @@ class loader(object):
         return magr,magz, angle, theta_star
 
     
-    def get_rho(self,time,R_start,z_start,Phi_start=None, R_end=None,z_end=None,Phi_end=None, dR=0,dZ=0):
+    def get_rho(self,time,R_start,z_start,Phi_start=None, R_end=None,z_end=None,Phi_end=None, dR=0,dZ=0, tangential=False):
         #get rho_pol/rho_tor for points, R2, and Z2 must be specified for LOSs
         
         
@@ -168,9 +168,7 @@ class loader(object):
         End   = array((R_end  *cos(Phi_end  ),R_end  *sin(Phi_end  ), z_end  ))
         
         
-        #import IPython
-        #IPython.embed()
-                
+
         t = linspace(0,1,200)
         X,Y,Z = (End-Start)[:,:,None]*t[None,None,:]+Start[:,:,None]
         R = hypot(X,Y)
@@ -179,9 +177,25 @@ class loader(object):
 
         #X,Y,Z = array(n)[:,:,None]*t[None,None,:]+c_[R_start,z_start].T[:,:,None]
         
+
+        #import IPython
+        #IPython.embed()
+        if tangential:
+            R_tg, t_tg = np.array([min_fine(t,r) for r in R]).T
+            Z_tg = np.array([np.interp(t_, t, z) for t_, z in zip(t_tg, Z)])
+ 
+            rho_tg = self.eqm.rz2rho(R_tg[None]-dR,Z_tg[None]-dZ,time,coord_out=self.rho_lbl)[0]
+            rho_tg[R_tg < r0] *= -1
+            theta_tg = arctan2(Z_tg-z0, R_tg-r0)#not very accurate close to the core :(
+
+       
+            return rho_tg,theta_tg,R_tg,Z_tg
+  
+            
         rho = self.eqm.rz2rho(R[None]-dR,Z[None]-dZ,time,coord_out=self.rho_lbl)[0]
 
-
+            
+                
         rho_tg = zeros(n_points)
         xlim = zeros((3,n_points))
         ylim = zeros((3,n_points))

@@ -1832,7 +1832,7 @@ class Roto_tomo:
         #retrofit in time domain
         self.retro_t    = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.retro)],0).T
         #filtered data in time domain
-        self.filtered_t = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(np.conj(self.bb))],0).T
+        self.filtered_t = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.bb)],0).T
  
         #this is exactly equal to self.retro_t
         self.retro_gt = np.sum([np.real(self.T*g.flatten(order='F')*cmplx_phase**i) for i,g in enumerate(self.G)],0).T

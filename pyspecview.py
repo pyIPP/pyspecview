@@ -2065,7 +2065,7 @@ class Diag2DMapping(object):
 
             #toroidal shift betwen ECE and ECEI results in some time shift between the data            
             dPhi = -Phi + self.Phi0   
-            print('dPhi', dPhi) 
+            #print('dPhi', dPhi) 
             dT = dPhi/(self.f0*2*np.pi)*n/self.m  
             t = time.time()
 
