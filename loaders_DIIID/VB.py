@@ -71,12 +71,12 @@ class loader_VB(loader):
             self.MDSconn.openTree(tree,self.shot)
             TDIcall = "_x=\\%s::%s%.2d"%(tree,group,name )
   
-            sig = self.MDSconn.get(TDIcall).data()
+            sig = np.single(self.MDSconn.get(TDIcall).data())
             if self.tvec is None:
                 self.tvec = self.MDSconn.get('dim_of(_x)').data()/1e3
                 
             self.MDSconn.closeTree(tree,self.shot)
-            self.catch[name] = single(sig)
+            self.catch[name] = sig
 
         imin,imax = self.tvec.searchsorted([tmin,tmax])
         ind = slice(imin,imax+1) 
