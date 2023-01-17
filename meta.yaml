@@ -9,4 +9,6 @@ dependencies:
   - pyqt=5.12
   - configparser
   - MDSplus
+  - IPython
+  - scikit-sparse
 
