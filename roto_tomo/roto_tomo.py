@@ -1198,7 +1198,7 @@ class Roto_tomo:
        
 
         #Prepare tokamak object from original tomography code
-        input_parameters = read_config(tomo_code_path+"tomography.cfg")
+        input_parameters = read_config(tomo_code_path+"tomography_D3D.cfg")
         input_parameters['shot'] = shot
         input_parameters['local_path'] = tomo_local_path
         input_parameters['program_path'] = tomo_code_path
