@@ -1,5 +1,7 @@
-from loaders_DIIID.loader import * 
-#from loader import * 
+try:
+    from loaders_DIIID.loader import * 
+except:
+    from loader import * 
 
 
 import os
@@ -16,22 +18,18 @@ def check(shot):
 
 
 def mds_load(par):
-    (mds_server, shot,  TDI) = par
-    MDSconn = mds.Connection(mds_server )
-    #print TDI
+    (mds_server, shot,  signal) = par
     try:
-        data = MDSconn.get('_x='+TDI).data()
-        
-        if len(data) > 1:
-            tvec = MDSconn.get('dim_of(_x)').data()
-        else:
-            tvec = data
+        TT = T()
+        MDSconn = mds.Connection(mds_server )
+        t1,t2 = MDSconn.get(f'PTHEAD2("{signal}",{shot}); __real64').data()[2:4]
+        data  = MDSconn.get(f'PTDATA2("{signal}",{shot})').data()
     except:
-        return [] ,[]
+        return None,None ,[]
     
-    return tvec,data
+    return t1,t2,data
 
-
+from IPython import embed
 
 #			-----------------
 #			 TAG DEFINITIONS
@@ -167,71 +165,6 @@ class loader_Magnetics(loader):
     
     def get_names(self,group):
         return self.names[group]
-    
-    #def get_signal(self,group, names,calib=False,tmin=None,tmax=None):
-        
-        #if tmin is None:    tmin = self.tmin
-        #if tmax is None:    tmax = self.tmax
-        
-        
-        
-        #if not group in self.tvec:
-            #self.tvec = {}
-        
-        #if size(names) == 1: names = (names, )
-        #names_to_load = []
-        #for n in names:
-            #if not n in self.catch:
-                #names_to_load.append(n)
-                
-
-        
-        #TDIcall = 'PTDATA2("%s",%d)'
-        
-        ##load data in paraell 
-        #t = time()
-        #server = self.MDSconn.hostspec
-        
-        #args = [(server, self.shot, TDIcall%(s,self.shot)) for s in names_to_load]
-        
-        #if not group in self.tvec:        #load tvec if necessary
-           #args+= [(server, self.shot,'dim_of('+args[0][2]+')'),] 
-        
-        #nconn = len(args)  #brutal force
-        #pool = Pool()
-        #out = pool.map(mds_load,args)
-        #pool.close()
-        #pool.join()
-    
-        #print 'data loaded in %.2f'%( time()-t)
-        
-
-        #if not group in self.tvec: 
-            #self.tvec[group] = out[-1]
-            #self.tvec[group]/= 1e3  #
-        ##print names_to_load
-        #for n,sig in zip(names_to_load, out):
-            #print n,not all(sig == sig[0]), shape(sig)
-            #self.active[n] = not all(sig == sig[0])
-            ##if len(sig) < 2 : raise Exception('Signal %s was not found'%n) 
-            #self.catch[n] = sig
-            
-        #tvec = self.tvec[group]
-        
-        
-        #imin,imax = tvec.searchsorted([tmin,tmax])
-        #ind = slice(imin,imax+1)
-        
-        #data = []
-        #for n in names:
-            #if self.active[n]:
-                #data.append(self.catch[n][ind])
-        #if len(data) == 0:
-            #raise Exception('Broken coil, use another one')
-            
-        #data = squeeze(vstack(data).T)
-
-        #return tvec[ind] ,data
 
     
     def get_signal(self,group, names,calib=False,tmin=None,tmax=None):
@@ -247,27 +180,18 @@ class loader_Magnetics(loader):
                 names_to_load.append(n)
                 
         if len(names_to_load):
-            
-            TDIcall = 'PTDATA2("%s",%d)'
-            
-            #load data in paraell 
-            t = T()
             server = self.MDSconn.hostspec
-            args = []
-            for s in names_to_load:
-                args.append((server, self.shot, TDIcall%(s,self.shot)))
-                            
-            print( '\nParallel fetch...')
+            args = [(server, self.shot, s) for s in names_to_load]
             pool = Pool()
             out = pool.map(mds_load,args)
             pool.close()
             pool.join()
-            
         else:
             out = []
 
-        for n, (tvec, sig) in zip(names_to_load, out):
-            if len(tvec) == 0:
+
+        for n, (t1,t2, sig) in zip(names_to_load, out):
+            if len(sig) == 0:
                 print('Signal %s was not found'%n)
                 self.active[n] = False
                 continue
@@ -281,8 +205,7 @@ class loader_Magnetics(loader):
                 sig*= -1
  
             if self.active[n]:
-
-                tvec/= 1e3 #s
+                tvec = np.linspace(t1,t2, len(sig))
                 sig = self.remove_elms(tvec, sig)
                 self.catch[n] = tvec,sig
         
@@ -327,27 +250,21 @@ class loader_Magnetics(loader):
         tvec = []
         for t,d in data:
             if len(t) > len(tvec): tvec = t
+            
         output = empty((len(tvec), len(data)),dtype='single')
-        
         for i,(t,d) in enumerate(data):
             if len(tvec)!= len(t):
                 output[:,i] = interp(tvec, t, d, left=0, right=0)
             else:
                 output[:,i] = d
-
-        
-            
-        #print data.shape
-
+ 
         return tvec, output
 
     def get_phi_tor(self,name):
-
         phi_tor = []
         for ic,c in enumerate(self.tor_num_names[name]):
             if c in self.active and self.active[c]:
                 phi_tor.append(self.tor_num_phi[name][ic])
-        
         
         return deg2rad(phi_tor)
             
@@ -370,7 +287,6 @@ class loader_Magnetics(loader):
 
         for n in self.pol_num_names[name]:
             R,Z, Phi, Tilt, L, W = BpDot_probes_322[n]
-            #print(( n, name, self.active[n]))
             if self.active[n]:
                 theta.append(arctan2(Z-Z0, R-R0 ))
     
@@ -420,6 +336,12 @@ def main():\
     eqm = equ_map(MDSconn,debug=False)
     eqm.Open(175860,diag='EFIT01' )
     coils = loader_Magnetics(175860,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
+    
+    TT = T()
+    coils.get_signal_phase('Toroidal')
+    print(T()-TT)
+    embed()
+
     
     g = coils.groups[0]
     print(( coils.groups))

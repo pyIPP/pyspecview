@@ -1,15 +1,17 @@
-from loaders_DIIID.loader import * 
-#from loader import * 
+try:
+    from loaders_DIIID.loader import * 
+except:
+    from loader import * 
 
 import os
 from multiprocessing import  Pool
 import MDSplus as mds
+import traceback
 
 #TODO lod only a data slice
 #TODO calibration for all diagnostics 
 #TODO 
-
-
+ 
 
 def check(shot):
     #fastest check if the shotfile exist
@@ -29,7 +31,7 @@ from time import time as T
 
 
 def mds_load(tmp):
-    mds_server, shot,  TDI = tmp
+    mds_server,  TDI = tmp
     MDSconn = mds.Connection(mds_server )
     data = []
     for tdi in TDI:
@@ -38,6 +40,29 @@ def mds_load(tmp):
         except:
             data.append([])
     return data
+
+
+def mds_load_par( MDSconn, TDI, numTasks=8):
+    
+    if len(TDI) == 1:
+        return [MDSconn.get(TDI[0]).data()]
+    
+    numTasks = 8
+    server = MDSconn.hostspec
+    TDI = array_split(TDI, min(numTasks,len(TDI)))
+
+    args = [(server, tdi) for tdi in TDI]
+    
+    out = []
+    pool = Pool()
+    for o in pool.map(mds_load,args):
+        out.extend(o)
+    pool.close()
+    pool.join()
+    
+    return out 
+
+
 
 from IPython import embed
 class loader_ECE(loader):
@@ -106,7 +131,10 @@ class loader_ECE(loader):
  
         # get position settings
         self.z = self.MDSconn.get(subnodes_z).data()
-        self.Phi  =  21.#81.60 #from diagnostic webpage #self.MDSconn.get(subnodes_phi).data()#deg
+        #print('ECE PHI', self.MDSconn.get(subnodes_phi).data())
+        #self.Phi  =  21.#81.60 #from diagnostic webpage #self.MDSconn.get(subnodes_phi).data()#deg
+        self.Phi = 81
+        #self.Phi = 60        
         self.MDSconn.closeTree(self.tree, self.shot)
 
         if self.freq is None or len(self.freq)<2:
@@ -121,141 +149,79 @@ class loader_ECE(loader):
         except:
             pass
     
-    def get_signal(self,group, names,calib=False,tmin=None,tmax=None):
-        #RAW DATA?
-    
+    def get_signal(self,group, names,calib=False,tmin=None,tmax=None):    
     
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
         
         
-        nch = int_(names)
+        nch = atleast_1d(int_(names))
         
-        output = {}
+         
+        load_ch = [n for n in nch if len(self.data_dict.get(n,[])) <= 1]
+
+
+        #BUG https://diii-d.gat.com/diii-d/ECE#pointnames
+        #Ask if ther are any issues with timing in the new discharges 
         
-        if self.tvec is not None:
-            imin,imax = self.tvec.searchsorted([tmin,tmax])
-            imax+= 1
-            ind = slice(imin,imax)
-
-        #use catch if possible 
-        for n in atleast_1d(nch):
-            if n in self.data_dict:
-                output[n] = self.data_dict[n][imin:imax]
-                
-        #TDIcall="_x=\TECEF%02d"
-
-    
+        if len(load_ch) >= 1:
+            #NOTE ece data can be splitted in halve and fetch separatelly
             
-        #single signal loading
-        if size(nch) == 1:
-            
-            #signal in catch
-            if len(output) == 1:
-                return [self.tvec[imin:imax],output[nch]] 
-                
-    
-            Te = self.MDSconn.get(f'_x=PTDATA2("{self.channels[nch-1]}", {self.shot}, 4)').data()
-
-            C1 = float(self.cc1f[nch-1])
-            C2 = float(self.cc2f[nch-1])
-            C3 = float(self.cc3f[nch-1])
-            adosf = float(self.adosf[nch-1])
-            
-            
-            #Te_calib = Te*(C1/np.sqrt(1.-C2*Te**2)+C3*Te**3)+adosf
-            Te_calib = np.copy(Te)
-            Te_calib *= C1*1e3 #eV
-            if C2 != 0:
-                Te_calib /= np.sqrt(1.-C2*Te**2)
-            if C3 != 0:
-                Te_calib += (C3*1e3)*Te**4
-            if adosf != 0:
-                Te_calib += adosf*1e3
-
-                
-            #BUG https://diii-d.gat.com/diii-d/ECE#pointnames
-            #Ask if ther are any issues with timing in th new discharges 
-   
-            
-            if self.tvec is None:
-                tbeg,tend = self.MDSconn.get('_t=dim_of(_x); [_t[0], _t[size(_t)-1]]').data()/1e3 #s
-                self.tvec = np.linspace(tbeg,tend,len(Te))
-                imin,imax = self.tvec.searchsorted([tmin,tmax])
-                imax+= 1
-
- 
-            self.data_dict[nch] = Te
-
-            ind = slice(imin,imax)
-            return [self.tvec[ind], Te[ind]]
-                 
-
-            
-
-    
-        load_nch = [n for n in nch if not n in output]
-        
-        if len(load_nch) > 0:
-            #logger.info( 'fast parallel fetch..', (time.time() - t))
-
-            numTasks = 8
-            
-            server = self.MDSconn.hostspec
-            TDI = [f'PTDATA2("{self.channels[nch-1]}", {self.shot}, 4)' for nch in load_nch]
-            if  self.tvec is None :  
-                TDI.append(f'dim_of('+TDI[-1]+')')
-            
-            TDI = array_split(TDI, numTasks)
-
-            args = [(server, self.shot, tdi) for tdi in TDI]
-            
-            out = []
-            pool = Pool()
-            for o in pool.map(mds_load,args):
-                out.extend(o)
-            pool.close()
-            pool.join()
-
-            #print(( 'data loaded in %.2f'%( T()-t)))
-            if self.tvec is None:
-                self.tvec = out[-1]
-                self.tvec /= 1.e3
-                imin,imax = self.tvec.searchsorted([tmin,tmax])
-                imax+= 1
-                
-            ind = slice(imin,imax)
-            
-            for n, Te in zip(load_nch, out ):
-                
-                if len(Te) == 0: 
-                    Te =  np.zeros_like(self.tvec, dtype='single')
-                else:
-                    C1 = float(self.cc1f[n-1])
-                    C2 = float(self.cc2f[n-1])
-                    C3 = float(self.cc3f[n-1])
-                    adosf = float(self.adosf[n-1])
-                                    
-                    if C2 == 0 and C3 == 0 and adosf == 0:
-                        Te *= C1*1e3 #eV
-                    else:
-                        Te_ = np.copy(Te)
-                        Te *= C1*1e3 #eV
-                        if C2 != 0:
-                            Te /= np.sqrt(1.-C2*Te_**2)
-                        if C3 != 0:
-                            Te += (C3*1e3)*Te_**4
-                            
-                    if adosf != 0:
-                        Te += adosf*1e3
-
-                output[n] = Te[ind]
+            TDI = [f'PTDATA2("{self.channels[n-1]}", {self.shot}, 4)' for n in load_ch]
+            out = mds_load_par(self.MDSconn, TDI)
+            for n, Te in zip(load_ch, out):
                 self.data_dict[n] = Te
-        
-        #just for testing 
-        #tvec = spaced_vector(self.tvec[0],self.tvec[-1],(self.tvec[-1]-self.tvec[0])/(len(self.tvec)-1))
-        return [[self.tvec[ind], output[n]] for n in nch]
      
+        
+        if self.tvec is None:
+            time_header = self.MDSconn.get(f'PTHEAD2("{self.channels[0]}",{self.shot}); __real64').data()
+            tbeg, tend = time_header[2], time_header[-1]
+            self.tvec = np.linspace(tbeg, tend, len(Te))
+        
+        imin,imax = self.tvec.searchsorted([tmin,tmax])
+        imax += 1
+            
+      
+        #calibrate data locally, faster then fetching of calibrated data
+        for n in load_ch:
+            Te  = self.data_dict[n]
+            #fast data not availible 
+            if len(Te) <= 1: 
+                continue
+         
+            C1 = float(self.cc1f[n-1])
+            C2 = float(self.cc2f[n-1])
+            C3 = float(self.cc3f[n-1])
+            adosf = float(self.adosf[n-1])
+                            
+            if C2 == 0 and C3 == 0 and adosf == 0:
+                Te *= C1*1e3 #eV
+            else:
+                Te_ = np.copy(Te)
+                Te *= C1*1e3 #eV
+                if C2 != 0:
+                    Te /= np.sqrt(1.-C2*Te_**2)
+                if C3 != 0:
+                    Te += (C3*1e3)*Te_**4
+                    
+            if adosf != 0:
+                Te += adosf*1e3
+                
+            self.data_dict[n] = Te
+            
+            
+        output = []
+        for n in nch:
+            if len(self.data_dict[n]) > 1:
+                output.append([self.tvec[imin:imax],  self.data_dict[n][imin:imax]])
+            else:
+                output.append([self.tvec[imin:imax],  self.zeros(imax-imin, dtype='single')])
+ 
+        if len(nch) == 1:
+            return output[0]
+        else:
+            return output 
+ 
         
     def get_names(self,group):
         return self.names
@@ -263,43 +229,51 @@ class loader_ECE(loader):
     
     def get_RZ_theta(self, time,names,dR=0,dZ=0):
 
-        if hasattr(self,'tvec'):
-            time = max(min(time,self.tvec[-1] ), self.tvec[0] )
-        
-        
-        
+        if self.tvec is not None:
+            time = clip(time, *self.tvec[[0,-1]])
   
         B = self.eqm.rz2brzt(r_in=self.eqm.Rmesh, z_in=self.z, t_in=time)
         Btot = squeeze(linalg.norm(B,axis=0))
         
-        ch_ind = in1d(self.names, int_(names))
+        ch_ind = atleast_1d(in1d(self.names, int_(names)))
         
-        from scipy.constants import m_e, e, c
+        Zlos = .004
+                    
 
-        #Accounting for relativistic mass downshift
+        Rmesh = np.linspace(self.eqm.Rmesh[0], self.eqm.Rmesh[-1], 200)
+        Zmesh = np.linspace(self.eqm.Zmesh[0], self.eqm.Zmesh[-1], 300)
+
+        
+        #position including relativistic shift and diffraction
         try:
-            Te =  self.get_Te0(time,time,R=self.eqm.Rmesh,
-                                Z=self.z*ones_like(self.eqm.Rmesh))[1][0]
-
-            v=sqrt(2*Te*e/m_e)
-            gamma = 1/sqrt(1-(v/c)**2)
-        except:
-            print( 'relativistic mass downshift could not be done')
-            gamma = 1
-            
-        wce = e*Btot/(m_e*gamma)
-
-        nharm = 2
+            B = self.eqm.rz2brzt(r_in=Rmesh, z_in=Zmesh, t_in=time)
+            Btot = squeeze(linalg.norm(B,axis=0)).T
+            from ._ECE_chord import ece_los
+            Rcm,Zcm = np.meshgrid(Rmesh, Zmesh)
+            _, Te, Ne = self.get_Te0(time,time,R=Rcm,Z=Zcm, returnTeNe=True)
+         
+            R,z = [],[]
+            for f_los in self.freq[ch_ind]:
+                _,_, R_res, Z_res = ece_los(f_los, Zlos, Rmesh, Zmesh, Btot, Ne, Te)
+                R.append(R_res)
+                z.append(Z_res)
+            R,z =  array(R), array(z) 
  
-        R = interp(-2*pi*self.freq[ch_ind],-wce*nharm,self.eqm.Rmesh)
-        z = self.z*ones_like(R)
+        except:
+            #raise
+            from scipy.constants import m_e, e, c
+            wce = e*Btot/m_e
+            nharm = 2
+            R = interp(-2*pi*self.freq[ch_ind],-wce*nharm,self.eqm.Rmesh)
+            z = self.z*ones_like(R)+Zlos
 
         r0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Rmag'])+dR
         z0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Zmag'])+dZ
 
         return R,z, arctan2(z-z0, R-r0)
         
-    def get_Te0(self,tmin,tmax,IDA=True,dR=0,dZ=0,R=None,Z=None):
+ 
+    def get_Te0(self,tmin,tmax,dR=0,dZ=0,R=None,Z=None, returnTeNe=False):
         #load ziprofiles
         try:
             if not hasattr(self,'zipcache'):
@@ -314,7 +288,8 @@ class loader_ECE(loader):
                 zip_tvec = self.MDSconn.get('dim_of(_x,1)').data()
                 zip_tvec/= 1e3#s
                 zip_rho = self.MDSconn.get('dim_of(_x,0)').data()
-                zip_rho = self.eqm.rho2rho(zip_rho,zip_tvec,coord_in='rho_tor', coord_out=self.rho_lbl)
+                
+                zip_rho = self.eqm.rho2rho(zip_rho,zip_tvec,coord_in='rho_tor', coord_out=self.rho_lbl, extrapolate=True)
                 self.MDSconn.closeTree('ELECTRONS',self.shot)
                 self.zipcache = zip_tvec,zip_rho, ZipTe, ZipNe
             
@@ -325,21 +300,29 @@ class loader_ECE(loader):
             
             imin,imax = zip_tvec.searchsorted((tmin,tmax))
             Te = median(ZipTe[imin:imax+1], 0)
+            Ne = median(ZipNe[imin:imax+1], 0)
+
             zip_rho = mean(zip_rho[imin:imax+1], 0)
             time = (tmin+tmax)/2
             
             if R is None and Z is None:
                 rho = self.get_rho('',self.names,time,dR=dR,dZ=dZ)[0]
             else:
-                rho = self.eqm.rz2rho(R,Z,time,self.rho_lbl)
-    
-            
-            Te_ece = interp(abs(rho), zip_rho,Te )
+                rho = self.eqm.rz2rho(R[None],Z[None],time,self.rho_lbl)[0]
+
+       
+            Te = interp(abs(rho), zip_rho,Te )
+            Ne = interp(abs(rho), zip_rho,Ne )
+      
+
         except Exception as e:
             print('Zipfit error', e)
-            return 
+            return None,None
         
-        return rho,Te_ece
+        if returnTeNe:
+            return rho,Te, Ne
+        
+        return rho,Te
         
         
     
@@ -362,34 +345,27 @@ class loader_ECE(loader):
         
     
     def get_rho(self,group,names,time,dR=0,dZ=0):
-
-        #if hasattr(self,'RZtime'):
-        time = max(min(time, self.tmax), self.tmin)
+        time = clip(time, self.tmin, self.tmax)
         R,z,theta = self.get_RZ_theta(time,names,dR=dR,dZ=dZ)
         
         rho = super(loader_ECE,self).get_rho(time,R,z,dR=dR,dZ=dZ)[0]
 
         r0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Rmag'])+dR
-        R = atleast_1d( R)
+        R = atleast_1d(R)
         rho[R < r0] *= -1
-        #else:
-            #err = ones(len(names))*nan
-            #rho,theta,R,z = err,err,err,err
-        
+ 
         return rho,theta,R,z
     
     def get_phi_tor(self,name=None):
-        #print('CE phi',self.Phi )
         return deg2rad(self.Phi)
         
     def signal_info(self,group,name,time):
         
         rho,theta,R,z = self.get_rho(group,[name,],time)
-        #print rho
         try:
             info = 'ch: '+str(name)+'  R:%.3f m   '%R+self.rho_lbl+': %.3f'%rho
         except:
-            print( 'signal_info err')
+            print( traceback.format_exc())
             info = ''
         return info
     
@@ -413,13 +389,13 @@ def main():
     MDSconn = mds.Connection(mds_server )
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
-    eqm.Open(178924,diag='EFIT01' )
+    eqm.Open( 191823 ,diag='EFIT01' )
     MDSconn2 = mds.Connection(mds_server )
 
 
-    ece = loader_ECE(178924,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
+    ece = loader_ECE( 191823 ,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
     #cd 
-    #ece.get_RZ_theta( 3,range(1,40),dR=0,dZ=0)
+    ece.get_RZ_theta( 3,range(1,40),dR=0,dZ=0)
     #ece.get_Te0(2,3)
     
     #print ece.get_rho('ece', ece.names,0.1)
@@ -433,7 +409,7 @@ def main():
 
     #import IPython
     #IPython.embed()
-    #exit()
+    exit()
 
     #f = file('pokus', 'wb')
     #pickle.dump(MDSconn , f, 2)
@@ -447,9 +423,9 @@ def main():
     
     
     #data_ = ece.get_signal("", ece.get_names(ece.groups[0]), tmin=2, tmax = 2.1)
-    #T =T()
-    data = ece.get_signal("",arange(10,27), tmin=1, tmax = 5)
-    
+    TT =T()
+    data = ece.get_signal("",ece.get_names(ece.groups[0]), tmin=1, tmax = 5)
+    print(T()-TT)
     exit()
 
     tvec, sig = data

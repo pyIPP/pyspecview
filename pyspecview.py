@@ -4,7 +4,8 @@
 import sys, os, random, time, argparse, logging
 import traceback
 import matplotlib  
- 
+from copy import deepcopy
+
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -20,6 +21,8 @@ logger = logging.getLogger('pyspecview')
 logger.addHandler(hnd)
 logger.setLevel(logging.DEBUG)
 #logger.setLevel(logging.INFO)
+import MDSplus as mds
+
 
  
 # http://matplotlib.org/users/dflt_style_changes.html
@@ -70,6 +73,8 @@ from sstft import sstft
 random_seed = 10
 font_size = 10
 
+from IPython import embed
+
  
 
  
@@ -85,6 +90,40 @@ def excepthook(exc_type, exc_value, exc_tb):
  
 sys.excepthook = excepthook
 
+
+
+from multiprocessing import  Pool
+
+                
+def mds_load(tmp):
+            mds_server,  TDI = tmp
+        
+            MDSconn = mds.Connection(mds_server)
+            data = []
+            for tdi in TDI:
+                try:
+                    data.append(MDSconn.get(tdi).data())
+                except:
+                    data.append([])
+            return data
+
+
+def mds_load_par( MDSconn, TDI, numTasks=8):
+
+            numTasks = 8
+            server = MDSconn.hostspec
+            TDI = np.array_split(TDI, min(numTasks,len(TDI)))
+
+            args = [(server, tdi) for tdi in TDI]
+            
+            out = []
+            pool = Pool()
+            for o in pool.map(mds_load,args):
+                out.extend(o)
+            pool.close()
+            pool.join()
+            
+            return out 
 
 
 class colorize:
@@ -245,11 +284,13 @@ class SpectraViewer(object):
         #self.plt_plasma_freq_n2, = self.ax.plot([], [], c=c, zorder=99, lw=.5,ls='--')
 
         if allow_selector:
-            rectprops = dict(facecolor='gray', edgecolor='black', alpha=0.5, fill=True, zorder=99)
+            rectprops = dict(facecolor='gray', edgecolor='black', alpha=0.5, fill=True, zorder=1000)
             self.RS1 = RectangleSelector(self.ax, self.line_select_callback, 
-                                        drawtype='box', useblit=True, 
+                                        #drawtype='box',
+                                        useblit=True, 
                                         button=[1, ], # don't use middle button
-                                       minspanx=5, minspany=5, rectprops=rectprops, 
+                                       minspanx=5, minspany=5,
+                                       rectprops=rectprops, 
                                        spancoords='pixels')
         
     def __del__(self):
@@ -346,8 +387,10 @@ class SpectraViewer(object):
     
         try:
             x, y, Z = self.stft_disp.__call__(tmin, tmax, fmin0, fmax0)
-            fmax0 = min(fmax0, y[-1])
-            fmin0 = max(fmin0, y[0])
+            if np.size(y):
+            	fmax0 = min(fmax0, y[-1])
+            	fmin0 = max(fmin0, y[0])
+                
         except Exception as e:
             logger.error('Error: ', exc_info=True)
             logger.error( traceback.format_exc())
@@ -1096,6 +1139,218 @@ class STFTDisplay():
             self.im_ax.set_xlim(xstart, xend)
         
 
+def calculate_cmplx_phase(tvec, cross_signal,  f_range):
+    
+    
+    f_nq = (len(tvec)-1)/(tvec[-1]-tvec[0])/2
+ 
+    f0 = np.mean(f_range)
+    nfft = next_fast_len(cross_signal.size)
+
+    cross_signal = detrend(cross_signal)
+ 
+    # filter crosscorrelation signal in the selected frequency window
+    fcross_signal = np.fft.rfft(cross_signal, nfft)
+    
+    df = f_nq/(nfft//2+1)
+    ifmin = int(max(1, round(f_range[0]/df)))
+    ifmax = int(min(len(cross_signal)//2+1, round(f_range[1]/df)))
+    #sharp rectangular window in fourier space
+
+    fcross_signal[:ifmin] = 0
+    fcross_signal[ifmax:] = 0
+    
+    cross_signal_fband = np.fft.irfft(fcross_signal)[:len(cross_signal)]
+    
+    #get an envelope
+    from scipy.signal import argrelmax
+    i = argrelmax(np.abs(cross_signal_fband), mode='wrap')[0][1:-1]
+    try:
+        envelope = np.interp(arange(len(cross_signal)), i, np.abs(cross_signal_fband)[i])
+    except:
+        envelope = np.abs(cross_signal_fband)
+    
+
+    #normalize the aplitude
+    b, a = butter(3, f0/f_nq*.5, 'lowpass')
+    padlen = min(len(cross_signal)//2, 100)
+    if not np.any(np.abs(np.roots(a))>=1):   
+        envelope = filtfilt(b, a, envelope, padtype='even', padlen=padlen)
+
+    cross_signal = np.copy(cross_signal_fband)
+    cross_signal/= np.maximum(envelope, envelope.max()/20)[:len(cross_signal)]
+    #signal whitening 
+    cross_signal-= np.mean(cross_signal)
+    cross_signal/= np.std(cross_signal)*np.sqrt(2)
+    
+
+    #get a 90 degrees shifted complex part 
+    cmplx_sig = hilbert(cross_signal, nfft)[:cross_signal.size]
+
+
+    #calculated harmonics will exactly corresponds to 
+    it = len(tvec)//2
+    t0 = tvec[it]
+    cmplx_sig *= np.conj(cmplx_sig[it])/np.abs(cmplx_sig[it])
+        
+    #estimate average modulation frequency
+    zero_crossings = np.where(np.diff(np.sign(cmplx_sig.real)))[0]
+    f0 = 1/np.median(np.diff(tvec[zero_crossings]))/2
+
+
+    return t0,f0, cmplx_sig
+ 
+ 
+def extract_harmonics(tvec_data,t_range, f_range,n_harm_max, cross_tvec_signal=None):
+    
+    from scipy.signal import get_window
+    
+    T = time.time()
+    
+    #not all signal must have teh same length and time vector
+    fastest = np.argmax([(len(t)-1)/(t[-1]-t[0]) for t, s in tvec_data])
+ 
+    nfft = next_fast_len(tvec_data[fastest][0].size)
+    tvec = tvec_data[fastest][0]
+    
+    tvec = np.linspace(tvec[0], tvec[-1], tvec.size) #equally spaced vector!!
+
+    
+    cross_signal = None
+    
+    if cross_tvec_signal is not None:     
+        cross_signal = np.interp(tvec, *cross_tvec_signal)
+        win = get_window('hann', len(cross_signal), fftbins=False)   
+        fdata0 = np.fft.rfft(cross_signal*win, nfft)[1:]
+    
+    #=================   use a stupid and robust method to get the amplitudes
+    fvec = np.linspace(0, .5*nfft/np.diff(t_range)[0], nfft//2+1, endpoint=False)
+    
+    f0 = np.mean(f_range)
+    df = np.diff(f_range)[0]
+ 
+    if0 = fvec[1:].searchsorted(f0)
+    idf  = fvec[1:].searchsorted(df)
+    #Nyquist frequency
+    fnq = (len(tvec)-1)/(tvec[-1]-tvec[0])/2
+
+
+    ind_f = [slice(*(if0*(n+1)+np.r_[-idf//2, idf//2+1])) for n in range(n_harm_max)]
+    ind_f = [ind for ind in ind_f if np.size(fvec[ind])>0]
+    n_harm = len(ind_f)
+    
+    fft_sig_n = [[] for n in range(n_harm)]
+    fft_signoise = []
+    
+    
+
+    data = []
+    win = get_window('hann', len(tvec), fftbins=False)   
+    for i, (t, sig) in enumerate(tvec_data):
+        if t.size!= len(tvec):
+            sig = np.interp(tvec, t, sig)
+        
+        data.append(sig)
+        try:
+            fdata = np.fft.rfft(sig*win, nfft)[1:]
+        except Exception as e:
+            print('fft error',e, sig.shape, win.shape, len(t), len(tvec))
+            
+        for n in range(n_harm):
+            fft_sig_n[n].append(fdata[ind_f[n]])
+
+        try:
+            normalization = 1/np.mean(win)/len(win)*np.sqrt(ind_f[0].stop-ind_f[0].start)*4/3.
+        except:
+            print( 'normalization', ind_f, n_harm, if0, df, [slice(*(if0*(n+1)+np.r_[-df//2, (df+1)//2])) for n in range(n_harm)])
+            raise
+
+        fft_signoise.append(np.median(np.abs(fdata))*normalization)
+ 
+    #absolute value of the perturbation 
+    fft_signoise = np.array(fft_signoise)
+
+    amplitude = []
+    for n in range(n_harm):
+        if cross_signal is None:
+            A = np.array([np.linalg.norm(fs)/np.sum(win) for fs in fft_sig_n[n]])
+            #substract contribution of the background random noise 
+            A = np.sqrt(np.maximum(0, A**2-fft_signoise**2))
+        else:
+            X = fdata0[ind_f[n]]/np.linalg.norm(fdata0[ind_f[n]])
+            A = np.array([np.abs(np.vdot(X, fs))/np.sum(win) for fs in fft_sig_n[n]])
+            
+        amplitude.append(A*3./2.)
+
+
+    offset = np.array([np.asarray(sig).mean() for sig in data])
+    corrupted = (fft_signoise == 0)#|(amplitude[0] < np.median(amplitude[0])/1e3)
+
+
+    
+    # use a advaced and more sensitive method. But only well coherent modes can be analyzed 
+
+    cross_sig_num = None
+    if cross_signal is None:
+        #TODO use SVD to dinf the dominant component in the requested frequency rage? 
+        #measure a cross phase with respect to the strongest signal
+        cross_sig_num = np.argmax(amplitude[0]/(fft_signoise+np.nanmean(fft_signoise)*1e-6+corrupted))      
+        cross_signal = data[cross_sig_num]
+ 
+    #demodulation signal from the measured signal 
+    t0,f0,cmplx_sig = calculate_cmplx_phase(tvec, cross_signal,  f_range)
+ 
+
+
+    from scipy.signal import butter, sosfiltfilt
+    sosbutter = butter(5,f0/5, btype='low',  output='sos', fs=fnq)
+
+    #demodulate signal and find the first component
+    complex_harm = np.zeros((n_harm, tvec.size), dtype='complex')
+    complex_harm[0] = cmplx_sig
+    for i in range(1, n_harm):
+        complex_harm[i] = complex_harm[i-1]*cmplx_sig
+    #make it more othogonal
+    complex_harm, r = np.linalg.qr(complex_harm.T)
+    complex_harm *= np.diag(r)
+            
+    retro = np.zeros((tvec.size, len(data)))
+    error = np.zeros(len(data))
+    harm  = np.zeros((n_harm, len(data)), dtype='complex')
+
+    #remove issues with boundary effects
+    win = get_window('hann', tvec.size, fftbins=False).astype('single')   
+    win /= np.sum(win)#/np.sqrt(len(win))
+
+    for j, sig in enumerate(data):
+        mask = np.ma.getmask(sig)
+        #skip if more than 20% is corrupted
+        if np.any(mask) and np.sum(mask)/len(mask) > 0.2:
+           continue
+  
+        #perform a least squares fit of the orthonormal complex prototype to the measured signal
+        sig_ = win*(sig-offset[j])
+        harm[:,j] = 2*np.dot(win*(sig-offset[j]), np.conj(complex_harm))   
+
+        #retrofit of the measured signal 
+        retro[:, j] = np.dot(complex_harm, harm[:,j]).real
+        #this might be wrong if there is another non-random signal
+        error[j] = np.std(sosfiltfilt(sosbutter, sig-retro[:, j], padtype='even')) #sqrt(chi2/n)
+    
+    retro += offset
+    error *= np.sum(win**2)*np.sqrt(len(tvec)) #first term accounts for window weights, should be one for rectangular? , secomd term is just for averaging of normally distributed noise
+        
+    corrupted |= np.abs(harm[0]) == 0   
+    #print('BUG')
+    #retro1 = np.outer(harm[0], np.exp(1j*2*np.pi*f0*(tvec-t0))).real
+    #retro2 = (harm[[0]]*complex_harm[:,[0]]).real*np.sqrt(len(win))
+    #embed()
+    #np.savez('harm', retro_ = retro_, harm=harm,tvec=tvec,data=data, f0=f0, t0=t0,cmplx_sig=cmplx_sig, retro1=retro1,complex_harm=complex_harm,  retro2=retro2, exps = np.exp(1j*2*np.pi*f0*(tvec-t0)))
+
+
+    return n_harm, amplitude, tvec, cross_signal, harm, retro, offset, error, corrupted, f0, t0
+
+
 class RadialViewer:
 
     initialized = False
@@ -1132,7 +1387,9 @@ class RadialViewer:
             self.plot2_.append(self.ax2.plot([], [], c=c[i%len(c)], zorder=self.n_harm_max-i)[0])
             self.plot2_s.append(self.ax2.scatter([], [], edgecolors=c[i%len(c)], 
                             s=50, zorder=99-i, linewidths=.5))
-        self.plt_harm0, = self.ax1.plot([], [], '-k', lw=0.5)
+            
+        #steady state profile
+        self.plt_harm0, = self.ax1.plot([], [], '-k')
             
         self.m = 1  #mode m-number 
 
@@ -1198,32 +1455,37 @@ class RadialViewer:
                         transform=self.ax2.transAxes, verticalalignment='bottom', 
                         size='xx-small', backgroundcolor='none')
 
-    def set_data(self, diag, rho, theta0, signal, R, Z, Phi, mag_data, magr, magz, theta_star, qsurfs, units):
+    def reset(self):
+        #reset when the shot number is changed
+        if self.initialized:
+            self.fig.clf()
+            self.cross_signal = None
+            self.__init__( self.parent, self.fig, self.n_harm_max, self.rho_lbl)
         
+    def set_data(self, diag, rho, theta0, signal, R, Z, Phi, mag_coord_diag, mag_coord_data, qsurfs, units):
+
         rho[np.isnan(rho)|(R<1)] = 2
         self.qsurfs = qsurfs
         self.diag = diag
         
-        self.rho_ind = np.argsort(rho)
-        self.rho = rho[self.rho_ind]
+        rho_ind = np.argsort(rho)
+        self.rho = rho[rho_ind]
         
-        self.data = [signal[i] for i in self.rho_ind]
+        self.data = [signal[i] for i in rho_ind]
         self.cross_signal = None
         self.initialized = True
-        self.mag_data = [[d[i] for i in self.rho_ind] for d in mag_data]
-        self.Rmag = np.asarray(magr)
-        self.Zmag = np.asarray(magz)
-        self.theta_star = theta_star
-
-        self.R = R[self.rho_ind]
-        self.Z = Z[self.rho_ind]
-        self.theta0 = theta0[self.rho_ind]
-        self.Phi0 = Phi #toroidal angle [rad]
+        
+        self.theta_diag = mag_coord_diag['theta_geo'][rho_ind]
+        self.theta_star_diag = mag_coord_diag['theta_star'][rho_ind]
+ 
+        self.R = R[rho_ind]
+        self.Z = Z[rho_ind]
+        self.theta0 = theta0[rho_ind]
+        self.Phi0 = Phi #toroidal angle [rad], assume a single number?
 
         self.units = units
 
     def set_cross_signal(self, cross_signal):
-
         self.cross_signal =  cross_signal
         
     def change_m_number(self, ind):
@@ -1240,176 +1502,28 @@ class RadialViewer:
         description = self.description+'  from %.2f to %.2fs, from %.1f to %.1fkHz'%(self.t_range[0], 
                                     self.t_range[1], self.f_range[0]/1e3, self.f_range[1]/1e3)
         self.plot_description.set_text(description)
-        from scipy.signal import get_window
-
-        T = time.time()
         
-        infft = np.argmax([len(t) for t, s in self.data])
         
-        self.ax1.set_ylabel('Perturbation $\delta$ [%s]'%self.units, 
-                            fontsize=font_size)
-
-        nfft = next_fast_len(self.data[infft][0].size)
-
-        if not self.cross_signal is None:
-            nfft = next_fast_len(self.cross_signal[1].size)
-            imin, imax = self.cross_signal[0].searchsorted(self.t_range)
-            ind = slice(imin, imax+1)
-            win = get_window('hann', len(self.cross_signal[1][ind]), fftbins=False)   
-            fdata0 = np.fft.rfft( self.cross_signal[1][ind]*win, nfft)[1:]
-            
-        #=================   use a stupid and robust method to get the amplitudes
-        fvec = np.linspace(0, .5*nfft/(self.t_range[1]-self.t_range[0]), nfft//2+1, endpoint=False)
+        out = extract_harmonics(self.data,self.t_range,self.f_range,
+                                self.n_harm_max,  self.cross_signal)
+        n_harm, amplitude, self.tvec, _, harm, _, offset, error, corrupted, f0, t0 = out
         
-        if0 = fvec[1:].searchsorted(np.mean(self.f_range))
-        df  = fvec[1:].searchsorted(np.diff(self.f_range))
+        self.phi2 = np.angle(harm)
+        self.amplitude2 = np.abs(harm)
         
-        ind_f = [slice(*(if0*(n+1)+np.r_[-df//2, df//2+1])) for n in range(self.n_harm_max)]
-        ind_f = [ind for ind in ind_f if np.size(fvec[ind])>0]
-        self.n_harm = len(ind_f)
-        
-        fft_sig_n = [[] for n in range(self.n_harm)]
-        fft_signoise = []
 
-        for i, (tvec, sig) in enumerate(self.data):
-            if self.cross_signal is None and (tvec.size!= len(self.data[infft][0])):
-                sig = np.interp(self.data[infft][0], tvec, sig)
-                tvec = self.data[infft][0]
-            elif not self.cross_signal is None:
-                sig = np.interp(self.cross_signal[0], tvec, sig)
-                tvec =  self.cross_signal[0]
-            
-            imin, imax = tvec.searchsorted(self.t_range)
-            ind = slice(imin, imax+1)
+        #n_harm, amplitude, self.tvec, cross_signal, self.amplitude2, self.phi2, self.retro, offset, error, corrupted, cross_sig_num = out
 
-            win = get_window('hann', len(sig[ind]), fftbins=False)   
-            fdata = np.fft.rfft( sig[ind]*win, nfft)[1:]
-                        
-            for n in range(self.n_harm):
-                fft_sig_n[n].append(fdata[ind_f[n]])
-
-            try:
-                normalization = 1/np.mean(win)/len(win)*np.sqrt(ind_f[0].stop-ind_f[0].start)*4/3.
-            except:
-                print( 'normalization', ind_f, self.n_harm, if0, df, [slice(*(if0*(n+1)+np.r_[-df//2, (df+1)//2])) for n in range(self.n_harm)])
-                raise
-
-            fft_signoise.append(np.median(np.abs(fdata))*normalization)
-
-        #absolute value of the perturbation 
-        fft_signoise = np.array(fft_signoise)
-
-        self.amplitude = []
-        for n in range(self.n_harm):
-            
-            if self.cross_signal is None:
-                A = np.array([np.linalg.norm(fs)/np.sum(win) for fs in fft_sig_n[n]])
-                #substract contribution of the background random noise 
-                self.amplitude.append(np.sqrt(np.maximum(0, A**2-fft_signoise**2)))
-            else:
-                X = fdata0[ind_f[n]]/np.linalg.norm(fdata0[ind_f[n]])
-                A = np.array([np.abs(np.vdot(X, fs))/np.sum(win) for fs in fft_sig_n[n]])
-                self.amplitude.append(A)
-
-        #measure a cross phase with respect to the strongest signal
-        imax = np.argmax(self.amplitude[0]/(fft_signoise+np.nanmean(fft_signoise)*1e-6))      
-                
-        sig_mean = np.array([np.mean(sig) for _, sig in self.data])
-        corrupted = (fft_signoise == 0)|(np.abs(self.rho)>=1.2)|(sig_mean<=0)
-        
-        #=================   use a advaced but more sensitive method. Only well coherent modes can be analyzed 
-
-        tvec = self.data[infft][0]
-        self.tvec = np.linspace(tvec[0], tvec[-1], tvec.size) #equally spaced vector!!
-
-        if self.cross_signal is None:
-            self.cross_signal = self.data[imax]
-   
-        cross_tvec = np.linspace(self.cross_signal[0][0], self.cross_signal[0][-1], len(self.cross_signal[0]))#equally spaced vector!!
-            
-        dt = (cross_tvec[-1]-cross_tvec[0])/(len(cross_tvec)-1)
-        f_nq = .5/dt 
-        cross_signal= detrend(self.cross_signal[1])
-        f0 = np.mean(self.f_range)
-        df = np.diff(self.f_range)
-        padlen = min(len(cross_signal)//2, 100)
-
-        nfft = next_fast_len(len(cross_tvec))
-        fcross_signal = np.fft.rfft(cross_signal, nfft)
-        df = f_nq/(nfft//2+1)
-        ifmin = int(max(1, round(self.f_range[0]/df)))
-        ifmax = int(min(len(cross_signal)//2+1, round(self.f_range[1]/df)))
-        #sharp rectangular window in fourier space
-    
-        fcross_signal[:ifmin] = 0
-        fcross_signal[ifmax:] = 0
-        cross_signal_2 = np.fft.irfft(fcross_signal)[:len(cross_tvec)]
-        
-        #get an envelope
-        from scipy.signal import argrelmax
-        i = argrelmax( np.abs(cross_signal_2), mode='wrap')[0][1:-1]
-        try:
-            envelope = np.interp(cross_tvec, cross_tvec[i], np.abs(cross_signal_2)[i])
-        except:
-            envelope = np.abs(cross_signal_2)
-        
-        cross_signal= np.copy(cross_signal_2)
-
-        #normalize the aplitude
-        b, a = butter(3, f0/f_nq*.5, 'lowpass')
-        if not np.any(np.abs(np.roots(a))>=1):   envelope = filtfilt(b, a, envelope, padtype='even', padlen=padlen)
-        cross_signal/= envelope[:len(cross_signal)]
-        #change timebase
-        cross_signal = np.interp(self.tvec, cross_tvec, cross_signal)
-        cross_signal-= np.mean(cross_signal)
-        cross_signal/= np.std(cross_signal)*np.sqrt(2)
-
-        self.retro_cross_sig = cross_signal
-        
-        nfft = next_fast_len(cross_signal.size)
-
-        #get a 90 degrees shifted complex part 
-        cmplx_sig = hilbert(cross_signal, nfft)[:cross_signal.size]
-
-        self.amplitude2 = np.zeros((self.n_harm, len(self.data)))
-        self.phi2       = np.zeros((self.n_harm, len(self.data)))
-        #demodulate signal and find the first component
-        win = get_window('hann', self.tvec.size, fftbins=False)   #remove troubles with boundary conditions
-        
-        complex_harm = np.zeros((self.n_harm, self.tvec.size), dtype='complex')
-        complex_harm[0] = cmplx_sig
-        for i in range(1, self.n_harm):
-            complex_harm[i] = complex_harm[i-1]*cmplx_sig
-        #make it more othogonal
-        complex_harm, _ = np.linalg.qr(complex_harm.T)
-                
-        self.retro = np.zeros((self.tvec.size, len(self.data)))
-        self.offset = np.zeros(len(self.data))
-        self.error = np.zeros(  len(self.data))
-        norm = np.sum(win**2)/np.sqrt(len(win))
-        for j, (tvec_, sig) in enumerate(self.data):
-            if len(tvec_) != self.tvec.size: 
-                sig = np.interp(self.tvec, tvec_, sig)            
-            #perform a least squares fit of the orthonormal complex prototype to the measured signal 
-            self.offset[j] = sig.mean()
-            harm = np.dot(win*(sig-self.offset[j]), np.conj(complex_harm))/norm
-        
-            self.amplitude2[:, j] = np.abs(harm)
-            self.phi2[:, j] = np.angle(harm)
-            #retrofit of the measured signal 
-            self.retro[:, j] = np.dot(complex_harm, harm*np.sqrt(len(win))).real
-            self.retro[:, j] += self.offset[j]
-            self.error[j] = np.std(sig-self.retro[:, j])
-                
         #map poloidal theta of the diagnostic to the theta_star (WARNING theta star from CLISTE is not very accurate!!)
         theta_star0 = np.zeros_like(self.theta0)
         theta0 = np.unwrap(self.theta0, discont=1.5*np.pi)
-        for i, (t0, t, ts) in enumerate(zip(theta0, self.mag_data[2], self.mag_data[3])):
+        for i, (t0, t, ts) in enumerate(zip(theta0, self.theta_diag, self.theta_star_diag)):
             theta_star0[i] = np.interp(t0, np.r_[t-2*np.pi, t, t+2*np.pi], np.r_[ts-2*np.pi, ts, ts+2*np.pi])*self.m #use periodicity 
         theta_star0 -= np.nanmean(theta_star0)
-      
+
         #make a nice plot of phi, if possible  without 2pi jumps
         ind = ~corrupted&(np.abs(self.rho)<1)
+
         
         try:
             phi = np.copy(self.phi2[0][ind])
@@ -1417,45 +1531,51 @@ class RadialViewer:
             phi = np.unwrap(phi-theta_star0[ind])+theta_star0[ind]
 
             #rought shift with respect to the strongest
-            phi -= np.median((phi-theta_star0[ind])[self.amplitude[0][ind]> mquantiles(self.amplitude[0][ind], .9)/2]) 
+            largest_values = amplitude[0][ind] > mquantiles(amplitude[0][ind], .9)/2
+            if not any(largest_values):
+                largest_values = np.argmax(amplitude[0][ind])
+            phi -= np.median((phi-theta_star0[ind])[largest_values]) 
             #shift with respect to theta_star0, ignoring pi jumps 
-            weights = self.amplitude[0][ind]*(1-np.abs(self.rho[ind]))
+            weights = amplitude[0][ind]*(1-np.abs(self.rho[ind]))
             phi-= np.average((phi-theta_star0[ind]+np.pi/2)%np.pi - np.pi/2, weights=weights)
             #shift it by k*pi with respect to the strongest channels
             phi -= np.pi*round(np.average((phi-theta_star0[ind]), weights=weights)/np.pi)
         except:
-            print( 'phi, weights', phi, weights, self.phi2[0][ind], ind, self.amplitude[0][ind])
+            
+            traceback.format_exc()
+            print( 'phi, weights', phi, self.phi2[0][ind], ind, amplitude[0][ind])
+     
 
         self.phi2[0][ind] = phi 
         self.amplitude2[:, corrupted] = np.nan
-        theta_star0[np.abs(self.rho)>=1.2] = np.nan
-        self.offset[corrupted] = np.nan
+        theta_star0[np.abs(self.rho)>=1.1] = np.nan
+        offset[corrupted] = np.nan
         self.phi2[0][corrupted] = np.nan 
 
         #plot amplitude
-        for n in range(self.n_harm):
-            self.amplitude[n][corrupted] = np.nan
-            #self.plot1[n].set_data(self.rho, self.amplitude[n])
+        for n in range(n_harm):
+            amplitude[n][corrupted] = np.nan
             plotline, caplines, barlinecols =  self.plot1_[n]
             # Replot the data first
             x, y = self.rho, self.amplitude2[n]
             plotline.set_data(x, y)
-            yerr = np.array([np.std(sig)/np.sqrt(len(tvec_)/2.) for tvec_, sig in self.data])
+            #yerr = np.array([np.std(sig)/np.sqrt(len(tvec_)/2.) for tvec_, sig in self.data])
+            yerr = error#[n]
             # Find the ending points of the errorbars
             error_positions = (x, y-yerr), (x, y+yerr)
             # Update the error bars
             barlinecols[0].set_segments(zip(zip(x, y-yerr), zip(x, y+yerr)))
-            
-        for n in range(self.n_harm, len(self.plot1_)):
+
+        for n in range(n_harm, len(self.plot1_)):
             plotline, caplines, barlinecols =  self.plot1_[n]
             plotline.set_data(np.nan, np.nan)
             barlinecols[0].set_segments(zip(zip(x*np.nan, x*np.nan), zip(x*np.nan, x*np.nan)))
             
-        self.plot1[0].set_data(self.rho, self.amplitude[0])
+        self.plot1[0].set_data(self.rho, amplitude[0])
         for n in range(1, len(self.plot1)):
             self.plot1[n].set_data(np.nan, np.nan)
 
-        self.plt_harm0.set_data(self.rho, self.offset)
+        self.plt_harm0.set_data(self.rho, offset)
 
         #plot a phase pof ECE diag
         self.plot2_theta.set_data(self.rho, theta_star0)
@@ -1470,11 +1590,11 @@ class RadialViewer:
         self.plot2_s[n].set_offsets(np.c_[self.rho, self.phi2[n]])
 
         ymax = 0
-        for n in range(self.n_harm):
+        for n in range(n_harm):
             ii = ind if any(ind) else  ~corrupted
-            ymax = max(ymax, max(self.amplitude[n][ii]))
+            ymax = max(ymax, max(amplitude[n][ii]))
             ymax = max(ymax, max(self.amplitude2[n][ii]))
-            
+
         #plot expected positions of the resonance surfaces 
         for i, name in enumerate(self.q_surf_names):
             self.plot_qsurf1[i].set_xdata(self.qsurfs[i])
@@ -1489,7 +1609,6 @@ class RadialViewer:
             y1, y2 = self.ax2.get_ylim()        
             self.text_qsurf[i].set_y(f*y2+(1-f)*y1)
 
-        self.theta = self.mag_data[2]
 
         self.ax1.set_ylim(0, 1.1*ymax )
         self.ax1.figure.canvas.draw_idle()
@@ -1504,26 +1623,34 @@ class Diag2DMapping(object):
     loaded = False
     n_theta = 10
     n_rho = 10
+    n_harm = 3
     ECH_gyrotron_locations = {}
+    initialise2D = False
+    cross_signal = None
 
-    def __init__(self, parent, fig, n_contour, remback_botton):
+    def __init__(self, parent, fig, n_contour, remback_button, show_ecei):
 
         self.parent = parent
         self.fig = fig
         self.fig.subplots_adjust(right=0.82, top=.95)
-        self.ax = self.fig.add_subplot(111)
+        self.ax = self.fig.add_subplot(111, label='2Dmap')
         self.plot_ece_active, = self.ax.plot([], [], 'wo', zorder=100, markeredgecolor='k')
         self.plot_ece_ignored, = self.ax.plot([], [], 'o' , zorder=100, mfc='none', markeredgecolor='k')
         self.ech_location, = self.ax.plot([], [], 'xk', zorder=100)
 
+        self.plot_ecei, = self.ax.plot([], [], 'k.' , zorder=100, markeredgecolor='k')
+        self.plot_ecei_region, = self.ax.plot([], [], 'k-' , zorder=100, lw=.5)
+
         X = np.zeros((1, self.n_rho))
-        self.plot_mag_rho   = self.ax.plot(X, X, 'k--', lw=.5, zorder=99 , dashes=(5, 5))
+        self.plot_mag_rho   = self.ax.plot(X, X, 'k--', lw=.5, zorder=99, dashes=(5, 5))
         X = np.zeros((1, self.n_theta))
         self.plot_mag_theta = self.ax.plot(X, X, 'k--', lw=.5, zorder=99, dashes=(5, 5))
         
         self.n_contour = n_contour
-        self.remback_botton = remback_botton
-
+        self.remback_button = remback_button
+        self.show_ecei = show_ecei
+        
+        #load shape of the tokamak walls
         if self.parent.tokamak == "AUG":
             import aug_sfutils as sf
             gc_d = sf.getgc()
@@ -1534,9 +1661,6 @@ class Diag2DMapping(object):
             gc_r, gc_z = map_equ.get_gc()
         else:
             gc_r, gc_z =  {},{}
-        
-
-
         try:
             for key in gc_r:
                 self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
@@ -1544,10 +1668,11 @@ class Diag2DMapping(object):
             logger.error('Loading of the  vessel shape failed!!')
             logger.error( traceback.format_exc())
 
+
         for label in (self.ax.get_xticklabels() + self.ax.get_yticklabels()):
             label.set_fontsize(font_size) # Size here overrides font_prop
 
-        self.cbar_ax = self.fig.add_axes([0.85, 0.1, 0.04, 0.85])
+        self.cbar_ax = self.fig.add_axes([0.85, 0.1, 0.04, 0.85], label='cbar')
         self.cbar_ax.xaxis.set_major_formatter(NullFormatter())
         self.cbar_ax.yaxis.set_major_formatter(NullFormatter())
         self.cbar_ax.tick_params(labelsize=font_size) 
@@ -1568,77 +1693,138 @@ class Diag2DMapping(object):
         self.dZ = 0
         self.sxr_tvec = None
         self.sxr_emiss = None
+        
+        self.t_range = -np.infty, np.infty
+        self.f_range = None
+
 
         self.cid = self.fig.canvas.mpl_connect('scroll_event', self.MouseWheelInteraction)
         self.cid2 = fig.canvas.mpl_connect('key_press_event',  self.onKeyPress)
         self.cid3 = fig.canvas.mpl_connect('key_release_event', self.onKeyRelease)
     
-    def init_from_rad_prof( self, radial_view, shot, use_LFS_data, phase_locked ):
-                    
-        rho = radial_view.rho
-        self.R = radial_view.R#position of ECE measurements
-        self.Z = radial_view.Z#position of ECE measurements
-        self.Phi0 = radial_view.Phi0#position of ECE measurements
+    def reset(self):
+        if self.initialized:
+            self.fig.clf()
+            self.show_ecei.setChecked(False)
+            self.cross_signal = None
+            self.__init__( self.parent, self.fig, self.n_contour, 
+                              self.remback_button, self.show_ecei)
 
+            
+    def set_data(self,rho,R, Z, theta0,  Phi, data, mag_coord_diag, mag_coord_data,
+                 units, n_harm,  shot, use_LFS_data, phase_locked):
+          
+          
         self.phase_locked = phase_locked
-        #BUG use just LFS measurements, troubles with mapping of the others from the HFS !!!
+        self.units = units
+        self.initialized = False
+        self.shot = shot
+        self.phi0 = 0 #used for phase locking of the mode 
+        self.n_harm = n_harm
+        self.Phi0 = Phi
+
+ 
+        out = extract_harmonics(data,self.t_range, self.f_range,n_harm, cross_tvec_signal=self.cross_signal)
+        _, _, tvec, _, harm, retro, _, _, _, f0, t0 = out
+
+     
         
-        ind = np.argsort(np.abs(rho))
-   
-        nlfs = np.sum((np.abs(rho)<=1)&(rho>=0)&np.isfinite(radial_view.amplitude2[0]))
-        nhfs = np.sum((np.abs(rho)<=1)&(rho<=0)&np.isfinite(radial_view.amplitude2[0]))
+        rho[np.isnan(rho)|(R<1)] = 2   
+
+        rho_sign = 1 if use_LFS_data else -1
+            
+        ind = (np.abs(rho)<=1)&(rho_sign*rho>=0)&np.isfinite(harm[0])
         
-        rho_sign= 1 if nhfs <= nlfs else -1
-        
-        ind = (np.abs(rho)<=1)&(rho_sign*rho>=0)&np.isfinite(radial_view.amplitude2[0])
-        
-        self.plot_ece_active.set_data( self.R[ind] , self.Z[ind] )
-        self.plot_ece_ignored.set_data(self.R[~ind], self.Z[~ind])
+        self.plot_ece_active.set_data( R[ ind], Z[ ind])
+        self.plot_ece_ignored.set_data(R[~ind], Z[~ind])
 
         sind = np.argsort(np.abs(rho))
         ind = sind[ind[sind]]
         
-        assert len(ind) > 2, 'Not enought signals inside of seperatrix to make the mapping!'  
+        assert len(ind) > 2, 'Not enough signals inside of separatrix to make the mapping!'  
     
+        self.tvec = tvec
         self.rho = rho[ind]
-        self.theta0 = radial_view.theta0[ind]%(2*np.pi)
-        self.theta = np.array(radial_view.mag_data[2])[ind]
-        self.theta_star = np.array(radial_view.mag_data[3])[ind]
-  
-        Rmag_ece = np.array(radial_view.mag_data[0])[ind]
-        Zmag_ece = np.array(radial_view.mag_data[1])[ind]
-        self.J   = np.array(radial_view.mag_data[4])[ind]
-
-        self.isoflux_R = radial_view.Rmag[self.n_rho-1::self.n_rho]
-        self.isoflux_Z = radial_view.Zmag[self.n_rho-1::self.n_rho]
+        self.retro =  retro[:, ind]
+        self.theta0 = theta0[ind]%(2*np.pi)
+        self.theta = mag_coord_diag['theta_geo'][ind]
+        self.theta_star = mag_coord_diag['theta_star'][ind]
+        
+    
+   
+        #isoflux and isotheta surfaces, just for plotting 
+        self.isoflux_R = mag_coord_data['R'][self.n_rho-1::self.n_rho]
+        self.isoflux_Z = mag_coord_data['Z'][self.n_rho-1::self.n_rho]
         
         t = np.linspace(0, 2*np.pi, self.n_theta, endpoint=False)
-        self.isotheta_R = np.array([np.interp(t, ts, r) for ts, r in zip(radial_view.theta_star, radial_view.Rmag)])
-        self.isotheta_Z = np.array([np.interp(t, ts, r) for ts, r in zip(radial_view.theta_star, radial_view.Zmag)])
+        self.isotheta_R = np.array([np.interp(t, ts, r) for ts, r in zip(mag_coord_data['theta_star'], mag_coord_data['R'])])
+        self.isotheta_Z = np.array([np.interp(t, ts, z) for ts, z in zip(mag_coord_data['theta_star'], mag_coord_data['Z'])])
 
-        self.ax.axis([self.isoflux_R[5].min(), self.isoflux_R[5].max(), 
-                      self.isoflux_Z[5].min(), self.isoflux_Z[5].max()]) #BUG should not be fixed
+        self.ax.axis([self.isoflux_R[-1].min(), self.isoflux_R[-1].max(), 
+                      self.isoflux_Z[-1].min(), self.isoflux_Z[-1].max()]) #BUG should not be fixed
   
-        self.t_range = radial_view.t_range
-        self.f_range = radial_view.f_range
-        self.shot = shot
+ 
+        Rmag_ece = mag_coord_diag['R'][ind]
+        Zmag_ece = mag_coord_diag['Z'][ind]
         
-        self.tvec = radial_view.tvec
-        self.retro =  radial_view.retro[:, ind]
-        self.phi0 = 0 #used for phase locking of the mode 
-        self.units = radial_view.units
-
         n_theta = Rmag_ece.shape[1]
         
+        #add point on axis
         self.Rmag_ece = np.c_[Rmag_ece[0].mean()*np.ones(n_theta), Rmag_ece.T].T
         self.Zmag_ece = np.c_[Zmag_ece[0].mean()*np.ones(n_theta), Zmag_ece.T].T
      
-        self.retro_cross_sig = radial_view.retro_cross_sig
-
+        #load sxr data if availible and and ECH resonance location
+        self.load_sxr()
+        self.load_ech_resonances()
+        
         self.loaded = True
 
-        try:
+    def set_data2D(self,R, Z, Phi,  data):
+        #plot data in 2D grid 
+ 
+        out = extract_harmonics(data, self.t_range, self.f_range, self.n_harm,
+                              cross_tvec_signal=self.cross_signal)
+        
+        _, _, tvec, _, _, retro, offset, _, corrupted, f0, t0 = out
+ 
+                
+        nrad = 8
+        npol = R.size//nrad
+        self.retro2D = retro.reshape(len(tvec), npol,nrad)
+        self.invalid2D = corrupted.reshape(npol, nrad)
+        self.offset2D = offset.reshape(npol, nrad)
+       
 
+        self.plot_ecei.set_data(R[~corrupted],Z[~corrupted])
+
+
+        R = R.reshape(npol, nrad)
+        Z = Z.reshape(npol, nrad)
+
+        self.plot_ecei_region.set_data(np.r_[R[:,0],R[::-1,-1], R[0,0]],
+                                       np.r_[Z[:,0],Z[::-1,-1], Z[0,0]])
+        
+        self.tvec2D = tvec
+        self.coord2D = R, Z, Phi
+        self.initialise2D = True
+        
+        
+
+        
+    def set_cross_signal(self, cross_signal):
+        self.cross_signal =  cross_signal
+        
+    def change_m_number(self, ind):
+
+        m = self.parent.m_numbers[ind]
+        if m != self.m:
+            self.m = m
+            self.update()
+            self.parent.tomo_m_num.setCurrentIndex(ind)
+      
+        
+    def load_sxr(self):
+        try:
             paths = ['Emissivity_%d.npz'%self.shot, 
                      os.path.expanduser('~/tomography/tmp/Emissivity_%d.npz'%self.shot),  ]
             for path in paths:
@@ -1646,7 +1832,6 @@ class Diag2DMapping(object):
                     break
 
             emiss = load(path, allow_pickle=True)
-            print( 'found SXR from %.4f to %.4f'%(emiss['tvec'][0], emiss['tvec'][-1]))
 
             if self.tvec[-1] > emiss['tvec'][-1] or  self.tvec[0] < emiss['tvec'][0]:
                 raise Exception('out of SXR tomography %.3f - %.3fs'%(emiss['tvec'][0], emiss['tvec'][-1]))
@@ -1659,14 +1844,15 @@ class Diag2DMapping(object):
                 self.sxr_z = emiss['zvec']
 
         except Exception as e:
-            #print(e)
             self.sxr_emiss = None
+    
+    def load_ech_resonances(self):
          
         #plot ECH heating locations, only for DIII-D
         if self.shot not in self.ECH_gyrotron_locations:
             self.ECH_gyrotron_locations[self.shot] = []
             try:
-                print('Fetching ECH location')
+                logger.info('Fetching ECH location' )
                 MDSconn = self.parent.MDSconn
                 MDSconn.openTree('AOT', self.shot) 
                 for i in range(1,7):
@@ -1680,11 +1866,16 @@ class Diag2DMapping(object):
                    self.ECH_gyrotron_locations[self.shot].append([time, RECH, ZECH])
             except Exception as e:
                 pass
-
-
-
-        #set back the m-number!
-        self.m = radial_view.m
+            
+        if len(self.ECH_gyrotron_locations.get(self.shot, [])):
+            #plot the ECH locations 
+            R,Z = [], []
+            for t,r,z in self.ECH_gyrotron_locations[self.shot]:
+                it = np.argmin(np.abs(t-np.mean(self.t_range)))
+                R.append(r[it])
+                Z.append(z[it])
+            self.ech_location.set_data(R,Z)
+ 
         
     def prepare(self):
         if not self.loaded: return 
@@ -1692,8 +1883,8 @@ class Diag2DMapping(object):
         if self.substract:
             self.cmap = 'seismic'
         else:
-            import copy
-            self.cmap =  copy.copy(plt.cm.get_cmap('nipy_spectral'))
+            from copy import copy
+            self.cmap = copy(plt.cm.get_cmap('nipy_spectral'))
             self.cmap._init()
             self.cmap.set_under('w')
 
@@ -1721,11 +1912,16 @@ class Diag2DMapping(object):
 
         #angular shift due to the time 
         self.phi = np.linspace(0, 2*np.pi, len(self.mode_Te), endpoint=True)
-        self.initialized = True
         
-        if self.phase_locked:
+        #calculate vmin,vmax, levels
+        self.UpdateLim(None)
 
-            #compensate the phase shift of the Te profile in a different timepoints
+        if self.substract: 
+            mode_Te = self.mode_Te-self.mode_Te.mean(1)[:, None]
+
+        #compensate the phase shift of the Te profile in a different timepoints
+        #for a better visualization of the rotating mode 
+        if self.phase_locked:
             if hasattr(self, 'rmax'):
                 imax = np.argmin(bp.abs(self.rho-self.rmax))  #preselected position
             else:
@@ -1737,20 +1933,23 @@ class Diag2DMapping(object):
             self.phi0 = np.arctan2(As, Ac)/np.abs(self.m)
             print(' ECE phase shifted by %ddeg'%np.rad2deg(self.phi0 ))
 
+        self.initialized = True
+
 
     def shift_phase(self, shift_phi):
 
         self.shift_phi = shift_phi%(2*np.pi)#periodicity -         
         self.time = self.t_start + self.shift_phi/(2*np.pi*self.f0)*np.abs(self.m)
-
-        description = '#%d  at %.6fs, $\phi_0$ = %d, f$_0$ = %.4fkHz and m=%d'%(self.shot, \
+        try:
+            description = '#%d  at %.6fs, $\phi_0$ = %d, f$_0$ = %.4fkHz and m=%d'%(self.shot, \
                 self.time, np.rad2deg(np.median(self.Phi0)), self.f0/1e3, self.m)
-
+        except:
+            description = ''
+            print('Error: ', (self.shot, self.time, np.rad2deg(np.median(self.Phi0)), self.f0/1e3, self.m, shift_phi, self.t_start))
         self.plot_description.set_text(description)
 
 
     def shiftTe(self):
-        
         nr, nt = self.theta_star.shape
         mode_Te = np.zeros((nr+1, nt))
         mode_Te[0] = self.mode_Te[:, 0].mean()  #fill the core by zero aplitude mode
@@ -1767,59 +1966,29 @@ class Diag2DMapping(object):
         
     
     def clear_contours(self, ax=None):
-        
         #use self.ax if no other ax is provided
         if ax is None: ax = self.ax
         
         #remove contours from a previous plotting 
-        for element in ('Te_contourf', 'Te_contour'):
+        for element in ('Te_contourf', 'Te_contour', 'Te2D_contour', 'Te2D_contourf'):
             if hasattr(ax, element):
                 for coll in getattr(ax, element).collections:
                     try:    ax.collections.remove(coll)
                     except ValueError: pass#Everything is not removed for some reason!    
 
     
-    def update(self, update_cax=True, update_mag=True, animate=False, ax = None, filled_contours = True):
+    def update(self, update_cax=True, update_mag=True, animate=False, 
+                        ax = None, filled_contours = True):
 
         if not self.initialized: return 
+ 
        
         #use self.ax if no other ax is provided
         if ax is None: ax = self.ax
         self.clear_contours(ax=ax)
         self.shift_phase(self.shift_phi)
 
-        mode_Te = self.shiftTe()#/1e3
-
-        if mode_Te.max() < 1e3: 
-            prefix, fact = '' , 1e0
-        elif mode_Te.max() < 1e6:
-            prefix, fact = 'k', 1e3
-        else:
-            prefix, fact = 'M', 1e6
-
-        vmax = np.amax(mode_Te)
-        vmin = np.amin(mode_Te)
-
-        if self.substract:
-            vmin = -vmax
-            n_contour = self.n_contour*2
-        else:
-            vmin = (vmax-vmin)*self.lim+vmin
-            n_contour = self.n_contour
-
-        levels=np.linspace(vmin, vmax, n_contour)
-        
-
-        if self.shot in self.ECH_gyrotron_locations:
-            R,Z = [], []
-            for t,r,z in self.ECH_gyrotron_locations[self.shot]:
-                it = np.argmin(np.abs(t-np.mean(self.t_range)))
-                R.append(r[it])
-                Z.append(z[it])
-  
-            self.ech_location.set_data(R,Z)
  
-
         if update_mag:
             for i, p in enumerate(self.plot_mag_rho):
                 p.set_data(self.isoflux_R[i], self.isoflux_Z[i])
@@ -1827,14 +1996,17 @@ class Diag2DMapping(object):
                 p.set_data(self.isotheta_R[:, i], self.isotheta_Z[:, i])
 
         collections = (self.plot_description, )
+        
+        
+        #plot SXR data if availible 
         if self.sxr_emiss is not None and filled_contours:
             R, Z = np.meshgrid(self.sxr_r+self.dR, self.sxr_z+self.dZ)  #BUG!!!
             n = (0, 1, 1, 2, 3, 3)[np.abs(self.m)]  #BUG just guess of the most common mode!!
             dT = 0
             if self.parent.tokamak == "AUG":
-                dT = (-40.5/360.)/self.f0*n/self.m  #BUG  toroidal shift between SXR and ECE
+                dT = (-40.5/360.)/self.f0*n/self.m  #BUG hardcoded toroidal shift between SXR and ECE
             if self.parent.tokamak == "DIIID":
-                dT = (69/360.)/self.f0*n/self.m  #BUG  toroidal shift between SXR and ECE
+                dT = (69/360.)/self.f0*n/self.m  #BUG hardcoded toroidal shift between SXR and ECE
 
             it = np.argmin(np.abs(self.sxr_tvec+dT-self.time))
             E = np.maximum(self.sxr_emiss[:, :, it], 0)
@@ -1848,20 +2020,23 @@ class Diag2DMapping(object):
             prefix = 'k'
             
             levels_sxr=np.linspace(vmin_sxr, vmax_sxr, self.n_contour)
-            self.SXR_contour = ax.contourf(R, Z, E/1e3, levels_sxr/1e3, cmap='nipy_spectral'
-                                        , vmin=vmin_sxr/1e3, vmax=vmax_sxr/1e3, extend='max')
+            self.SXR_contour = ax.contourf(R, Z, E/1e3, levels_sxr/1e3, cmap='nipy_spectral',
+                                        vmin=vmin_sxr/1e3, vmax=vmax_sxr/1e3, extend='max')
             collections += (self.SXR_contour.collections, )
             
+            
+            
+        mode_Te = self.shiftTe()/self.fact
+
         if not filled_contours or self.sxr_emiss is not None:
-            if self.substract:
-                levels=np.linspace(vmin, vmax, 15)
-            ax.Te_contour = ax.contour(self.Rmag_ece, self.Zmag_ece, mode_Te/fact, extend='both', linewidths = .5, 
-                            vmin=vmin/fact, vmax=vmax/fact, levels=levels/fact, colors='k')
+            ax.Te_contour = ax.contour(self.Rmag_ece, self.Zmag_ece, mode_Te, extend='both', linewidths = .5, 
+                            vmin=self.vmin, vmax=self.vmax, levels=self.levels, colors='k')
             collections += (ax.Te_contour.collections, )
 
         else:
-            ax.Te_contourf = ax.contourf(self.Rmag_ece, self.Zmag_ece, mode_Te/fact, extend='both', 
-                                    vmin=vmin/fact, vmax=vmax/fact, levels=levels/fact, cmap=self.cmap)
+            ax.Te_contourf = ax.contourf(self.Rmag_ece, self.Zmag_ece, mode_Te, extend='both', 
+                            vmin=self.vmin, vmax=self.vmax, levels=self.levels, cmap=self.cmap)
+            
             collections += (ax.Te_contourf.collections, )
             if not self.substract:
                 ax.Te_contour = ax.contour(ax.Te_contourf, colors='k', linewidths=0.3 )
@@ -1874,8 +2049,56 @@ class Diag2DMapping(object):
                 tick_locator = MaxNLocator(nbins=7)
                 cb.locator = tick_locator
                 cb.update_ticks()
-                cb.set_label('Te ['+prefix+self.units+']', labelpad=4, fontsize=font_size)
+                cb.set_label('T$_e$ ['+self.prefix+self.units+']', labelpad=4, fontsize=font_size)
 
+
+        #plot ECEI data
+        if self.initialise2D and self.show_ecei.isChecked():
+            self.plot_ecei.set_visible(True)
+            self.plot_ecei_region.set_visible(True) 
+
+
+            R,Z,Phi = self.coord2D
+            #BUG just guess of the most common mode!!
+            n = (0, 1, 1, 2, 3, 3)[np.abs(self.m)]  
+            #logger.debug(f'Assume mode m/n = {self.m}/{n}')
+
+            #toroidal shift betwen ECE and ECEI results in some time shift between the data            
+            dPhi = -Phi + self.Phi0   
+            #print('dPhi', dPhi) 
+            dT = dPhi/(self.f0*2*np.pi)*n/self.m  
+            t = time.time()
+
+            Te2D = interp1d(self.tvec2D, self.retro2D, axis=0,
+                              copy=False, assume_sorted=True)(self.time-dT)
+            #create masked array 
+            Te2D = Te2D/self.fact
+            if self.substract: 
+                Te2D -= self.offset2D/self.fact
+
+            #interpolate corrupted points
+            if np.any(self.invalid2D):
+                from scipy.interpolate import griddata
+                Te2D[self.invalid2D] = griddata((R[~self.invalid2D], Z[~self.invalid2D]),
+                                     Te2D[~self.invalid2D], (R[self.invalid2D],Z[self.invalid2D]))
+       
+    
+            ax.Te2D_contourf = ax.contourf(R, Z, Te2D, extend='both', zorder = 10,
+                                    vmin=self.vmin, vmax=self.vmax, 
+                                    levels=self.levels, cmap=self.cmap)
+            
+            collections += (ax.Te2D_contourf.collections, )
+            
+            if not self.substract:
+                ax.Te2D_contour = ax.contour(ax.Te2D_contourf, colors='k', 
+                                            linewidths=0.3,zorder = 10,)
+                collections += (ax.Te2D_contour.collections,)
+        
+        self.plot_ecei.set_visible(self.show_ecei.isChecked())
+        self.plot_ecei_region.set_visible(self.show_ecei.isChecked()) 
+
+                
+        
         if not animate:
             self.fig.canvas.draw_idle()
 
@@ -1894,7 +2117,6 @@ class Diag2DMapping(object):
         if 'control' == event.key:
             self.keyCtrl=True
             steps = 360
-    
 
         if 'shift' == event.key:
             self.keyShift=True
@@ -1921,12 +2143,39 @@ class Diag2DMapping(object):
             self.update(update_cax=False, animate=animate)
             self.parent.radial_m_num.setCurrentIndex(ind)
 
-    def UpdateLim(self, ind):
-        self.lim = ind/100.
+    def UpdateLim(self, ind=None):
+        if ind is not  None:
+            self.lim = ind/100.
+            
+        mode_Te = self.shiftTe()
+
+        
+        if np.abs(mode_Te).max() < 1e3: 
+            self.prefix, self.fact = '' , 1e0
+        elif np.abs(mode_Te).max() < 1e6:
+            self.prefix, self.fact = 'k', 1e3
+        else:
+            self.prefix, self.fact = 'M', 1e6
+
+        vmax = mode_Te.max()/self.fact
+        vmin = mode_Te.min()/self.fact
+
+        if self.substract:
+            self.vmax = max(vmax, -vmin)
+            self.vmin = -self.vmax
+            n_contour = self.n_contour*2
+        else:
+            self.vmin = (vmax-vmin)*self.lim+vmin
+            self.vmax = vmax 
+            n_contour = self.n_contour
+
+        self.levels = np.linspace(self.vmin, self.vmax, n_contour)
+        
+        
         self.update()
     
     def UpdatePlotType(self, ind):
-        self.substract = self.remback_botton.isChecked()
+        self.substract = self.remback_button.isChecked()
         self.prepare()
         self.update()
 
@@ -1971,13 +2220,12 @@ class MainGUI(QMainWindow):
         self.data_loader = None
         self.data_loader_radial = None
         self.data_loader_phase = None
+        self.signal_radial = None
         
         self.load_config()
         self.parent = parent
         self.MDSconn = None
         if self.tokamak == "AUG":
-            #import map_equ_20200306 as map_equ
-            #self.eqm = map_equ.equ_map()
             pass
         elif self.tokamak == "DIIID":
             from loaders_DIIID import map_equ
@@ -2058,6 +2306,9 @@ class MainGUI(QMainWindow):
         self.change_signal_phase()
 
         self.closeEvent = self.__del__
+        
+          
+        
     
     def __del__(self, event=None):
         if hasattr(self, 'roto_tomo'):
@@ -2093,13 +2344,19 @@ class MainGUI(QMainWindow):
             selected_trange = self.SpecWin_phase.t_range
             selected_frange = self.SpecWin_phase.f_range
 
-        if prew_panel in ('Radial Profile', '2D Te'):
+        if prew_panel == 'Radial Profile':
             selected_trange = self.radial_view.t_range 
             selected_frange = self.radial_view.f_range 
             
+        if prew_panel == '2D Te':
+            selected_trange = self.Te2Dmap.t_range 
+            selected_frange = self.Te2Dmap.f_range 
+         
         if prew_panel == '2D SXR' and self.roto_tomo.initialized:
-            selected_trange = self.roto_tomo.tmin, self.roto_tomo.tmax
-            selected_frange = self.roto_tomo.fmin, self.roto_tomo.fmax
+            selected_trange = self.roto_tomo.t_range
+            selected_frange = self.roto_tomo.f_range
+            
+        #check if setting are valid
                     
         if new_panel in ['Radial Profile', '2D Te', '2D SXR']\
             and (not all(np.isfinite(selected_trange)) or not all(np.isfinite(selected_frange))):
@@ -2107,7 +2364,18 @@ class MainGUI(QMainWindow):
             QMessageBox.warning(self, "Window not selected", "You must select the area for analysis\n in the spectrogram by a left mouse button ", QMessageBox.Ok)
             QApplication.restoreOverrideCursor()
             return 
+        
+        
 
+        if  self.data_loader is None and new_panel in ['Radial Profile']:
+            QMessageBox.warning(self, "Select diagnostic", "Diagnostic in the spectrogram panel is not selected", QMessageBox.Ok)
+            QApplication.restoreOverrideCursor()
+            return 
+     
+
+  
+        #setup the new panel based on the previous one
+        
         if new_panel == 'Spectrogram':
             self.SpecWin.ax.set_ylim(self.frange)
             self.SpecWin.ax.set_xlim(self.trange)
@@ -2129,68 +2397,77 @@ class MainGUI(QMainWindow):
                 self.cross_sig_group.setCurrentIndex( self.cb_sig_group.currentIndex() )
                 self.cross_signal.setCurrentIndex( 0)
             
-            if prew_panel != '2D Te':
-                self.change_signal_radial( self.cross_signal.currentIndex(), update=True)
+            #if prew_panel != '2D Te':
+            self.change_signal_radial(self.cross_signal.currentIndex(), update=True)
 
         if new_panel == '2D Te':
     
-            if not (self.radial_view.diag == 'ECE' and prew_panel == 'Radial Profile'):
-                print('Switching radial profile to ECE diagnostic')
-
-                if self.radial_view.diag != 'ECE':
-                    self.diag = 'ECE'
-                    self.diag_group = 'all'
-                    self.signal = 1
-                    self.change_diagnostics()
                 
-                self.radial_view.t_range = selected_trange
-                self.radial_view.f_range = selected_frange
-                
-                if self.cross_signal.currentIndex() == -1:
-                    self.cross_diagnostics.setCurrentIndex( self.cb_diagnostics.currentIndex())
-                    self.cross_sig_group.setCurrentIndex( self.cb_sig_group.currentIndex() )
-                    self.cross_signal.setCurrentIndex( 0)
-                
-                tmin, tmax = self.radial_view.t_range
+            self.Te2Dmap.t_range = selected_trange
+            self.Te2Dmap.f_range = selected_frange
+            
 
-                self.change_signal_radial( self.cross_signal.currentIndex(), update=True)
-  
-            if not self.radial_view.initialized:
-                return 
 
-            self.Te2Dmap.init_from_rad_prof( self.radial_view, self.shot, 
-                                           self.use_LFS_data, self.phase_locked_tomo)
-      
+                
+            self.change_signal_2Dmapping(update=True)
+            self.load_ECEI_data()     
+            #BUG loaded it only if requested!!
             self.Te2Dmap.prepare()
             self.Te2Dmap.update()
   
             self.save_anim_action.setEnabled(True)
-            
+                
         elif new_panel == '2D SXR':
-            
-            tmin, tmax = selected_trange
-            fmin, fmax = selected_frange
-            
+ 
             if self.SpecWin.initialized:
-                sig0 = self.SpecWin.stft_disp.signal
-                tvec0 = self.SpecWin.stft_disp.tvec
-                if self.roto_tomo.initialized and self.roto_tomo.tmin == tmin and self.roto_tomo.tmax == tmax\
-                    and self.roto_tomo.fmin == fmin and self.roto_tomo.fmax == fmax and self.shot == self.roto_tomo.shot:
-                        pass  #if nothing has changed, just continue 
+
+ 
+                if self.roto_tomo.initialized and self.roto_tomo.t_range is selected_trange\
+                        and self.roto_tomo.f_range is selected_frange\
+                        and self.shot == self.roto_tomo.shot\
+                        and self.signal_radial is self.roto_tomo.cross_sig_name:
+                        pass  #if nothing has changed, just continue
+                    
                 elif self.shot is not None:
-  
+                    if self.signal_radial is None:
+                        #use the signal shown in the spectrogram
+                        cross_sig = self.SpecWin.stft_disp.tvec, self.SpecWin.stft_disp.signal 
+                    else:
+                        cross_sig = self.data_loader_radial.get_signal(self.diag_group_radial, 
+                                        self.signal_radial, calib=False, tmin=selected_trange[0],
+                                        tmax=selected_trange[1])
+                
+
+                    #get signal for demodulation of experimental data 
+     
+                    #TODO check that it updates when the reference signal is changed
+                    harm_data = None
+                    cmplx_sig = None
+
+                    if self.tokamak == 'DIIID' and True:
+
+                        t0, f0, harm_data = self.load_SXR_data(selected_trange, selected_frange,
+                                                            cross_tvec_signal = cross_sig)
+                    else:
+                        t0, f0, cmplx_sig = calculate_cmplx_phase(cross_sig[0], cross_sig[1],
+                                                                  selected_frange)
+                        cmplx_sig = [cross_sig[0], cmplx_sig]
+                
                     #update also tomography
                     try:
-                        self.roto_tomo.prepare_tomo(self.tokamak, self.shot, tmin, tmax, fmin, fmax, self.eqm, tvec0, sig0)
+                        self.roto_tomo.prepare_tomo(self.tokamak, self.shot, 
+                                                    selected_trange, selected_frange, t0, f0,
+                                                    self.signal_radial, harm_data, cmplx_sig) 
+
                     except:
                         print('rotation tomography failed')
                         print( traceback.format_exc())
 
-                        QMessageBox.warning(self, "rotation tomography ", traceback.format_exc(), QMessageBox.Ok)
+                        QMessageBox.warning(self, "rotation tomography ",
+                                                    traceback.format_exc(), QMessageBox.Ok)
                         return 
 
                     if self.roto_tomo.showTe:
-                        logger.info('prepare ECE')
                         #update also 2D Te 
                         curr_tab = self.curr_tab
                         self.updatePanels(self.tables_names.index('2D Te'))
@@ -2271,8 +2548,9 @@ class MainGUI(QMainWindow):
     def save_anim(self):
 
         T = time.time()
+        print('save_anim',T - self.movie_saved )
         if T - self.movie_saved < 10:
-            print('Prevent multiple calls os save_anim')
+            print('Prevent multiple calls of save_anim')
             return
         
         if self.tables_names[self.curr_tab] == '2D Te':
@@ -2297,7 +2575,6 @@ class MainGUI(QMainWindow):
 
             obj.shift_phase(t)
             out = obj.update(update_mag=False, update_cax=False, animate=True)
-            #print(out)
             return out
         
         save_gui = QFileDialog(self)
@@ -2326,7 +2603,7 @@ class MainGUI(QMainWindow):
             print( traceback.format_exc())
 
             QMessageBox.warning(self, "Animation failed", traceback.format_exc(), QMessageBox.Ok)
-            return 
+        
 
 
     def save_data(self):
@@ -2427,7 +2704,19 @@ class MainGUI(QMainWindow):
         self.eqm_ready = False
         if self.tokamak != 'AUG':
             self.eqm.Close()
-
+            
+        #clear data from the previous discharge
+        if hasattr(self,  'data_loader_ECEI'):
+            del self.data_loader_ECEI
+        if hasattr(self,  'data_loader_radial'):
+            del self.data_loader_radial
+        if hasattr(self,  'data_loader_2Dmap'):
+            del self.data_loader_2Dmap
+        if hasattr(self,  'data_loader_phase'):
+            self.data_loader_phase = None
+        if hasattr(self,  'data_loader'):
+            self.data_loader = None
+     
         self.SpecWin.reset()
         self.SpecWin_phase.reset()
 
@@ -2455,10 +2744,15 @@ class MainGUI(QMainWindow):
                 if l[0].tor_mode_num or l[0].pol_mode_num:  #load only diagnostics supporting phase measurements
                     self.cb_diagnostics_phase.addItem(str(n)) 
 
+        #clear and prepare the plots
+        self.radial_view.reset()
+        if hasattr(self,'Te2Dmap'):
+            self.Te2Dmap.reset()
+
 
         def init_equlibrium():
             self.eqm_ready = True
-            print( 'Initialise equilibrium ', self.eq_diag)
+            print( 'Initialise equilibrium: ', self.eq_diag, self.shot)
 
             if self.tokamak == 'AUG':
                 import aug_sfutils as sf
@@ -2562,7 +2856,8 @@ class MainGUI(QMainWindow):
             self.diag = str(self.cb_diagnostics.itemText(id))
         
         if hasattr(self, 'data_loader'):
-            del self.data_loader  #free memory of the previous data_loader
+            #del self.data_loader  #free memory of the previous data_loader
+            self.data_loader = None
         try:
             if self.diag not in self.diag_loaders:
                 raise Exception('Loader for diagnostic %s was not found'%self.diag)
@@ -2592,13 +2887,15 @@ class MainGUI(QMainWindow):
         
         self.diag_radial = str(self.cross_diagnostics.itemText(id))
         QApplication.setOverrideCursor(Qt.WaitCursor)
-        del self.data_loader_radial   #free memory of the previos data_loader
+        if hasattr(self, 'data_loader_radial'):
+            #del self.data_loader_radial   #free memory of the previos data_loader
+            self.data_loader_radial = None
         try:
             self.data_loader_radial = self.diag_loaders[self.diag_radial][0](self.shot, 
                         ed=0, eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)
         except Exception as e:
             print( traceback.format_exc())
-            c.warning(self, "Loading problem", str(e), QMessageBox.Ok)
+            QMessageBox.warning(self, "Loading problem", str(e), QMessageBox.Ok)
             return 
             
         self.diag_groups_radial = self.data_loader_radial.get_signal_groups()
@@ -2621,11 +2918,14 @@ class MainGUI(QMainWindow):
             self.diag_phase =   str(self.cb_diagnostics_phase.itemText(id))
             
         loader = self.diag_loaders[self.diag_phase][0]
-        del self.data_loader_phase
+        if hasattr(self, 'data_loader_phase'):
+            self.data_loader_phase = None
+            #del self.data_loader_phase
+            
         try:
             self.data_loader_phase = loader(self.shot, 
                         ed=0, eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)
-        except:
+        except Exception as e:
             print( traceback.format_exc())
             QMessageBox.warning(self, "Loading problem", str(e), QMessageBox.Ok)
             return 
@@ -2712,7 +3012,8 @@ class MainGUI(QMainWindow):
 
         data = {'tvec':tvec, 'signal':sig}
         
-        logger.info(  'data loaded in %5.2fs', (time.time()-T))
+        if time.time()-T > 0.1:
+            logger.info(  self.diag+' data loaded in %5.2fs', (time.time()-T))
      
         if self.show_plasma_freq and self.data_loader.radial_profile and self.eqm_ready:
             try:
@@ -2756,21 +3057,11 @@ class MainGUI(QMainWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
         self.signal_radial = self.sig_names_radial[num-1] if num > 0 else None
-
-        if  self.data_loader is None :
-            QMessageBox.warning(self, "Select diagnostic", "Diagnostic in the spectrogram panel is not selected", QMessageBox.Ok)
-            return 
-
         tmin, tmax = self.radial_view.t_range
-
+        t0 = (tmin+tmax)/2
+        
         if not self.data_loader.radial_profile:
             QMessageBox.warning(self, "Radial profile is not supported", "Radial profile from this diagnostic is not avalible", QMessageBox.Ok)
-            return 
-              
-        if not np.isfinite(tmin):
-            print('tmin', tmin, tmax)
-
-            QMessageBox.warning(self, "Window not selected", "You must select the area for analysis\n in the spectrogram by a left mouse button ", QMessageBox.Ok)
             return 
         
         #do not load data again, if is not necessary 
@@ -2778,86 +3069,77 @@ class MainGUI(QMainWindow):
             self.data_loader_radial  = self.data_loader
         
         if update:
-            
-            
             T = time.time()
 
             if self.diag_group is None: return 
 
-            #load data and if diag_group is "all"m it will load everything 
-            rho, theta_tg, R, Z, data = [], [], [], [], []
+            #load data and if diag_group is "all" it will load everything 
             group = self.diag_group
             if self.diag in ['ECE']:
                 names = self.data_loader.names  #load all channels 
             else:
                 names = self.data_loader.get_names(group)
 
-            data.extend(self.data_loader.get_signal(group, names, calib=True, tmin=tmin, tmax=tmax))
-            rho_, theta_tg_, R_, Z_ = self.data_loader.get_rho(group, names, 
-                        (tmin+tmax)/2, dR=self.dR_corr, dZ=self.dZ_corr)
+            data = self.data_loader.get_signal(group, names, calib=True, tmin=tmin, tmax=tmax)
+            
 
-            rho = np.append(rho, rho_)
-            theta_tg = np.append(theta_tg, theta_tg_)
-            R, Z = np.append(R, R_), np.append(Z, Z_) 
+            rho, theta, R, Z = self.data_loader.get_rho(group, names, t0, dR=self.dR_corr, dZ=self.dZ_corr)
+
+           
             try:
                 Phi = self.data_loader.get_phi_tor()
             except:
                 Phi = 0
             
+
+            
             #get a smooth calibration for the stationary profile 
             if self.diag == 'ECE' and hasattr(self.data_loader, 'get_Te0'):
-                out = self.data_loader.get_Te0(tmin, tmax, self.dR_corr+1e-4, self.dZ_corr)
+                out = self.data_loader.get_Te0(tmin, tmax, self.dR_corr, self.dZ_corr)
                 if not out is None:  #tha case whan CEC and IDA are not avalible 
-                    _, Te0 = out
-                    for t0, d in zip(Te0, data):
+                    for t, d in zip(out[1], data):
                         m = np.mean(d[1])
                         if m == 0: continue
-                        d[1] = d[1]*(t0/m)
+                        d[1] = d[1]*(t/m)
+                        
 
-            rho_grid = np.linspace(0.01, 1, 100)
-            magr, magz, theta, theta_star = self.data_loader.mag_theta_star((tmin+tmax)/2, 
-                                                rho_grid, dR=self.dR_corr, dZ=self.dZ_corr)
-            
-            r = np.hypot(magr-magr[(0, )], magz-magz[(0, )])
-            dr = np.gradient(r)[0]/np.gradient(rho_grid)[:, None]
-            dt = np.gradient(theta_star)[1]/np.gradient(theta)[None]
-            J = dt*dr  #jacobian of the transformation
-            
-            rho_interp = np.minimum(np.maximum(rho_grid[0], np.abs(rho)), rho_grid[-1])
-                
-            magr_ece = interp1d(rho_grid, magr , axis=0, assume_sorted=True)(rho_interp)
-            magz_ece = interp1d(rho_grid, magz , axis=0, assume_sorted=True)(rho_interp)
-            J        = interp1d(rho_grid, J    , axis=0, assume_sorted=True)(rho_interp)
-            theta    = np.tile(theta, (len(rho_interp), 1))
-            theta_star_ = interp1d(rho_grid, theta_star, axis=0, assume_sorted=True)(rho_interp)
-            mag_data = magr_ece, magz_ece, theta, theta_star_, J
+            mag_coord_data, mag_coord_diag = self.get_mag_eq_coordinates(self.data_loader, t0, rho)
+
 
             qsurfs = self.radial_view.q_surf_vals
-            rho_qsurfs = self.data_loader.get_q_surfs((tmin+tmax)/2, qsurfs)
+            rho_qsurfs = self.data_loader.get_q_surfs(t0, qsurfs)
             units = self.data_loader.units
           
-            self.radial_view.set_data(self.diag, rho, theta_tg, data, R, Z, Phi, mag_data, magr, magz, theta_star, rho_qsurfs, units)
+            self.radial_view.set_data(self.diag, rho, theta, data, R, Z, Phi, mag_coord_diag, mag_coord_data, rho_qsurfs, units)
             self.radial_view.group = self.diag_group
             
-            logger.info(  'data loaded in %5.2fs', (time.time()-T))
+
+            
+            if time.time()-T  > 0.5:
+                logger.info('Radial profile data loaded in %5.2fs', (time.time()-T))
 
 
         if not self.signal_radial is None:
+            T = time.time()
             cross_sig = self.data_loader_radial.get_signal(self.diag_group_radial, 
-                                    self.signal_radial, calib=True, tmin=tmin, tmax=tmax)
-            
-            self.radial_view.set_cross_signal( cross_sig)
+                                    self.signal_radial, calib=False, tmin=tmin, tmax=tmax)
+
+            self.radial_view.set_cross_signal(cross_sig)
             info = self.data_loader_radial.signal_info(self.diag_group_radial, 
-                                    self.signal_radial, (tmin+tmax)/2)
+                                    self.signal_radial, t0)
             InfoThread = GetInfoThread(self, self.data_loader_radial.signal_info, 
-                            self.diag_group_radial, self.signal_radial, (tmin+tmax)/2)
+                            self.diag_group_radial, self.signal_radial, t0)
+            
+            if time.time()-T  > 0.1:
+                logger.info('Cross-signal data loaded in %5.2fs', (time.time()-T))
 
         else:
-            InfoThread = GetInfoThread(self, self.data_loader.signal_info, self.diag_group, self.signal, (tmin+tmax)/2)
+            InfoThread = GetInfoThread(self, self.data_loader.signal_info, self.diag_group, self.signal, t0)
 
         InfoThread.finished.connect(self.statusBar().showMessage)
 
         InfoThread.start()
+  
 
         try:
             description = self.data_loader.get_description(self.diag_group, self.signal)
@@ -2869,6 +3151,259 @@ class MainGUI(QMainWindow):
         self.radial_view.update()
         QApplication.restoreOverrideCursor()
 
+    
+    def get_mag_eq_coordinates(self, loader, time, rho ):
+        rho_grid = np.linspace(0.01, 1, 100)
+        magr, magz, theta_geo, theta_star = loader.mag_theta_star(time, rho_grid, dR=self.dR_corr, dZ=self.dZ_corr)
+        
+        #r = np.hypot(magr-magr[(0, )], magz-magz[(0, )])
+        #dr = np.gradient(r, axis=0)/np.gradient(rho_grid)[:, None]
+        #dt = np.gradient(theta_star,axis=1)/np.gradient(theta)[None]
+        #J = dt*dr  #jacobian of the transformation
+        
+        
+        mag_coord_data = {'R':magr, 'Z':magz, 'theta_geo': theta_geo, 'theta_star': theta_star}
+        
+        #evalute it at rho locations of the diagnostics measurements
+        rho_interp = np.clip(np.abs(rho), *rho_grid[[0,-1]])
+
+        theta_geo    = np.tile(theta_geo, (len(rho_interp), 1))            
+        magr = interp1d(rho_grid, magr , axis=0, assume_sorted=True)(rho_interp)
+        magz = interp1d(rho_grid, magz , axis=0, assume_sorted=True)(rho_interp)
+        theta_star = interp1d(rho_grid, theta_star, axis=0, assume_sorted=True)(rho_interp)
+        #diag_J        = interp1d(rho_grid, J    , axis=0, assume_sorted=True)(rho_interp)
+
+        mag_coord_diag = {'R':magr, 'Z':magz, 'theta_geo': theta_geo, 'theta_star': theta_star}
+        
+        return  mag_coord_data, mag_coord_diag
+
+
+    def change_signal_2Dmapping(self, update=False):
+  
+        
+        #currently only ECE  and ECEI diags are supported
+        diag = 'ECE'
+
+        #if num <= 0 and not update:  return 
+    
+        #self.signal_radial = self.sig_names_radial[num-1] if num > 0 else None
+
+    
+        T = time.time()
+
+        self.statusBar().showMessage('Loading ...' )
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        
+        tmin, tmax = self.Te2Dmap.t_range
+              
+        if not np.isfinite(tmax-tmin):
+            QMessageBox.warning(self, "Frequency and time window not selected", "You must select the area for analysis\n in the spectrogram by a left mouse button ", QMessageBox.Ok)
+            return 
+        
+
+        #do not load data again, if is not necessary 
+        if hasattr(self, 'data_loader_2Dmap'):
+            pass
+        elif self.data_loader.__class__.__name__ == 'loader_'+diag:
+            self.data_loader_2Dmap = self.data_loader
+        else:
+
+            try:
+                self.data_loader_2Dmap = self.diag_loaders[diag][0](self.shot, 
+                            eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)
+            except Exception as e:
+                print('error in loading')
+                print( traceback.format_exc())
+                QMessageBox.warning(self, "Loading problem", str(e), QMessageBox.Ok)
+                return                
+        
+        group = 'all'
+        t0 = (tmin+tmax)/2
+        #load signals for cross-correlation, for now use the same as in radial_plot
+        if not self.signal_radial is None:
+            cross_sig = self.data_loader_radial.get_signal(self.diag_group_radial, 
+                                    self.signal_radial, calib=False, tmin=tmin, tmax=tmax)
+            
+            self.Te2Dmap.set_cross_signal(cross_sig)
+            info = self.data_loader_radial.signal_info(self.diag_group_radial, 
+                                    self.signal_radial, t0)
+            InfoThread = GetInfoThread(self, self.data_loader_radial.signal_info, 
+                            self.diag_group_radial, self.signal_radial, t0)
+            InfoThread.finished.connect(self.statusBar().showMessage)
+            InfoThread.start()
+        #else:
+            ##TODO what was this doing?
+            #InfoThread = GetInfoThread(self, self.data_loader_2Dmap.signal_info, group, self.signal, t0)
+
+
+
+        if update:
+            #load all ECE channels 
+            names = self.data_loader_2Dmap.names 
+
+            units = self.data_loader_2Dmap.units
+
+
+            data = self.data_loader_2Dmap.get_signal(group, names, calib=True, tmin=tmin, tmax=tmax)
+      
+            rho, theta, R, Z = self.data_loader_2Dmap.get_rho(group, names, t0, 
+                        dR=self.dR_corr, dZ=self.dZ_corr)
+
+            Phi = self.data_loader_2Dmap.get_phi_tor()
+         
+            
+            #get a smooth calibration for the stationary profile 
+            if diag == 'ECE' and hasattr(self.data_loader_2Dmap, 'get_Te0'):
+                out = self.data_loader_2Dmap.get_Te0(tmin, tmax, self.dR_corr+1e-4, self.dZ_corr)
+                #if steady state profiles are availible, crosscalibrate fast data
+                if out is not None:
+                    for t, d in zip(out[1], data):
+                        m = np.mean(d[1])
+                        if m == 0: continue
+                        d[1] = d[1]*(t/m)
+
+            #get magnetic coordinates for poloidal mapping of the data
+            mag_coord_data, mag_coord_diag = self.get_mag_eq_coordinates(self.data_loader_2Dmap, t0, rho)
+
+            
+            self.Te2Dmap.set_data(rho,R, Z, theta, Phi,data, mag_coord_diag, mag_coord_data,
+                        units, self.Te2D_n_harm,  self.shot, self.use_LFS_data,
+                             self.phase_locked_tomo)
+          
+          
+            
+            if time.time()-T  > 0.1:
+                logger.info('2D profile data loaded in %5.2fs', (time.time()-T))
+
+
+        
+
+
+
+
+        try:
+            description = self.data_loader_2Dmap.get_description(group, 'all')
+        except Exception as e:
+            print( traceback.format_exc())
+            description = ''
+        
+        #update plot description
+        self.Te2Dmap.description = description
+        #self.Te2Dmap.update()
+        QApplication.restoreOverrideCursor()
+
+
+
+    def load_SXR_data(self, t_range, f_range, cross_tvec_signal= None):
+
+
+        #special case, load data 2D image with ECE
+        if self.tokamak != 'DIIID':
+            raise Exception('Use only on DIII-D')
+        logger.info('Fetching SXR data ... ' )
+        T = time.time()
+
+        self.statusBar().showMessage('Loading SXR ...' )
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+       
+
+        #do not load data again, if is not necessary 
+        if  hasattr(self, 'data_loader_SXR'):
+            pass
+        elif  not hasattr(self, 'data_loader_SXR') and self.data_loader.__class__.__name__ == 'loader_SXR':
+
+            self.data_loader_SXR = self.data_loader
+        else:
+            self.data_loader_SXR = self.diag_loaders['SXR'][0](self.shot, eqm=self.eqm, 
+                                            rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)            
+            
+        #fetch all SXR data
+        data  = self.data_loader_SXR.get_signal('all', [], calib=True,
+                                               tmin=t_range[0],tmax=t_range[1])
+       
+
+        #calculate harminics of the mode signal
+        _, _, _, _, harm, _, offset, error, corrupted, f0, t0 = extract_harmonics(data, 
+			t_range, f_range, self.rtomo_n_harm, cross_tvec_signal=cross_tvec_signal)
+     
+        sxr_names = [(g,n) for g,names in self.data_loader_SXR.names.items() for n in names]
+        harm_data =  {}
+        for i, n in enumerate(sxr_names):
+            harm_data[n] = {'harm': [offset[i]]+list(harm[:,i]), 'error': error[i], 
+                              'valid': ~corrupted[i]}
+ 
+        if (time.time()-T) > 0.1:
+            logger.info('SXR data loaded in %5.2fs', (time.time()-T))
+
+        QApplication.restoreOverrideCursor()
+
+        return t0,  f0, harm_data
+        
+
+    def load_ECEI_data(self):
+
+        if not self.tomo_plot_ecei.isChecked():
+            #clean the ECEI overlay
+            self.Te2Dmap.update()
+            return
+
+        #special case, load data 2D image with ECE
+        if self.tokamak != 'DIIID':
+            QMessageBox.warning(self, "Not Implemented",
+                        'If you need it, follow DIII-D example and implement it by yourself. ', QMessageBox.Ok)
+            self.tomo_plot_ecei.setChecked(False)
+            return   
+        
+        
+        T = time.time()
+
+        self.statusBar().showMessage('Loading ...' )
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        
+        tmin, tmax = self.Te2Dmap.t_range
+
+        #do not load data again, if is not necessary 
+        if  hasattr(self, 'data_loader_ECEI'):
+            pass
+        elif  not hasattr(self, 'data_loader_ECEI') and self.data_loader.__class__.__name__ == 'loader_ECEI':
+            self.data_loader_ECEI = self.data_loader
+        else:
+            self.data_loader_ECEI = self.diag_loaders['ECEI'][0](self.shot, 
+                            eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)            
+            
+        if not (self.data_loader_ECEI.LFSGOOD or self.data_loader_ECEI.HFSGOOD):
+            QMessageBox.warning(self, "NO ECEI data",
+                        'ECEI data are not availible for this shot', QMessageBox.Ok)
+
+            self.tomo_plot_ecei.setChecked(False)
+            return 
+
+        #teh HFS system on DIII-D is broken, but can be added in the future
+        group = 'LFS'
+        names = self.data_loader_ECEI.get_names(group)
+        data = self.data_loader_ECEI.get_signal(group, names, calib=True,
+                                                    tmin=tmin, tmax=tmax)
+        
+        #make sure that chnage in data_loader will not affect data cached in data_loader_2Dmap
+
+        t0 = (tmin+tmax)/2            
+        rho, theta, R, Z = self.data_loader_ECEI.get_rho(group, names, t0, 
+                    dR=self.dR_corr, dZ=self.dZ_corr)
+        Phi = self.data_loader_ECEI.get_phi_tor()
+ 
+        self.Te2Dmap.set_data2D(R, Z, Phi,  data)
+        self.Te2Dmap.update()
+        
+        
+        logger.info('ECEI profile data loaded in %5.2fs', (time.time()-T))
+
+       
+
+        
+        
+        QApplication.restoreOverrideCursor()
+        
+        
         
     def change_signal_phase(self, num=None):
 
@@ -2882,7 +3417,7 @@ class MainGUI(QMainWindow):
 
         xlims = self.SpecWin_phase.ax.get_xlim()
         ylims = self.SpecWin_phase.ax.get_ylim()
-
+        T = time.time()
         try:
             tvec, sig = self.data_loader_phase.get_signal_phase(self.signal_phase)
             if sig is None: raise
@@ -2892,7 +3427,9 @@ class MainGUI(QMainWindow):
             QMessageBox.warning(self, "Loading problem", "Check if the signal exist", QMessageBox.Ok)
             return 
         
-        
+        if time.time()-T > 0.1:
+            logger.info(  self.diag_phase+' data loaded in %5.2fs', (time.time()-T))
+            
         self.statusBar().showMessage('')
         #option to set mode range from config file 
         if self.mode_range is None:
@@ -3426,6 +3963,11 @@ class MainGUI(QMainWindow):
         self.mpl_toolbar_2D = NavigationToolbar(self.canvas_2Dmap, self.cWidget)
         self.mpl_toolbar_2D.setMaximumWidth(150)
 
+        label2 = QLabel('Show ECEI')
+        self.tomo_plot_ecei= QCheckBox(self.cWidget)
+        self.tomo_plot_ecei.setToolTip('Add overlay with ECEI data')
+        
+
         label1 = QLabel('M mode:')
         self.tomo_m_num  = QComboBox(self.cWidget)
         self.tomo_m_num.setToolTip('You must specify poloidal number of the mode')
@@ -3438,10 +3980,12 @@ class MainGUI(QMainWindow):
         for n in self.m_numbers:  self.tomo_m_num.addItem(str(n)) 
         self.tomo_m_num.setCurrentIndex( np.where(self.m_numbers == 1)[0])
 
-        self.Te2Dmap =  Diag2DMapping(self, self.fig_tomo, self.n_contour_2Dprof, self.tomo_plot_substract)
+        self.Te2Dmap = Diag2DMapping(self, self.fig_tomo, self.n_contour_2Dprof,
+                                     self.tomo_plot_substract, self.tomo_plot_ecei)
 
         self.tomo_m_num.currentIndexChanged.connect( self.Te2Dmap.UpdateModeM)
         self.tomo_plot_substract.stateChanged.connect(self.Te2Dmap.UpdatePlotType)
+        self.tomo_plot_ecei.stateChanged.connect(self.load_ECEI_data)
    
         label4 = QLabel('Scale')
         self.tomo_limit.valueChanged.connect(self.Te2Dmap.UpdateLim)
@@ -3457,7 +4001,7 @@ class MainGUI(QMainWindow):
         hboxL.addWidget(self.mpl_toolbar_2D)
         hboxL.setAlignment( self.mpl_toolbar_2D, Qt.AlignLeft)
 
-        for l, w in [ (label1, self.tomo_m_num), (label3, 
+        for l, w in [(label2, self.tomo_plot_ecei), (label1, self.tomo_m_num), (label3, 
                   self.tomo_plot_substract), (label4, self.tomo_limit) ]:
             hbox = QHBoxLayout()
             hbox.addWidget(l)
@@ -3567,6 +4111,7 @@ class MainGUI(QMainWindow):
         self.rototomo_mag_flx.setToolTip('Overlayed by magnetic flux surfaces')
         self.rototomo_mag_flx.setChecked(True)
 
+
         for m in self.m_numbers:  self.rototomo_m_num.addItem(str(m)) 
         self.rototomo_m_num.setCurrentIndex( np.where(self.m_numbers == 1)[0])
         for n in self.n_numbers:  self.rototomo_n_num.addItem(str(n)) 
@@ -3630,7 +4175,7 @@ class MainGUI(QMainWindow):
                         self.rototomo_n_num, self.rototomo_plot_bcg, 
                         self.rototomo_TeOver, self.rototomo_mag_flx, self.rototomo_limit, 
                         self.rototomo_reg, self.rtomo_n_harm, self.rtomo_n_svd, 
-                        self.eqm, self.rho_lbl, self.rtomo_show_contours)
+                        self.eqm, self.rho_lbl, self.rtomo_show_contours )
 
         self.rototomo_m_num.currentIndexChanged.connect(self.roto_tomo.update_node_m_number)
         self.rototomo_n_num.currentIndexChanged.connect(self.roto_tomo.update_node_n_number)                    
@@ -3822,6 +4367,10 @@ if __name__ == '__main__':
         new_font = app.font()
         new_font.setPointSize(  12 )
         app.setFont( new_font )
+        
+    assert not (args.tmin > args.tmax)
+    assert not (args.fmin > args.fmax)
+    
     #try:
     form = MainGUI(args.shot, args.diag, args.group, args.sig, args.diag_phase, args.signal_phase, args.tmin, args.tmax, args.fmin, args.fmax )
 

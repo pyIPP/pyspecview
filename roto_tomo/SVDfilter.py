@@ -48,11 +48,14 @@ def colorize(z):
 class SVDFilter():
     #algorithm for quasiperiodic multichannel signal filtering
 
-    def __init__(self,tvec, data,err,dets_index,F0,dF,n_harm = 4, n_svd = 3, tau = 3):
+    def __init__(self,tvec, data,err,dets_index,F0,dF,n_harm = 4, n_svd = 3, tau = 3, cmplx_cross_sig=None):
         #savez('SVDFilter',tvec, data,err,dets_index,F0,dF,n_harm, n_svd, tau)
         self.data = np.copy(data)
         self.err = np.copy(err)
         self.tvec = tvec
+        self.cmplx_cross_sig = None
+        if cmplx_cross_sig is not None:
+            self.cmplx_cross_sig = np.interp(tvec,  *cmplx_cross_sig)
         
         self.ndets = data.shape[1]
         self.dets_index = dets_index
@@ -100,9 +103,9 @@ class SVDFilter():
       
         pad = len(b)//2
 
-        cmpl_exp = np.zeros(2**int(np.ceil(np.log2(nt))),dtype='single')
-        cmpl_exp[(nmax*len(cmpl_exp))//nt] = 1
-        cmpl_exp = ifft(cmpl_exp)[:nt]*len(cmpl_exp)
+        #cmpl_exp = np.zeros(2**int(np.ceil(np.log2(nt))),dtype='single')
+        #cmpl_exp[(nmax*len(cmpl_exp))//nt] = 1
+        #cmpl_exp = ifft(cmpl_exp)[:nt]*len(cmpl_exp)
         
         data = np.copy(self.data)
         err = np.copy(self.err)
@@ -112,13 +115,18 @@ class SVDFilter():
         offset = np.mean(data,axis=0)
         data -= offset[None,:] 
 
-
+        #TODO use a reference signal as in PYSPECVIEW
         n_fft = next_fast_len(nt+len(b)-1)
-        cmpl_exp = np.zeros(n_fft,dtype='single')
-        cmpl_exp[(nmax*n_fft)//nt] = 1
-        cmpl_exp = ifft(cmpl_exp)[:nt]*len(cmpl_exp)
 
-        fsig = fft(data,axis=0,n=n_fft)#použít RFFT? 
+        if self.cmplx_cross_sig is not None and False:
+            cmpl_exp = self.cmplx_cross_sig
+        else:
+            cmpl_exp = np.zeros(n_fft,dtype='single')
+            cmpl_exp[(nmax*n_fft)//nt] = 1
+            cmpl_exp = ifft(cmpl_exp)[:nt]*len(cmpl_exp)
+
+
+        fsig = fft(data,axis=0,n=n_fft) #use RFFT? 
         fb   = fft(np.single(b),axis=0,n=n_fft)
 
         self.retrofit = np.zeros((nt-pad, self.ndets),dtype='single')

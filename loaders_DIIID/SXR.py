@@ -1,4 +1,8 @@
-from loaders_DIIID.loader import * 
+try:
+    from loaders_DIIID.loader import * 
+except:
+    from loader import * 
+
 import os
 from multiprocessing import  Pool
 import MDSplus as mds
@@ -6,7 +10,9 @@ from time import time as T
 #TODO lod only a data slice
 #TODO calibration for all diagnostics 
 #TODO geometry for all diags
+from  IPython import embed
 
+from collections import OrderedDict
 
 
 def check(shot):
@@ -17,6 +23,7 @@ def check(shot):
     return status
 
 verbose = False
+
 
 
 
@@ -31,9 +38,56 @@ def xraypaths(shot, toroidal=False):
         # 98/05/19 modified by Snider.
         # 2002/01/21 added new sxr locations for shot >= 108690 per G.Jackson
         #------------------------------------------------------------------------------
-        
-        
-        if shot >= 168847:
+        if shot >= 177100:
+            #from 2019  
+            #sxrgeom_plot3: load in geometry for 2017 SXR45U view chords
+            zslit_45= array(( 73.1,)*8+( 78.1,)*4)/100
+            rslit_45= array((230.4,)*8+(227.2,)*4)/100
+            
+            rwall_45 = array([2.19 , 1.98 ,  1.53, 1.12  , 1.01 , 1.01 , 1.01 ,1.01, 1.01, 1.01, 1.01, 1.01]);
+            zwall_45 = array([-0.83 ,-1.06 ,-1.24 ,-1.34 ,-1.01 ,-0.65 ,-0.28 ,0.06, 0.20, 0.37, 0.61, 0.81]);
+
+            xangle_45 = rad2deg(arctan2(zwall_45-zslit_45, rwall_45-rslit_45))
+            
+            
+            rwall_195 = array([1.048,1.163,1.240,1.291,1.406,1.547,1.636,1.713,1.879,1.994,2.135,2.275 ]);
+            zwall_195 = array([1.129,1.103,1.141,1.219,1.180,1.064,1.012,1.025,1.012,0.999,0.845,0.509 ]);
+            zslit_195 = -0.834
+            rslit_195 = 2.378
+            
+            xangle_195 = rad2deg(arctan2(zwall_195-zslit_195, rwall_195-rslit_195))
+            
+            
+                       
+            rxray  = r_[rslit_45, rslit_195*ones(12), rslit_195*ones(12)]*100
+            zxray  = r_[zslit_45, zslit_195*ones(12), zslit_195*ones(12)]*100
+            xangle = r_[xangle_45,xangle_195,xangle_195]
+
+            
+
+                          #sxrgeom_plot3: load in geometry for 2017 SXR45U view chords
+            zxray_new= array(( 73.1,)*8+( 78.1,)*4)
+            rxray_new= array((230.4,)*8+(227.2,)*4)
+            
+            Rfin = array([2.19 , 1.98 ,  1.53, 1.12  , 1.01 , 1.01 , 1.01 ,1.01, 1.01, 1.01, 1.01, 1.01]);
+            Zfin = array([-0.83 ,-1.06 ,-1.24 ,-1.34 ,-1.01 ,-0.65 ,-0.28 ,0.06, 0.20, 0.37, 0.61, 0.81]);
+
+            xangle_new = rad2deg(arctan2(Zfin-zxray_new/100, Rfin-rxray_new/100))
+       
+            rxray_old = zeros(12) + 233.61
+            zxray_old = zeros(12) + 78.62 
+            xangle_old = array([ 227.94, 231.91, 236.02, 240.03, 244.11, 246.11, 
+                248.14, 250.07, 252.04, 253.95, 255.83, 259.47 ])
+            
+            rxray  = r_[rxray_new, rxray_old, rxray_old]
+            zxray  = r_[zxray_new, -zxray_old, -zxray_old]
+            xangle = r_[xangle_new,-xangle_old,-xangle_old]
+      
+                    
+            #print 'xxx', zxray
+        elif shot >= 168847:
+            
+            #BUG it is wrong!!!!
 
             #sxrgeom_plot3: load in geometry for 2017 SXR45U view chords
             zxray_new= array(( 73.1,)*8+( 78.1,)*4)
@@ -163,7 +217,7 @@ def xraypaths(shot, toroidal=False):
         #   sx90rm1s1 and the last to sx90rm1s32.  The top array cooresponds to
         #   sx90rp1s1 ect.  The shot of interest is 89364.
         #
-        #   The shot of interest should be 91378 instead of 89364.  The transition
+        #   The shot of interest should be 9137config8 instead of 89364.  The transition
         #   from old soft x-ray system and point names to the new ones for the 
         #   poloidal array was made on April,'97 after the RDP vent. (Snider 7-31-98)
 
@@ -250,32 +304,21 @@ def xraypaths(shot, toroidal=False):
             
         else:
             
-            rvertbot = array((230.4,)*16)
-            zvertbot = array( (73.1,)*16)
-
-            #; Bottom channels
-            rwallbot = array([ 221, 209, 197, 182, 163, 147, 129, 112, 
-                        102, 102, 102, 102, 102, 102, 102,102       ]) 
-            zwallbot = array([ -78, -99,-107,-115,-136,-136,-136,-133, 
-                        -118, -94, -73, -56, -40, -27, -14,-1       ]) 
-            #; Top channels
-            rverttop = array((227.2,)*16)
-            zverttop =  array((78.1,)*16)
-            rwalltop = array([ 102, 102, 102, 102, 102, 102, 102, 102, 102, 
-                        102, 102, 102, 102, 102, 117, 122       ]) 
-            zwalltop = array([ -2,  7,  16,  25,  35,  44,  53,  61,  71, 
-                        80,  88,  97, 106, 115, 119, 123       ]) 
             
+            xangle = [266.98,263.79,260.41,256.84,253.10,249.21,245.19,241.08,
+                      236.92,232.75,228.63,224.58,220.64,216.86,213.24,209.80,
+                      215.55,212.18,208.64,204.95,201.11,197.18,193.16,189.11,
+                      185.07,181.07,177.15,173.35,169.69,166.19,162.86,159.72,
+                      91.03,94.45,98.08,101.90,105.89,110.03,114.28,118.59,
+                      122.92,127.21,131.43,135.52,139.46,143.21,146.77,150.12,
+                      146.00,149.36,152.91,156.64,160.52,164.54,168.66,172.84,
+                      177.02,181.18,185.27,189.24,193.07,196.74,200.22,203.50]
+            
+            
+            rxray = array([230.4]*16+[227.2]*16+[230.4]*16+[227.2]*16)
+            zxray = array([ 73.1]*16+[ 78.1]*16+[-73.1]*16+[-78.1]*16)
 
-            rxray = r_[rvertbot, rverttop,rvertbot, rverttop  ]
-            zxray = r_[zvertbot, zverttop, -zvertbot, -zverttop ]
-
-            rxray2 = r_[rwallbot, rwalltop,rwallbot, rwalltop  ]
-            zxray2 = r_[zwallbot, zwalltop, -zwallbot, -zwalltop ]
-
-            xangle = rad2deg(arctan2(zxray2-zxray,rxray2-rxray))
-    
-
+  
 
     rxray = array(rxray)/100.
     zxray = array(zxray)/100.
@@ -285,23 +328,41 @@ def xraypaths(shot, toroidal=False):
     
     rxray2 = rxray  + 3 * cos(angle)
     zxray2 = zxray  + 3 * sin(angle)
-
+ 
     return rxray,zxray,rxray2,zxray2,angle
 
 
 
 
-### FROM OMFIT !!!!!!
-#-----------------------------
-# Get filter settings by year
-# From /u/hollmann/SXR/SXRsettingsPA.dat
-# and /u/hollmann/matlab/sxr_calib.m
-#-----------------------------
+
+
+shot_year = (
+    (0, 2007),
+    (127330, 2007),
+    (131060, 2008),
+    (135130, 2009),
+    (140840, 2010),
+    (143710, 2011),
+    (148160, 2012),
+    (152130, 2013),
+    (156200, 2014),
+    (160940, 2015),
+    (164780, 2016),
+    (168440, 2017),
+    (174580, 2018))
+
 def get_filter(shot, PA):
-    #year = OMFITrdb(query='select time_of_shot from summaries where shot={}'.format(shot))[0]['time_of_shot'].year
-    #BUG 
-    year = 2017
     
+    #find a year corresponding to the discharge number, BUG use SQL? 
+    year = 0
+    for shot_, year_ in shot_year:
+        if  shot < shot_: break
+        year = year_
+        
+    #print year
+    
+    #exit()
+        
     if PA and year < 2007:
         raise Exception('No SXR filter information!')
         #OMFITx.End()
@@ -328,16 +389,16 @@ def get_filter(shot, PA):
                   {'description':'Mid Te SXR', 'aperture':'1 mm x 3 mm slit', 'foil':'?', 'filter':'25 um Be','pinhole diameter':1.95e3},
                   {'description':'Hi Te SXR', 'aperture':'1 mm x 3 mm slit', 'foil':'?', 'filter':'125 um Be','pinhole diameter':1.95e3}]
     if PA and year in (2012,2013):
-        settings=[{'description':'Closed', 'aperture':'closed', 'foil':'none', 'filter':'none'},
+        settings=[{'description':'Closed', 'aperture':'closed', 'foil':'none', 'filter':'none','pinhole diameter':0.1},
                   {'description':'Disruption prad', 'aperture':'200 um pinhole', 'foil':'50 um thick SS', 'filter':'none','pinhole diameter':200.0},
                   {'description':'ELM prad', 'aperture':'300 um x 2 mm slit', 'foil':'25 um thick moly', 'filter':'none','pinhole diameter':870.0},
                   {'description':'Low Te SXR', 'aperture':'1 mm x 3 mm slit', 'foil':'1.3 mm thick tantalum', 'filter':'12 um Be','pinhole diameter':1.95e3},
                   {'description':'Visible light', 'aperture':'1 mm x 3 mm slit', 'foil':'25 um thick moly', 'filter':'1 mm fused silica','pinhole diameter':1.95e3},
                   {'description':'Hi Te SXR', 'aperture':'1 mm x 3 mm slit', 'foil':'25 um thick moly', 'filter':'125 um Be','pinhole diameter':1.95e3}]
-    if PA and year in r_[2014:2018]:
+    if PA and year in r_[2014:2019]:
         settings=[{'description':'Closed', 'aperture':'closed', 'foil':'none', 'filter':'none','pinhole diameter':0.0},
                   {'description':'Disruption prad', 'aperture':'200 um pinhole', 'foil':'50 um thick SS', 'filter':'none','pinhole diameter':200.0},
-                  {'description':'ELM prad', 'aperture':'300 um x 2 mm slit', 'foil':'25 um thick moly', 'filter':'none','pinhole diameter':870.0},
+                  {'description':'ELM prad', 'aperture':'300 um x 3 mm slit', 'foil':'25 um thick moly', 'filter':'none','pinhole diameter':1070.},#870.0},
                   {'description':'Low Te SXR', 'aperture':'1 mm x 3 mm slit', 'foil':'1.3 mm thick tantalum', 'filter':'12 um Be','pinhole diameter':1.95e3},
                   {'description':'Intermediate prad', 'aperture':'400 um pinhole', 'foil':'50 um thick SS', 'filter':'none','pinhole diameter':400.0},
                   {'description':'Hi Te SXR', 'aperture':'1 mm x 3 mm slit', 'foil':'25 um thick moly', 'filter':'125 um Be','pinhole diameter':1.95e3}]
@@ -345,7 +406,7 @@ def get_filter(shot, PA):
         
         
     if not PA and shot < 168847:
-        settings=[{'description':'125um Be', 'aperture':' '     ,'foil':'none',     'filter':'125um Be','pinhole diameter':3.91e3}]
+        settings=[{'description':'140um Be', 'aperture':' '     ,'foil':'none',     'filter':'140um Be','pinhole diameter':3.91e3}]
 
     elif not PA and shot < 172691:
         settings=[
@@ -382,9 +443,9 @@ def get_calib(shot,calib_path,cam):
     # Get electronic settings and filter setting
 
     if PA:
-        SXRsettings = calib_path+'/SXRsettingsPA.dat'  
+        SXRsettings = calib_path+os.sep+'SXRsettingsPA.dat'  
     else:
-        SXRsettings = calib_path+'/SXRsettings45U.dat'  #BUG!!!
+        SXRsettings = calib_path+os.sep+'SXRsettings45U.dat'  #BUG!!!
     index = open(SXRsettings,'r')
 
     shots, Rc, Gain,Filt = [],[],[],[]
@@ -409,7 +470,8 @@ def get_calib(shot,calib_path,cam):
     except Exception:
         print('Calibration shot is last shot!')
         whs = len(shots)-1
-
+        
+ 
     Rc, Gain, filter = Rc[whs], Gain[whs], Filt[whs]
     
 
@@ -419,19 +481,19 @@ def get_calib(shot,calib_path,cam):
     else:
         # Get pinhole diameter (um)
         pinhole = filter_settings[filter]['pinhole diameter']
-    
+
 
     if pinhole == 0:
-        print(('Pinhole closed '+cam))
+        print('Pinhole closed '+cam)
         pinhole = 1.95e3
 
-    print(( '%s\tRc:%.0e  Gain:%d pinhole:%.2g filter:%d'%(cam, Rc, Gain, pinhole,filter)))
+ 
 
 
-    return Rc, Gain, pinhole
+    return Rc, Gain, pinhole, filter
 
 def get_calib_fact(shot, geometry_path,  toroidal=False):
-    # --------------------------
+    ## --------------------------
     # Get subsystem calibrations
     # --------------------------
     if verbose: print('Getting SXR Calibration Settings')
@@ -448,17 +510,16 @@ def get_calib_fact(shot, geometry_path,  toroidal=False):
         calib_path = '/fusion/projects/diagnostics/sxr/'
 
         try:
-            resistor, gain, pinhole = get_calib(shot,calib_path,cam)
+            resistor, gain, pinhole, filter = get_calib(shot,calib_path,cam)
         except:
             #if cam == '195R1': shot = min(shot, 160000) #to prevent loading of calibration for new U45 camera
-            resistor, gain, pinhole = get_calib(shot,geometry_path,cam)
+            resistor, gain, pinhole, filter = get_calib(shot,geometry_path,cam)
 
         # responsivity of AXUV photodiodes [A/W] from E Hollman
-        #eff_resp = 0.12  #usuallu used 0.27
         eff_resp =  0.27
         
         # 50 ohm termination divides by 2
-        term = 0.5  #????
+        term = 0.5  
         
         if cam in ('90RM1','90RP1'): #poloidal array
             pol_array = True
@@ -466,20 +527,47 @@ def get_calib_fact(shot, geometry_path,  toroidal=False):
             # Effective pinhole thickness (microns)
             pinhole_thick = 25.#50.0
             # Distance center to pinhole (cm)
-            ctr_to_pinhole = 2.6#3.00
+            ctr_to_pinhole = 2.95#3.00
             # Element area (m^2)
             el_area = 2 * 5/1e6
             # Aperture area (m^2)
             ap_area = 0.25*pi*(pinhole/1e6)**2
             # Distance from center (cm) in eight steps
-            dist_from_ctr = ( arange(-nch//2,nch//2) + 0.5 ) * 0.212 #   % [cm]
+            dist_from_ctr = ( arange(-nch/2,nch/2) + 0.5 ) * 0.212 #   % [cm]
             tanpsi = dist_from_ctr / ctr_to_pinhole
             cos4 = (tanpsi**2 + 1.)**(-2.)
-            thick_factor = tanpsi * (-4./pi) * (pinhole_thick/pinhole) + 1.
+            thick_factor = abs(tanpsi) * (-4./pi) * (pinhole_thick/pinhole) + 1.
 
-            # overall factor to account for optics...units: m-2 sr-1  it is 1/etendue
-            alloptics = 1.0/cos4/thick_factor*ctr_to_pinhole**2/1e4/el_area/ap_area
-            #alloptics = 1/Etend[:16] #version from Didier Vezinet
+            #measured for filter 5 (high Te)
+            if cam == '90RM1':
+                etendue  = array( [2.141,2.338,2.528,2.702,2.882,2.695,2.728,2.985,
+                                   2.989,2.971,2.858,2.711,2.538,2.349,2.152,1.900,
+                                   2.074,2.331,2.589,2.836,3.056,3.234,3.356,3.41,
+                                   3.382,3.282,3.122,2.914,2.675,2.419,2.161,1.91])*1e-8
+            if cam == '90RP1':
+                etendue  = array( [1.845,2.073,2.302,2.523,2.72,2.671,2.813,3.015,
+                                   3.031,2.948,2.811,2.631,2.421,2.195,1.965,1.74,
+                                   1.881,2.182,2.425,2.663,2.882,3.069,3.211,3.296,
+                                   3.314,3.259,3.142,2.975,2.769,2.539,2.297,2.055])*1e-8
+                
+            if filter == 3:
+                #measured, thick slits for low Te
+                if cam == '90RM1':
+                    etendue  = array( [1.749,2.18,2.442,2.646,2.754,2.558,2.592,2.783,
+                                       2.824,2.833,2.783,2.646,2.504,2.309,2.031,1.765,
+                                       2.347,2.646,2.895,3.098,3.244,3.352,3.414,3.447,
+                                       3.447,3.352,3.211,3.053,2.866,2.625,2.23,1.661])*1e-8
+                if cam == '90RP1':
+                    etendue  = array( [1.628,2.068,2.356,2.546,2.648,2.607,2.713,2.847,
+                                       2.945,2.859,2.758,2.632,2.498,2.315,2.067,1.645,
+                                       1.877,2.076,2.292,2.479,2.658,2.766,2.865,2.931,
+                                       2.946,2.905,2.803,2.654,2.492,2.23,1.873,1.279])*1e-8
+       
+            else:
+                #correction for different area of the slit 
+                etendue *= pinhole**2/1.95e3**2
+       
+                
             
         if cam in ('45R1','165R1','195R1'): #toroidal array
             pol_array = False
@@ -497,62 +585,73 @@ def get_calib_fact(shot, geometry_path,  toroidal=False):
             dist_from_ctr = ( arange(-nch//2,nch//2) + 0.5 ) * 0.095 #   % [cm]
             tanpsi = dist_from_ctr / ctr_to_pinhole
             cos4 = (tanpsi**2 + 1.)**(-2.)
-            thick_factor = tanpsi * (-4./pi) * (pinhole_thick/pinhole) + 1.
+            thick_factor = abs(tanpsi) * (-4./pi) * (pinhole_thick/pinhole) + 1.
 
             # overall factor to account for optics...units: m-2 sr-1  it is 1/etendue
-            alloptics = 1.0/cos4/thick_factor*ctr_to_pinhole**2/1e4/el_area/ap_area
-            #alloptics = 1/Etend[64:84]  #version from Didier Vezinet
-            #alloptics/=10  #bug in Didier's geometry 
+            etendue = cos4*thick_factor*el_area*ap_area/ctr_to_pinhole**2*1e4
+          
         # Compute calibration
                
-        # From V -> W/cm^2
+        # From V -> W/m^2
+        
+        #0.35 A/W    U = IR 
+        #print 0.35*5e-4*(resistor*gain)
+        
 
-        calib = 4*pi/term/(resistor*gain)/eff_resp*alloptics
-        #print( 'calib',cam,'%.2e'%mean(calib))
-        
-        
+        calib = 4*pi/term/(resistor*gain)/eff_resp/etendue
+ 
         #### Done computing calibration ####
         if pol_array:
-            calib_dict[cam] = r_[calib,calib[::-1]] 
+            calib_dict[cam+'a'] = calib[:16]
+            calib_dict[cam+'b'] = calib[16:]
         else:
-    
-            #BUG it should be 0,  2,  4,  6,  8,  9, 10, 11, 12, 13, 14, 16
-            active = [0,  2,  4,  6,  8,  9, 10, 11, 12, 13, 14, 16]
+            active = [18,17,15,13,11,10,9,8,7,6,5,3]  #from Eric Hollmann
+
             calib_dict[cam] = calib[active]
 
         
     return  calib_dict
 
-### UP TO HERE FROM OMFIT !!!!!!
 
+
+ 
 def mds_load(tmp):
-    (mds_server,   TDI) = tmp
+    mds_server,  TDI = tmp
     MDSconn = mds.Connection(mds_server )
-    output = [MDSconn.get(tdi).data() for tdi in TDI]
-    #mds.DisconnectFromMds()
+    data = []
+    for tdi in TDI:
+        try:
+            data.append(MDSconn.get(tdi).data())
+        except:
+            data.append([])
+    return data
 
-    return output
 
-def mds_par_load(mds_server,   TDI,  numTasks):
+def mds_par_load(MDSconn,   TDI,  numTasks=8):
+    mds_server = MDSconn.hostspec
+
+    if len(TDI)  == 1:
+        return [MDSconn.get(TDI[0])]
+        
 
     #load a junks of a single vector
-
     TDI = array_split(TDI, min(numTasks, len(TDI)))
 
     args = [(mds_server,  tdi) for tdi in TDI]
 
     pool = Pool(len(args))
-    
-
     out = pool.map(mds_load,args)
+    
+    
+    out = []
+    pool = Pool()
+    for o in pool.map(mds_load,args):
+        out.extend(o)
+        
     pool.close()
     pool.join()
 
-    output = []
-    for o in out:output+= o
-
-    
-    return  output
+    return  out
     
 
 
@@ -565,315 +664,252 @@ class loader_SXR(loader):
     mode_range = (-3,4)
     radial_profile=True
     units = 'W/m$^2$'
-    slow_network = False
+
 
     def __init__(self,*args, **kargs):
-        
         super(loader_SXR,self).__init__(*args, **kargs)
 
-        #from time import time 
-        
-        t = T()
-        
+   
         self.tree = 'spectroscopy'
         self.phase_diags = '45R1','195R1'
  
-        #self.tvec 
         
-        self.fast_data = {}
-        self.catch={}
-        self.tvec_fast = {}
-        #self.tvec_slow = {}
-
+        self.names = OrderedDict()
+        self.names['90RP1'] = self.names['90RM1'] = arange(1,33)
+        self.names['45R1' ] = self.names['195R1'] = arange(1,13)
 
         
-        self.names = {}
-        self.names['165R1'] = arange(1,13)
-        self.names['45R1' ] = arange(1,13)
-        self.names['195R1'] = arange(1,13)
-        self.names['90RM1'] = arange(1,33)
-        self.names['90RP1'] = arange(1,33)
-        
-        self.n_chunks = {'165R1':5,'45R1':5,'195R1':5,'90RM1':4,'90RP1':4}
 
         
         if self.shot > 168847: #only one toroidal camera is operational
-            tor_mode_num = False
+            self.tor_mode_num = False
         
-        #self.n_chunks = 5
 
-        self.groups = sort(list(self.names.keys()))
+        self.groups = sorted(list(self.names.keys()))
         path = os.path.dirname(os.path.realpath(__file__))
  
-        self.calib = get_calib_fact(self.shot,path)
-                            #sig[i] *= self.calib[group][int(n)-1]
-        self.calib['90RM1'][2] = 0 #corrupted channel
+        
+        self.calib = get_calib_fact(self.shot,path, True)
+        self.calib.update(get_calib_fact(self.shot,path, False))
+
+                
+        self.calib['90RM1'] = np.hstack((self.calib.pop('90RM1a'),self.calib.pop('90RM1b')))
+        self.calib['90RP1'] = np.hstack((self.calib.pop('90RP1a'),self.calib.pop('90RP1b')))
+        #self.calib['90RM1'][2] = 0 #corrupted channel
+ 
         # Geometry from
         # /usc-data/c/idl/source/efitviewdiagnoses/DIII-D/xraypaths.pro
-        
-        #rxray_t,zxray_t,rxray2_t,zxray2_t,xangle_t = xraypaths(self.shot, toroidal=True)
-        #rxray_p,zxray_p,rxray2_p,zxray2_p,xangle_p = xraypaths(self.shot, toroidal=False)
+ 
         r_p,z_p,r2_p,z2_p,xangle_p = xraypaths(self.shot, toroidal=False)
         r_t,z_t,r2_t,z2_t,xangle_t = xraypaths(self.shot, toroidal=True)
 
-        # Start with R+1 #1-32 then R-1 #1-32
-        # angle of view from R in degrees
-        #angleP = [270.8, 267.2, 263.3, 259.2, 254.8, 250.3, 245.6, 240.9,
-                #236.1, 231.4, 226.7, 222.3, 218.0, 214.0, 210.2, 206.7,
-                #217.8, 214.3, 210.6, 206.5, 202.3, 197.8, 193.2, 188.4,
-                #183.6, 178.9, 174.2, 169.7, 165.3, 161.2, 157.4, 153.3]
-        #angleM = [89.2, 92.8, 96.7, 100.8, 105.2, 109.7, 114.4, 119.1,
-                #123.9, 128.6, 133.3, 137.7, 142.0, 146.0, 149.8, 153.3,
-                #142.2, 145.7, 149.4, 153.5, 157.7, 162.2, 166.8, 171.6,
-                #176.3, 181.1, 185.8, 190.3, 194.6, 198.8, 202.6, 206.7]
-        ## R of aperture (m)
-        #RP = array([2.304]*16 + [2.272]*16)
-        #RM = array([2.304]*16 + [2.272]*16)
-
-        ## Z of aperture (m)
-        #ZP = array([0.731]*16 + [0.781]*16)
-        #ZM = array([-0.731]*16 + [-0.781]*16)
-
-        ## Create second point to define a line (2.5 m is sufficient)
-        #RP2 = RP + 2.5 * cos(deg2rad(angleP))
-        #RM2 = RM + 2.5 * cos(deg2rad(angleM))
-
-        #ZP2 = ZP + 2.5 * sin(deg2rad(angleP))
-        #ZM2 = ZM + 2.5 * sin(deg2rad(angleM))
-
-        #self.Phi = {'165R1':165, '195R1':195,
-                    #'45R1':45, '90RM1':90, '90RP1':90 }           
-        #self.R_start= {"90RM1":rxray_p[32:],"90RP1":rxray_p[:32],
-                       #'45R1':rxray_t,'165R1':rxray_t,'195R1':rxray_t}
-        #self.R_end=   {"90RM1":rxray2_p[32:],"90RP1":rxray2_p[:32],
-                       #'45R1':rxray2_t,'165R1':rxray2_t,'195R1':rxray2_t}
-        #self.z_start= {"90RM1":zxray_p[32:],"90RP1":zxray_p[:32],
-                       #'45R1':zxray_t,'165R1':zxray_t,'195R1':rxray_t}
-        #self.z_end=   {"90RM1":zxray2_p[32:],"90RP1":zxray2_p[:32],
-                       #'45R1':zxray2_t,'165R1':zxray2_t,'195R1':zxray2_t}
-        #self.theta =   {"90RM1":xangle_p[32:],"90RP1":xangle_p[:32],
-                #'45R1':xangle_t,'165R1':xangle_t,'195R1':xangle_t}
+       
         
-        self.Phi = {'165R1':165, '195R1':195,
-                    '45R1':45, '90RM1':90, '90RP1':90 }           
-        self.R_start= {"90RM1":r_p[32:],"90RP1":r_p[:32],
+        self.Phi = {'165R1':165, '195R1':195, '45R1':45, '90RM1':90, '90RP1':90 }           
+        self.R_start = {"90RM1":r_p[32:],"90RP1":r_p[:32],
                        '45R1':r_t[0:12],'165R1':r_t[12:24],'195R1':r_t[24:36]}
-        self.R_end=   {"90RM1":r2_p[32:],"90RP1":r2_p[:32],
+        self.R_end =   {"90RM1":r2_p[32:],"90RP1":r2_p[:32],
                        '45R1':r2_t[0:12],'165R1':r2_t[12:24],'195R1':r2_t[24:36]}
-        self.z_start= {"90RM1":z_p[32:],"90RP1":z_p[:32],
+        self.z_start = {"90RM1":z_p[32:],"90RP1":z_p[:32],
                        '45R1':z_t[0:12],'165R1':z_t[12:24],'195R1':z_t[24:36]}
-        self.z_end=   {"90RM1":z2_p[32:],"90RP1":z2_p[:32],
+        self.z_end =   {"90RM1":z2_p[32:],"90RP1":z2_p[:32],
                        '45R1':z2_t[0:12],'165R1':z2_t[12:24],'195R1':z2_t[24:36]}
-        self.theta=   {"90RM1":xangle_p[32:],"90RP1":xangle_p[:32],
+        self.theta =   {"90RM1":xangle_p[32:],"90RP1":xangle_p[:32],
                        '45R1':xangle_t[0:12],'165R1':xangle_t[12:24],'195R1':xangle_t[24:36]}
         
+ 
+
+        self.time_header = {}
+        time_header = self.MDSconn.get(f'PTHEAD2("SX90MF01",{self.shot}); __real64').data()[2:]
+        self.time_header["90RM1"] = self.time_header["90RP1"] = time_header.reshape(-1,2).T    
+        time_header = self.MDSconn.get(f'PTHEAD2("SX195F01",{self.shot}); __real64').data()[2:]
+        self.time_header["45R1"]  = self.time_header["195R1"] = time_header.reshape(-1,2).T    
+
         
+        for group, timeh in self.time_header.items():
+            if all(timeh==0) and group in self.groups:
+                self.groups.remove(group)
         
+        if len(self.groups) == 0:
+            raise Exception('Fast SXR data are not availible')
+
         
-        self.cache_fast = {}
-        self.cache_slow = {}
-        for cam,names in list(self.names.items()):
-            self.cache_fast[cam] = {n:empty(self.n_chunks[cam],dtype=object) for n in names}
-            self.cache_slow[cam] = {}
-     
+        self.cache = {cam: {} for cam in self.names.keys()}
+        
+
 
         
     def get_names(self,group):
         return self.names[group]
+                                                    
         
         
-        
-    def get_signal_fast(self,group, names,calib=False,tmin=None,tmax=None):
-        
-        
+    def get_signal(self,groups, names,calib=False,tmin=None,tmax=None):
+ 
                 
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
      
         if size(names) == 1 and not isinstance(names,tuple):
             names = (names,)
-        
-        names = atleast_1d(squeeze(int_(names)))
-        num_MDS_Tasks = 8
-        MDSserver = self.MDSconn.hostspec
-        group_ = group.split('R')
-        
-        group_ = group_[0]+group_[1][:-1]
-        
-        n_chunks = self.n_chunks[group]
-        #print group, group_
-        if not group in self.tvec_fast:
+       
+        if groups == 'all':
+            groups = list(self.names.keys())
 
-            TDI = ['dim_of(PTDATA2("SX%sF%.2d_%d",%d,1))'%(group_,1,i,self.shot) for i in range(n_chunks)]
-            self.tvec_fast[group] = mds_par_load(MDSserver, TDI,num_MDS_Tasks)
-            #print len(self.tvec_fast[group] ),'self.tvec_fast[group] '
-            if len(self.tvec_fast[group][0])<2:
-                raise Exception('Fast SXR data are not availible')
-            for i in range(n_chunks):
-                self.tvec_fast[group][i] /= 1e3 #s
-        self.fast_data[group] = True
-   
-        indmin = where([t[-1] > tmin for t in self.tvec_fast[group]])[0][0]
-        indmax = where([t[ 0] < tmax for t in self.tvec_fast[group]])[0][-1]+1
-        index = arange(indmin,indmax)
-        if calib: index = unique(r_[0,index])
+        if isinstance(groups,str):
+            groups = (groups,)
+                        
+            
+            
+        idx = []
+        TDI = []     
+        for group in groups:
+            if len(names) == 0:
+                channels = self.names[group]
+            else:
+                channels = np.atleast_1d(np.squeeze(np.int_(names)))
         
-        t = T()
-        #print 'indeix', index, names
+            group_ = group.split('R')        
+            group_ = group_[0]+group_[1][:-1]
+    
 
-        TDI = []
-        for ch in names:
-            for i in index:
-                if self.cache_fast[group][ch][i] is None:
-                    TDIcall = 'PTDATA2("SX%sF%.2d_%d",%d,1)'%(group_,ch,i,self.shot)
-                    TDI.append(TDIcall)
-                    
+            indmin = np.where(self.time_header[group][1] > tmin)[0][0]
+            indmax = np.where(self.time_header[group][0] < tmax)[0][-1]+1
+
+            index = np.arange(indmin,indmax)
+            #need the first time slice for  background substraction
+            if calib: 
+                index = unique(r_[0,index])
+            
+    
+            for ch in channels:
+                for i in index:
+                    name = f'{ch:02d}_{i}'
+                    if len(self.cache[group].get(name,[])) <= 1:
+                        idx.append([group, ch, i])
+                        TDI.append(f'PTDATA2("SX{group_}F{name}",{self.shot},1)')
+       
+
+
         if len(TDI) > 0:
-            #print( 'fetching data')
-            data = mds_par_load(MDSserver, TDI,  num_MDS_Tasks)
-            #print(( 'data loaded in %.2f'%( T()-t)))
+            out = mds_par_load(self.MDSconn, TDI)
+            for [g,ch,i], o in zip(idx, out):
+                self.cache[g][f'{ch:02d}_{i}'] = o
+  
+        #collect all data
+        outputs = []
 
-     
-        j = 0
-        for ch in names:
-            for i in index:
-                if self.cache_fast[group][ch][i] is None:
-                    self.cache_fast[group][ch][i] = data[j]
-                    j+= 1
-                    
-                     
-        tvec = hstack(self.tvec_fast[group][indmin:indmax])
-        sig  = [hstack(self.cache_fast[group][n][indmin:indmax]) for n in names]
+       
+        for g in groups:
 
-        imin,imax = tvec.searchsorted([tmin,tmax])
-        ind = slice(imin,imax+1)
-        
-        
+            if len(names) == 0:
+                channels = self.names[g]
+            else:
+                channels = np.atleast_1d(np.squeeze(np.int_(names)))
+            
+            indmin = np.where(self.time_header[g][1] > tmin)[0][0]
+            indmax = np.where(self.time_header[g][0] < tmax)[0][-1]+1
+
+            
+
                 
-      
-        
-        #plot( tvec,sig[0])
-        
-        
-        if calib:
-            #print 'loading offset'
-            data_offset = self.get_signal_fast(group, names,calib=False,tmin=-infty,tmax=0)
-            #print 'loading done'
+            #collect all data
+            data = []
+            for ch in channels:
+                sig = [self.cache[g][f'{ch:02d}_{i}'] for i in np.arange(indmin,indmax)]
+                if  any([len(s) <= 1  for s in sig]):
+                    print('data for SXR {g}{ch} are not availible')
+                    sig = None
+                elif len(sig) == 1:
+                    sig = sig[0]
+                else:
+                    sig = np.hstack(sig)
+                data.append(sig)
+   
+            #prepare time vectors
+            nt = max([len(o) for o in data])
+            tvec = np.linspace(self.time_header[g][0,indmin], 
+                              self.time_header[g][1,indmax-1], nt)
+            imin,imax = tvec.searchsorted([tmin,tmax])
+            ind = slice(imin,imax+1)
+            
+            #calibrate data
+            if calib:
+                data_offset = self.get_signal(g, channels ,calib=False,tmin=-infty,tmax=0)
+                if len(names) == 1:
+                    data_offset = [data_offset]
 
-            for i,n in enumerate(names):
-                sig[i] = sig[i]-data_offset[i][1].mean()
-                if group in self.calib:
-                    sig[i] *= self.calib[group][int(n)-1]
+                for i,n in enumerate(channels):
+                    if len(data[i]):
+                        data[i] = data[i]-data_offset[i][1].mean()
+                        #if g in self.calib:
+                        data[i] *= self.calib[g][int(n)-1]
+                
+        
+            output = []    
+            for sxr in data:
+                if len(sxr):
+                    sxr = sxr[ind]
+                else:
+                    sxr = np.zeros(imax-imin, dtype='single')
+                output.append([tvec[ind], sxr]) 
 
-        
-        
-        if len(sig) == 1:
-            return [tvec[ind], sig[0][ind]]
-        
-        
+            outputs += self.hardcoded_corrections(output, g, names, True)
 
-        
-        return [(tvec[ind], s[ind]) for s in sig]
+
+        if len(output) == 1:
+            return outputs[0]
+        else:
+            return outputs
             
     
                  
    
+    def hardcoded_corrections(self,output, camera, channels, fast_data):
+        channels = list(channels)
         
-        
-        
-    def get_signal(self,group, names,calib=False,tmin=None,tmax=None, slow=False):
-        
-        if (not group in self.fast_data or self.fast_data[group]) and not slow:
-            try:
-                return self.get_signal_fast(group, names,calib=calib,tmin=tmin,tmax=tmax)
-            except Exception as e:
-                print(( 'SXR Error: '+ str(e)))
-                    
-        #print 'self.get_signal_slow'
-        return self.get_signal_slow(group, names,calib=calib,tmin=tmin,tmax=tmax)
-
-        
-    def get_signal_slow(self,group, names,calib=False,tmin=None,tmax=None):
-        
-        if tmin is None:    tmin = self.tmin
-        if tmax is None:    tmax = self.tmax
-     
-     
-        nch = int_(names)
-
-   
-   
-   
-        if not hasattr(self, 'tvec_slow'):
-            self.MDSconn.openTree(self.tree,self.shot)
-            TDIcall = "\\SPECTROSCOPY::TOP.SXR:SX%s%s:TIMEBASE"%(group,'S')
-            self.tvec_slow = self.MDSconn.get(TDIcall).data()/1e3
-            self.MDSconn.closeTree(self.tree,self.shot)
-            self.fast_data[group] = False
-
- 
-       
-        offset_t = .1 # last 100ms of the signal
-        imin,ioff,imax = self.tvec_slow.searchsorted([tmin,self.tvec_slow[-1]-offset_t,tmax])
-        ind = slice(imin,imax+1)
-        tvec = self.tvec_slow[ind]
-        
-        #these channels are not measured by the slow DAS
-        if group in ['90RM1', '90RP1']:
-            for i in range(29,33):
-                if not i in self.cache_slow[group]:
-                    self.cache_slow[group][i] = zeros_like(self.tvec_slow)
-        
-        TDIcall = 'PTDATA2("SX%sS%s",%d,1)'%(group,'%d',self.shot)
-
-        t = T()
-        if size(nch) == 1:
-            if nch in self.cache_slow[group]:
-                return tvec[ind], self.cache_slow[group][nch][ind]
-        
-        
-        
-            self.MDSconn.openTree(self.tree,self.shot)
-            sig = self.MDSconn.get(TDIcall%nch).data()
-            self.MDSconn.closeTree(self.tree,self.shot)
-
-            #print(( 'data loaded in %.2f'%( T()-t)))
-        
-            self.cache_slow[group][nch] = sig
-
-            return tvec, sig[ind]
-                
-
+        if self.shot < 166887 and camera == '90RP1' and 16 in channels:
+            output[channels.index(16)] *= 1.1
+            
+            
+        if self.shot < 166887 and not fast_data and camera == '90RM1' and 10 in channels and 11 in channels:
+            ch1 = channels.index(10) 
+            ch2 = channels.index(11 ) 
+            output[ch1], output[ch2] = output[ch2], output[ch1] 
+      
+            
+        #signal is inversed? 
+        if camera == '90RP1' and 22 in channels:
+            output[channels.index(22)][1] *= sign(output[channels.index(22)][1])
+            
             
         
-              
-        load_nch = []
-        for n in nch:
-            if n not in self.cache_slow[group]:
-                load_nch.append(n)
-        if len(load_nch) > 0:
-            server = self.MDSconn.hostspec
-            numTasks = 8
-            TDI = [TDIcall%n for n in  load_nch]
-            out = mds_par_load(server,   TDI,  numTasks)
-
-            #print(( 'data loaded in %.2f'%( T()-t)))
-
-            for n, sxr in zip(load_nch, out):
-                self.cache_slow[group][n] = sxr
-                    
-        output = [self.cache_slow[group][n][ind] for n in nch]
-
-        
-        if calib:
-            for i,n in enumerate(nch):
-                output[i] = output[i]-mean(self.cache_slow[group][n][ioff:])
+        if camera == '45R1' and 1 in channels and self.shot  < 180000:
+            #BUG od 166566 je to uz vetsi korekce  167451 to zase sedi? 
+            output[channels.index(1)][1]*= 1.17
+             
+            
+            
+            
+        if camera == '195R1':
+            if self.shot < 168847 and 1 in channels:
+                output[channels.index(1)][1] *= 2*0.96  #od 169350 je to horsi, zeby uz od 168847, od 169593zase prestrelene
+            elif self.shot < 175669 and 1 in channels:# 169593:
+                output[channels.index(1)][1] *= 2*0.96/1.53
                 
-                if group in self.calib:
-                    output[i] *= self.calib[group][int(n)-1]
+            elif self.shot <  181100 and 1 in channels:
+                output[channels.index(1)][1] *= 2*0.96/1.53/1.1
+            elif 1 in channels:
+                output[channels.index(1)][1] *= 2*0.96/1.53/1.1*1.1
+            if self.shot >  181100 and 2 in channels:
+                output[channels.index(2)][1] *=   1.1
+            if fast_data and 11 in channels:
+                output[channels.index(11)][1] *=   -1#BUG? in shot 172221
 
         
-        return [(tvec,sig) for sig in output]
+        return output
+    
+        
      
         
      
@@ -926,260 +962,11 @@ class loader_SXR(loader):
     
     
  
-    
-def torarray():
-    
-     
-    mds_server = "localhost"
-    mds_server = "atlas.gat.com"
 
-    import MDSplus as mds
-    MDSconn = mds.Connection(mds_server )
-    
-    from map_equ import equ_map
-    eqm = equ_map(MDSconn,debug=False)
-    eqm.Open(167520,diag='EFIT01' )
-    sxr = loader_SXR(167520,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
-    
-    g = sxr.groups[0]
-    n = sxr.get_names(g)
-    
-    
-    
-    data1 = sxr.get_signal_slow( '45R1',list(range(1,13)),tmin=-infty, tmax=infty,calib=False)
-    data2 = sxr.get_signal_slow('165R1',list(range(1,13)),tmin=-infty, tmax=infty,calib=False)    
-    data3 = sxr.get_signal_slow('195R1',list(range(1,13)),tmin=-infty, tmax=infty,calib=False)
-    data_slow = array([d for t,d in data1]+[d for t,d in data2]+[d for t,d in data3])
-    tvec_slow = data1[0][0]
-
-
-    
-    data1 = sxr.get_signal_fast( '45R1',list(range(1,13)),tmin=-infty, tmax=infty,calib=False)
-    data2 = sxr.get_signal_fast('165R1',list(range(1,13)),tmin=-infty, tmax=infty,calib=False)    
-    data3 = sxr.get_signal_fast('195R1',list(range(1,13)),tmin=-infty, tmax=infty,calib=False)
-    
-    data_fast = array([d for t,d in data1]+[d for t,d in data2]+[d for t,d in data3])
-    tvec_fast = data1[0][0]
-
-    
-    data = data_slow
-    tvec = tvec_slow
-    ioff = tvec.searchsorted(tvec[-1]-.1)
-
-    data-= data[:,ioff:].mean(1)[:,None]
-
-    
-    offset = tvec < .1
-    data_ = data[:,offset]-data[:,offset].mean(1)[:,None]
-    u1,s1,v1 = linalg.svd(data_[:12], full_matrices=False)
-    u2,s2,v2 = linalg.svd(data_[12:24], full_matrices=False)
-    u3,s3,v3 = linalg.svd(data_[24:], full_matrices=False)
-
-
-    from scipy import signal
-    fnq = len(tvec)/(tvec[-1]-tvec[0])/2
-    fmax = 50
-    b, a = signal.butter(4, fmax/fnq, 'low')
-    noise1 = inner(u1[:,0], data[:12].T)
-    noise1 -= signal.filtfilt(b,a,noise1)
-    noise2 = inner(u2[:,0], data[12:24].T)
-    noise2 -= signal.filtfilt(b,a,noise2)
-    noise3 = inner(u3[:,0], data[24:].T)
-    noise3 -= signal.filtfilt(b,a,noise3)
-
-    filtered_data = copy(data)
-    filtered_data[:12]   -= outer( u1[:,0],noise1)
-    filtered_data[12:24] -= outer( u2[:,0],noise2)
-    filtered_data[24:]   -= outer( u3[:,0],noise3)
-
-    fmax = 3000
-    b, a = signal.butter(6, fmax/fnq, 'low')
-    filtered_data = signal.filtfilt(b,a,filtered_data,axis=1)
-    
-    #fmax = 2000
-    #b, a = signal.butter(6, fmax/fnq, 'low')
-    #filtered_data = signal.filtfilt(b,a,filtered_data,axis=1)
-    i1 = tvec<.1
-    i2 = tvec> tvec[-1]-.5
-    b1,b2 = filtered_data[:,i1].mean(1), filtered_data[:,i2].mean(1)
-    a1,a2 = tvec[i1].mean(), tvec[i2].mean()
-
-    filtered_data -= ((b2-b1)/(a2-a1)*(tvec[:,None]-a1)+b1).T
-    offset_err = sqrt(mean(filtered_data[:,tvec<.3]**2,1))
-    error =  offset_err[:,None]+filtered_data*0.05
-    cov_mat = corrcoef(filtered_data[:,tvec<.3])
-
-    
-    
-    ind = slice(0,12)
-    f,ax = subplots(3,1,sharex=True, sharey=True)
-    ax[0].plot(tvec_slow, data_slow[ind].T-mean(data_slow[ind,tvec_slow<.0],1))
-    ax[0].set_ylabel('45R1S')
-    
-    ax[1].plot(tvec_slow, filtered_data[ind].T)
-    ax[1].set_ylabel('45R1S filtered')
-
-    ax[2].plot(tvec_fast.reshape( -1,128).mean(1), data_fast[ind].reshape(12, -1,128).mean(2).T-mean(data_fast[ind,tvec_fast<.0],1))
-    ax[2].set_ylabel('45R1 fast downsampled')
-
-    
-    
-    show()
-    
-    import IPython
-    IPython.embed()
-    
-    
-    
-    
-        
-def polarray():
-    
-     
-    mds_server = "localhost"
-    mds_server = "atlas.gat.com"
-
-    import MDSplus as mds
-    MDSconn = mds.Connection(mds_server )
-    
-    from map_equ import equ_map
-    eqm = equ_map(MDSconn,debug=False)
-    eqm.Open(167520,diag='EFIT01' )
-    sxr = loader_SXR(167520,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
-    
-    marker = 's-','o-',
-    color = 'b','r'
-    for i,g in enumerate(['90RM1', '90RP1']):
-        for j,ind in enumerate((slice(0,16), slice(16,32))):
-            n = sxr.get_names(g)[ind]
-            rho_tg = sxr.get_rho(g,n,4)[0]
-            angle = deg2rad(sxr.theta[g])[ind]
-            thickness = 125/cos(angle-median(angle))
-            if j == 1: ind = slice(0,14)
-            plot(rho_tg[ind],  thickness[ind],color[i]+marker[j])
-    
-    g = '45R1'
-    n = sxr.get_names(g)
-    rho_tg = sxr.get_rho(g,n,4)[0]
-    angle = deg2rad(sxr.theta[g])
-    thickness = 137.5/cos(angle-median(angle))
-    plot(rho_tg,  thickness,'k-x')
-
-    legend(['90RM1 core', '90RM1 edge', '90RM1 core', '90RM1 edge','45R1 old geom.'], loc='center')
-    ylim(0,170)
-    grid(True)
-    xlim(-1,1)
-    xlabel('rho_pol')
-    ylabel('effective Be filter thickness [$\mu$m]')
-    show()
-    
-    
-    #import IPython
-    #IPython.embed()
-    
-    #exit()
-    
-    
-    data1 = sxr.get_signal_slow('90RM1',list(range(1,33)),tmin=-infty, tmax=infty,calib=False)
-    data2 = sxr.get_signal_slow('90RP1',list(range(1,33)),tmin=-infty, tmax=infty,calib=False)    
-    data_slow = array([d for t,d in data1]+[d for t,d in data2])
-    tvec_slow = data1[0][0]
-
-    data1 = sxr.get_signal_fast('90RM1',list(range(1,33)),tmin=-infty, tmax=infty,calib=False)
-    data2 = sxr.get_signal_fast('90RP1',list(range(1,33)),tmin=-infty, tmax=infty,calib=False)    
-    
-    data_fast = array([d for t,d in data1]+[d for t,d in data2])
-    tvec_fast = data1[0][0]
-
-    
-    data_slow[2] = 0
-    data_fast[2] = 0
-
-    data = data_slow
-    tvec = tvec_slow
-    ioff = tvec.searchsorted(tvec[-1]-.1)
-
-    data-= data[:,ioff:].mean(1)[:,None]
-
-    
-    offset = tvec < .1
-    data_ = data[:,offset]-data[:,offset].mean(1)[:,None]
-    u1,s1,v1 = linalg.svd(data_[:32], full_matrices=False)
-    u2,s2,v2 = linalg.svd(data_[32:], full_matrices=False)
-
-
-    from scipy import signal
-    fnq = len(tvec)/(tvec[-1]-tvec[0])/2
-    fmax = 50
-    b, a = signal.butter(4, fmax/fnq, 'low')
-    noise1 = inner(u1[:,0], data[:32].T)
-    noise1 -= signal.filtfilt(b,a,noise1)
-    noise2 = inner(u2[:,0], data[32:].T)
-    noise2 -= signal.filtfilt(b,a,noise2)
-
-    filtered_data = copy(data)
-    filtered_data[:32] -= outer( u1[:,0],noise1)
-    filtered_data[32:] -= outer( u2[:,0],noise2)
-
-    fmax = 3000
-    b, a = signal.butter(6, fmax/fnq, 'low')
-    filtered_data = signal.filtfilt(b,a,filtered_data,axis=1)
-    
-
-    i1 = tvec<.1
-    i2 = tvec> tvec[-1]-.5
-    b1,b2 = filtered_data[:,i1].mean(1), filtered_data[:,i2].mean(1)
-    a1,a2 = tvec[i1].mean(), tvec[i2].mean()
-
-    filtered_data -= ((b2-b1)/(a2-a1)*(tvec[:,None]-a1)+b1).T
-    offset_err = sqrt(mean(filtered_data[:,tvec<.3]**2,1))
-    error =  offset_err[:,None]+filtered_data*0.05
-    cov_mat = corrcoef(filtered_data[:,tvec<.3])
-
-    
-    
-    import IPython
-    IPython.embed()
-    
-    ind = slice(32,64)
-    ind = slice(0,32)
-
-    f,ax = subplots(3,1,sharex=True, sharey=True)
-    ax[0].plot(tvec_slow, data_slow[ind].T-mean(data_slow[ind,tvec_slow<.0],1))
-    ax[0].set_ylabel('slow ')
-    
-    ax[1].plot(tvec_slow, filtered_data[ind].T)
-    ax[1].set_ylabel('slow filtered')
-
-    ax[2].plot(tvec_fast.reshape( -1,512).mean(1), data_fast[ind].reshape(data_fast[ind].shape[0], -1,512).mean(2).T-mean(data_fast[ind,tvec_fast<.0],1))
-    ax[2].set_ylabel('fast downsampled')
-    show()
-    
-    
-    data_fast-= mean(data_fast[:,tvec_fast<.0],1)[:,None]
-    
-    
-    #plot(data_slow[32:,(tvec>2)&(tvec<3)].mean(1))
-    #plot(filtered_data[32:,(tvec>2)&(tvec<3)].mean(1))
-    #plot(data_fast[32:,(tvec_fast>2)&(tvec_fast<3)].mean(1),'--')
-    #show()    
-
-
-    import IPython
-    IPython.embed()
-    
-    
-    
-    
-    
-    
-    
-    
-    
 from matplotlib.pylab import *
 def main():
     
-    #mds_server = "localhost"
+    mds_server = "localhost"
     mds_server = "atlas.gat.com"
 
     import MDSplus as mds
@@ -1187,15 +974,82 @@ def main():
     
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
-    eqm.Open(175900,diag='EFIT01' )
-    sxr = loader_SXR(183142,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
+    eqm.Open(175860,diag='EFIT01' )
+    sxr = loader_SXR(175860,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
     #from ECE import loader_ECE
     #ece = loader_ECE(175900,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
   
-    data = sxr.get_signal( '90RP1',9, tmin=-1, tmax = 6.11,calib=False) 
-        
-    import IPython
-    IPython.embed()
+    t = T()
+    out = sxr.get_signal( 'all',[], tmin=4.8, tmax = 4.9,calib=True)
+    print(T()-t)
+    embed()
+    
+    exit()
+    names = sxr.get_names('90RP1')		
+    rho_tg, theta_tg,R,Z = sxr.get_rho('90RM1', names,3)
+    #plot(rho_tg);show()
+
+    
+    #embed()
+    #fit = load('fit_t.npz')
+    #plot(tvec, data)
+    #plot(fit['tvec'], fit['retro_t'][:,10])
+    #show()
+    
+    tomo_local_path = '~/tomography/'
+    loc_dir = os.path.dirname(os.path.abspath(__file__))
+    tomo_code_path = tomo_local_path
+
+
+    tomo_code_path  = os.path.expanduser(os.path.expandvars(tomo_code_path))
+    tomo_local_path = os.path.expanduser(os.path.expandvars(tomo_local_path))
+
+    sys.path.append(tomo_code_path)
+
+    #load some modules from pytomo 
+    from mat_deriv_B import mat_deriv_B
+    from shared_modules import  read_config
+    from graph_derivation import graph_derivation
+    from geom_mat_setting import geom_mat_setting,prune_geo_matrix
+    from annulus import get_bd_mat, get_rho_field_mat
+    import config
+
+    shot  = 175900
+    input_parameters = read_config(tomo_code_path+"tomography.cfg")
+    input_parameters['shot'] = shot
+    input_parameters['local_path'] = tomo_local_path
+    input_parameters['program_path'] = tomo_code_path
+    input_parameters['nx'] = 80
+    input_parameters['ny'] = 120
+
+    if not hasattr(config, 'wrong_dets_pref'):
+        config.wrong_dets_pref = input_parameters['wrong_dets']
+    
+
+    ##if tok_lbl == 'DIIID':
+    import geometry.DIIID as Tok
+    diag = 'SXR fast'
+    diag_path = tomo_local_path+ 'geometry/DIIID/SXR'
+    tok = Tok(diag, input_parameters, load_data_only=True, only_prepare=True)#BUG 
+
+    tvec2, data2, data_err = tok.get_data(tmin=3,tmax=3.1)
+    
+    
+    embed()
+
+    plot(tvec2, data2[:,0])
+    plot(tvec, data)
+    show()
+    
+    
+    calib = get_calib_fact(shot, diag_path,False )
+    
+    
+
+    
+    
+
+
     exit()
     #data2 = ece.get_signal("",13, tmin=3.04, tmax = 3.11)
     tvec, sig = data    

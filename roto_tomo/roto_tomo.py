@@ -12,7 +12,10 @@ from scipy.linalg import eigh
 from scipy.stats.mstats import mquantiles
 from multiprocessing import Process,Queue
 from matplotlib.ticker import MaxNLocator
+from matplotlib.widgets import MultiCursor
+#from .pyspecview import extract_harmonics
 
+from IPython import embed
 from copy import deepcopy
 try: #only for AUG
     import aug_sfutils as sf
@@ -85,23 +88,36 @@ class NavigationToolbar2(NavigationToolbar2QT):
 
 class DataSettingWindow(QMainWindow):
     dpi = 100
-    font_size = 10
+    fontsize = 10
     def __init__(self, parent, tomo):
         QMainWindow.__init__(self, parent)
         self.tomo = tomo
-        #self.tomo.SVDF = SVDF
-        self.setWindowTitle('Data preprocessing tool')
-
+        self.show_harm = False
+        if self.tomo.sxr_harmonics is not None:
+            self.show_harm = True
+        elif not hasattr(self.tomo,'tvec'):
+            QMessageBox.warning(self.parent,"No data",
+                    "Data wre not loaded! Missing fast SXR?",QMessageBox.Ok)
+            return
+        
+            
+        
         self.parent = parent
         self.det_num = []
         cWidget = QWidget(self)
         self.bg_col = cWidget.palette().color(QPalette.Base)
 
+        self.setWindowTitle('Data preprocessing tool')
         self.create_status_bar()
         self.create_main_frame()
-        self.create_Data_table()
-        self.create_SVD_table()
-        self.create_residuum_table()
+
+        if self.show_harm:
+            self.create_Harm_table()
+        else:
+            #self.tomo.SVDF = SVDF
+            self.create_Data_table()
+            self.create_SVD_table()
+            self.create_residuum_table()
         
         self.main_tab.setCurrentIndex(0)
         self.main_tab.setTabEnabled(0,True)
@@ -130,6 +146,136 @@ class DataSettingWindow(QMainWindow):
         frect.moveCenter(QDesktopWidget().availableGeometry(self).center());
         self.move(frect.topLeft())
             
+
+   
+    def create_Harm_table(self):
+        #plot 0th and 1-n th harmonics of the input data
+        self.tab_widget_harm = QWidget(self)
+        
+        self.main_tab.insertTab(0,self.tab_widget_harm, 'Data Harmonics')
+
+        self.tab_widget_harm.setSizePolicy(self.Expand)
+        self.verticalLayout_harm = QVBoxLayout(self.tab_widget_harm)
+        self.horizontalLayout_harm = QHBoxLayout()
+
+
+        self.fig_harm = plt.Figure((7.0, 5.0), dpi=self.dpi)
+        self.tab_widget_harm.setToolTip('Use left/right mouse button to remove/return point')
+
+        self.canvas_harm = FigureCanvas(self.fig_harm)
+        self.canvas_harm.setParent(self.cWidget)
+        
+        self.fig_harm.patch.set_facecolor((self.bg_col.red()/255., 
+                                           self.bg_col.green()/255., 
+                                           self.bg_col.blue()/255.))
+
+        self.canvas_harm.setSizePolicy(self.Expand)
+
+        self.verticalLayout_harm.addWidget(self.canvas_harm)
+
+        self.link = self.fig_harm.canvas.mpl_connect('pick_event', self.onpick_data)
+    
+        #prepare first data
+        self.groupBox = QGroupBox("")
+        self.gridLayout = QGridLayout(self.groupBox)
+        self.labelDetectors = QLabel( "Wrong detectors:")
+        self.Edit_wrongDetectors = QLineEdit()
+        self.gridLayout.addWidget(self.labelDetectors, 0, 0)
+        self.gridLayout.addWidget(self.Edit_wrongDetectors, 0, 1)
+
+        self.verticalLayout_harm.addWidget(self.groupBox)
+
+        self.OkButton=QPushButton("Close")
+    
+        self.gridLayout.addWidget(self.OkButton, 0, 2)
+
+
+        #self.mpl_toolbar_harm = NavigationToolbar2QT(self.canvas_harm, self.cWidget)
+        #self.verticalLayout_harm.addWidget(self.mpl_toolbar_harm)
+
+
+        #tooltips
+        self.Edit_wrongDetectors.setToolTip('Insert wrong detectors, use ":" for the intervals - 1,,3,5:40,...')
+        self.Edit_wrongDetectors.editingFinished.connect(self.dets_list_edited)
+
+  
+        plt.rcParams['xtick.direction'] = 'out'
+        plt.rcParams['ytick.direction'] = 'out'
+        self.fig_harm.clf()
+        self.fig_harm.subplots_adjust(left=.15 ,top=.90,right=.97,bottom=.05, hspace=0.03, wspace = 0.03)
+
+        self.ax_harm0 = self.fig_harm.add_subplot(211)
+        self.ax_harm1 = self.fig_harm.add_subplot(212, sharex=self.ax_harm0)
+
+        self.ax_harm0.point_label = self.ax_harm0.text(0,0,'', fontsize=8 ,zorder=99)
+        self.ax_harm1.point_label = self.ax_harm1.text(0,0,'', fontsize=8 ,zorder=99)
+
+        
+        self.nharm, self.nch = np.shape(self.tomo.all_bb)
+ 
+        self.err_plots = []
+
+        self.err_plots.append( self.ax_harm0.errorbar(0, 0, 0, fmt='.-',picker=True,
+                                capsize=0, label='0. harmonic'))
+
+
+        self.invalid_plot, = self.ax_harm0.plot([], [], 'ro',picker=True)
+
+
+        c = 'b', 'g', 'r', 'y', 'm'
+        for iharm in range(1,self.nharm):
+            self.err_plots.append(self.ax_harm1.errorbar(0, 0, 0, fmt='.-'+c[iharm%len(c)], 
+                            capsize=0, zorder=self.nharm-iharm, picker=True,
+                            label=f'{iharm}. harmonic'))
+
+        self.ax_harm0.legend(loc='upper right', fontsize  =  self.fontsize) 
+        self.ax_harm1.legend(loc='upper right', fontsize  =  self.fontsize) 
+        
+        self.ax_harm1.set_xlabel('Channel',fontsize= self.fontsize)
+
+        self.ax_harm0.xaxis.set_pickradius(2)
+        self.ax_harm0.yaxis.set_pickradius(2)
+        self.ax_harm1.xaxis.set_pickradius(2)
+        self.ax_harm1.yaxis.set_pickradius(2)
+
+
+            
+        for ind in self.tomo.tok.dets_index[:-1]:
+            self.ax_harm0.axvline(x=1.5+np.amax(ind), linestyle='--' ,color='k')
+            self.ax_harm1.axvline(x=1.5+np.amax(ind), linestyle='--',color='k')
+
+        for label in (self.ax_harm0.get_yticklabels() +self.ax_harm0.get_xticklabels()\
+                     + self.ax_harm1.get_yticklabels() + self.ax_harm1.get_xticklabels()):
+            label.set_fontsize( self.fontsize) # Size here overrides font_prop
+    
+        self.ax_harm1.xaxis.set_major_locator(MaxNLocator(12))
+
+        xax = self.ax_harm0.axes.get_xaxis()
+        xax = xax.set_visible(False)
+
+        #add upper axis with camera names 
+        xlabels = [np.median(ind) for ind in self.tomo.tok.dets_index]
+        labels = list(self.tomo.tok.detectors_dict.keys())
+        ax2 = self.ax_harm0.twiny()
+        ax2.set_xticks(xlabels)
+        ax2.set_xticklabels(labels,fontsize= self.fontsize)
+        ax2.set_xlim(0,self.nch)
+        ax2.tick_params(axis='x', which='major', pad=0) 
+        # critical for picking!!!! 
+        ax2.set_zorder(0) 
+        ax2.set_autoscaley_on(True) 
+        self.ax_harm0.set_zorder(1) 
+        self.fig_harm.sca(self.ax_harm0) 
+        self.multi_harm = MultiCursor(self.canvas_harm, [self.ax_harm0,self.ax_harm1], horizOn=False, color='k', lw=1)
+
+        self.ax_harm0.set_xlim(0,self.nch)
+
+        wrong =  self.ReadWrongDets(init=True)
+        self.SetWrongDets(wrong)
+        
+        #fill plots with data
+        self.RefreshEvent()
+        self.OkButton.clicked.connect(self.closeEvent)
         
     def create_Data_table(self):
         
@@ -143,7 +289,7 @@ class DataSettingWindow(QMainWindow):
 
 
         self.fig_data = plt.Figure((7.0, 5.0), dpi=self.dpi)
-        self.tab_widget_data.setToolTip('Use left/right moise button to remove/return point')
+        self.tab_widget_data.setToolTip('Use left/right mouse button to remove/return point')
 
         self.canvas_data = FigureCanvas(self.fig_data)
         self.canvas_data.setParent(self.cWidget)
@@ -157,7 +303,7 @@ class DataSettingWindow(QMainWindow):
         self.verticalLayout_data.addWidget(self.canvas_data )
 
         self.link = self.fig_data.canvas.mpl_connect('pick_event', self.onpick_data)
-        self.wrong_dets_mouse = []
+      
 
         #prepare first data
         self.groupBox = QGroupBox("")
@@ -200,16 +346,17 @@ class DataSettingWindow(QMainWindow):
         self.ax_data.point_label = self.ax_data.text(0,0,'', fontsize=8 ,zorder=99)
         extent = (0.5, self.nch+.5,tvec[0],tvec[-1])
         self.data_im = self.ax_data.imshow(np.ones((2,2)),cmap = 'jet',extent=extent
-                    ,interpolation='nearest', origin='lower', picker=1)
+                    ,interpolation='nearest', origin='lower', picker=True)
         self.ax_data.axis('tight')
-        self.ax_data.set_ylabel('Time [s]',fontsize=self.font_size)
-        self.ax_data.set_xlabel('Channel',fontsize=self.font_size)
-
+        self.ax_data.set_ylabel('Time [s]',fontsize= self.fontsize)
+        self.ax_data.set_xlabel('Channel',fontsize= self.fontsize)
+        self.ax_data.xaxis.set_pickradius(2)
+        self.ax_data.yaxis.set_pickradius(2)
         from make_graphs import LogFormatterTeXExponent
 
         cbar = self.fig_data.colorbar(self.data_im,format=LogFormatterTeXExponent('%.2e'))
         self.ax_data.axis((0.5, self.nch+.5,tvec[0],tvec[-1]))
-        cbar.ax.tick_params(labelsize=self.font_size ) 
+        cbar.ax.tick_params(labelsize= self.fontsize ) 
         cbar.locator = MaxNLocator(nbins=5)
         cbar.update_ticks()
 
@@ -220,7 +367,7 @@ class DataSettingWindow(QMainWindow):
             self.ax_data.axvline(x=1.5+np.amax(ind), linestyle='--',color='w')
 
         for label in (self.ax_data.get_xticklabels() + self.ax_data.get_yticklabels()):
-            label.set_fontsize(self.font_size) # Size here overrides font_prop
+            label.set_fontsize( self.fontsize) # Size here overrides font_prop
     
         self.ax_data.xaxis.set_major_locator(MaxNLocator(12))
 
@@ -229,8 +376,8 @@ class DataSettingWindow(QMainWindow):
         labels = list(self.tomo.tok.detectors_dict.keys())
         ax2 = self.ax_data.twiny()
         ax2.set_xticks(xlabels)
-        ax2.set_xticklabels(labels,fontsize=self.font_size)
-        ax2.set_xlim(0,self.nch)
+        ax2.set_xticklabels(labels,fontsize= self.fontsize)
+        ax2.set_xlim(0, self.nch)
         ax2.tick_params(axis='x', which='major', pad=0) 
         # critical for picking!!!! 
         ax2.set_zorder(0) 
@@ -239,38 +386,87 @@ class DataSettingWindow(QMainWindow):
         self.fig_data.sca(self.ax_data) 
 
 
-        wrong =  self.ReadWrongDets(init=True)
+        wrong = self.ReadWrongDets(init=True)
         self.SetWrongDets(wrong)
 
         self.RefreshEvent()
         self.OkButton.clicked.connect(self.closeEvent)
 
-    def RefreshEvent(self):   
-        tvec = self.tomo.tvec
-        data = np.copy(self.tomo.signals)
-        if np.nanmax(data) > 2e5:
-            fact,pre = 1e6, 'MW'
-        elif np.nanmax(data) > 2e2:
-            fact,pre = 1e3, 'kW'
+    def RefreshEvent(self): 
+
+        if self.show_harm:
+           bb = np.copy(self.tomo.all_bb)
+           bb_err = np.copy(self.tomo.all_bb_err)
+           x = np.arange(self.nch)+1
+           
+           ind_correct = self.tomo.tok.get_correct_dets()
+ 
+
+           data_max = np.nanmax(np.abs(bb[0][ind_correct]))
+           if data_max > 2e5:
+               fact,pre = 1e6, 'MW'
+           elif  data_max > 2e2:
+               fact,pre = 1e3, 'kW'
+           else:
+               fact,pre = 1e0, 'W'
+
+
+           self.ax_harm0.set_ylabel( 'Mean signal  ['+pre+'/m$^2$]', fontsize=self.fontsize)
+           self.ax_harm1.set_ylabel('Amplitudes ['+pre+'/m$^2$]', fontsize=self.fontsize)
+           self.invalid_plot.set_data(x[~ind_correct], np.abs(bb[0,~ind_correct])/fact)
+           bb[:,~ind_correct] = np.nan
+           #TODO plot also phase?
+           for i, err_plot in enumerate(self.err_plots):
+               y,yerr = np.abs(bb[i])/fact, bb_err[i]/fact
+               plotline, caplines, barlinecols = err_plot
+               plotline.set_data(x, y)
+               # Find the ending points of the errorbars
+               error_positions = (x, y-yerr), (x, y+yerr)
+               # Update the error bars
+               barlinecols[0].set_segments(zip(zip(x, y-yerr), zip(x, y+yerr)))
+     
+           self.ax_harm0.set_ylim(0, data_max/fact)
+           self.ax_harm1.set_ylim(0, np.nanmax(np.abs(bb[1:]))/fact)
+           self.canvas_harm.draw()
+           #load data with new set of enabled detectors by self.dets
+           #ind_correct = self.tomo.tok.get_correct_dets()
+
+           #self.tok.dets = self.dets = np.array(dets)
+           #self.tomo.bb = [bb[ind_correct] for bb in self.tomo.all_bb]
+           #self.tomo.bb_err = [be[ind_correct] for be in self.tomo.all_bb_err]
+
+
         else:
-            fact,pre = 1e0, 'W'
+            tvec = self.tomo.tvec
+            data = np.copy(self.tomo.signals)
+            if np.nanmax(data) > 2e5:
+                fact,pre = 1e6, 'MW'
+            elif np.nanmax(data) > 2e2:
+                fact,pre = 1e3, 'kW'
+            else:
+                fact,pre = 1e0, 'W'
 
-        ind_correct = self.tomo.tok.get_correct_dets(data.T)
-        data[:,~ind_correct] = np.nan
-        ind = slice(None,None, max(1, len(tvec)//2000)) #downsample if necessary
-        data = data[ind]
-        tvec = tvec[ind]
-        vmax = mquantiles(data[np.isfinite(data)], 0.99)[0]
+            ind_correct = self.tomo.tok.get_correct_dets(data.T)
+            data[:,~ind_correct] = np.nan
+            #ind = slice(None,None, max(1, len(tvec)//2000)) #downsample if necessary
+            ndown = int(np.ceil(len(tvec)/1000))
+            nt = len(tvec)//ndown*ndown
+            #BUG test it!!!
+            data = data[:nt].reshape(nt//ndown, -1, len(data.T)).mean(1)
+            tvec = tvec[:nt].reshape(nt//ndown, -1).mean(1)
+            vmax = mquantiles(data[np.isfinite(data)], 0.99)[0]
 
-        self.data_im.set_array(data/fact)
-        self.data_im.set_clim(0,vmax/fact)
-        self.canvas_data.draw()
-        if hasattr(self.tomo,'SVDF'):
-            self.tomo.SVDF.set_corrupted_ch(~ind_correct)
+            self.data_im.set_array(data/fact)
+            self.data_im.set_clim(0,vmax/fact)
+            self.canvas_data.draw()
+ 
+            if hasattr(self.tomo,'SVDF'):
+                self.tomo.SVDF.set_corrupted_ch(~ind_correct)
         
         #write back to roto_tomo
         self.tomo.dets = self.tomo.tok.dets[ind_correct]
- 
+        
+     
 
     def dets_list_edited(self,event=None):    
         wrong = self.ReadWrongDets()
@@ -281,9 +477,8 @@ class DataSettingWindow(QMainWindow):
     def onpick_data(self,event):
         #mouse interaction, remove corrupted channels
         ax = event.mouseevent.inaxes
-        ch = int(round(event.mouseevent.xdata))
+        ch = int(round(event.mouseevent.xdata)) 
 
-        #print 'event', event
         if event.mouseevent.dblclick:
             wrong = list(self.ReadWrongDets())
             
@@ -311,12 +506,14 @@ class DataSettingWindow(QMainWindow):
             except:
                 QMessageBox.warning(self.parent,"Input problem",
                     "Wrong detectors are in bad format, use ...,10,11,13:15,...",QMessageBox.Ok)
-                raise
+                #raise
         elif init:     # do not remove on init
             wrong_dets_pref = np.int_(config.wrong_dets_pref)
-     
+        
         wrong = self.tomo.tok.dets[~self.tomo.tok.get_correct_dets(include_pref=False)]
+      
         config.wrong_dets_pref  = np.unique(np.setdiff1d( wrong_dets_pref,wrong))
+        
         return  wrong_dets_pref
     
     def SetWrongDets(self, wrong):
@@ -789,16 +986,17 @@ class HarmSolver(Process):
 
         while True:
             #wait for a value of lambda and return results
-     
+
             lam = self.qin.get()
             
             if lam is None:
                 return
-            elif lam <= 0:
+            elif lam <= 0.05:
                 g = self.guess_lam(U,S,wrong_dets)
             else:
                 g = mquantiles(2*np.log(S),lam)
- 
+            t2 = time.time()
+
             #evaluate solution
             w = w_i(g,S)
             prod = np.dot(U.T,self.b[~wrong_dets])
@@ -828,7 +1026,6 @@ def OptimizeF0( tvec, sig, f0,df0 = 200,n_steps=400):
     
     from matplotlib.mlab import detrend_linear
     sig = detrend_linear(sig  )
-    #sig = sig-sig.mean(0)
     difference = np.ones(n_steps)*np.infty
     
     test_fun = np.exp(1j*2*np.pi*(f0-df0)*tvec)
@@ -843,17 +1040,7 @@ def OptimizeF0( tvec, sig, f0,df0 = 200,n_steps=400):
 
     return f0+(np.argmin(difference)*2.-n_steps+1)/(n_steps)*df0
 
-
-def find_f0(t,x):
-    dt = np.mean(np.diff(t))
-    f = np.linspace(0,1,(len(t)+1)//2)/2/dt
-    if0 = np.argmax(np.abs(np.fft.rfft(x))[1:])+1
-    F = np.linspace(f[if0-1], f[if0+1] ,100)
-    N = [np.abs(np.sum((x-mean(x))*np.conj(np.exp(1j*2*np.pi*f*t)))) for f in F]
-    f0 = F[np.argmax(N)]
-    return f0
-
-
+ 
 
  
 def create_derivation_matrix(g, Bmat, danis,rgmin=1e-8):
@@ -896,8 +1083,9 @@ class Roto_tomo:
     initialized = False
     loaded = False
 
-    def __init__(self, parent, fig,m_num,n_num,add_back, TeOver,show_flux, plot_limit,
-                 reg, n_harm,n_svd,map_equ,rho_lbl, show_contours):
+    def __init__(self, parent, fig,m_num,n_num,add_back, TeOver,show_flux,
+                 plot_limit, reg, n_harm,n_svd,map_equ,rho_lbl, show_contours ):
+
         
         self.m_num = m_num
         self.n_num = n_num
@@ -906,10 +1094,12 @@ class Roto_tomo:
         self.slider_lim = plot_limit
         self.slider_reg = reg
         self.add_back = add_back
-        self.map_equ = map_equ
+        self.eqm = map_equ
         self.rho_lbl = rho_lbl
         self.show_contours = show_contours
-        
+        self.t_range = 0, np.inf
+        self.f_range = 0, np.inf
+
         
         self.parent = parent
         self.fig = fig
@@ -920,28 +1110,28 @@ class Roto_tomo:
 
         self.n_harm = n_harm
         self.n_svd = n_svd
-        self.tau = 2
-        self.nr = 100
-        self.ntheta = 120
-        self.dtheta =  2*np.pi/30
-        self.rgmin = 1e-8
-        self.nfisher = 3
+        self.tau = 4 #time resolution for signal extraction
+        self.nr = 100 #radial resulution for calculation of magnetic equalibrium in radial/ poloidal coordinates
+        self.ntheta = 120 #angular resulution for calculation of magnetic equalibrium in radial/ poloidal coordinates
+        self.dtheta =  2*np.pi/30 #poloidal step for regularisation matrix
+        self.rgmin = 1e-8 #zero zupression parameter of the tomography
+        self.nfisher = 3 #number of fisher iterations
         self.plot_lim = self.slider_lim.value()/100.
-        self.danis = 4
-        self.nx = 80
-        self.ny = 120
+        self.danis = 4  #ratio between poloidal and radialcorelation in tomgraphy
+        self.nx = 80    #horisontal resolution of the tomography
+        self.ny = 120   #vertical resolution of the tomography
         self.m = int(self.m_num.currentText())
         self.n = int(self.n_num.currentText())
-        self.n_rho_plot = 10
-        self.n_theta_plot = 16
-        self.n_contour = 15
-        self.font_size = 10
+        self.n_rho_plot = 10  #number of plotted radial magnetic contours
+        self.n_theta_plot = 16#number of plotted poloidal magnetic contours
+        self.n_contour = 15 #numberof Te contours 
+        self.fontsize = 10
         self.hsolvers = []
         self.t0 = np.nan
         self.showTe = False
         self.cmap = my_cmap
-        
-        #print('self.show_contours', self.show_contours)
+ 
+   
         if self.show_contours:
             self.levels = np.linspace(0, 1, self.n_contour)            
             self.tomo_img = self.ax.contourf([0,0], [0,0], np.ones((2,2)),levels=self.levels,
@@ -966,26 +1156,26 @@ class Roto_tomo:
             from loaders_DIIID import map_equ
             gc_r, gc_z = map_equ.get_gc()
             for key in gc_r.keys():
-               self.ax.plot(gc_r[key], gc_z[key], 'k', lw=.5)
+               self.ax.plot(gc_r[key], gc_z[key], '0.5', lw=.5)
 
         for label in (self.ax.get_xticklabels() + self.ax.get_yticklabels()):
-            label.set_fontsize(self.font_size) # Size here overrides font_prop
+            label.set_fontsize( self.fontsize) # Size here overrides font_prop
 
         self.cbar_ax = self.fig.add_axes([0.85, 0.1, 0.04, 0.85])
         self.cbar_ax.xaxis.set_major_formatter(plt.NullFormatter())
         self.cbar_ax.yaxis.set_major_formatter(plt.NullFormatter())
-        self.cbar_ax.tick_params(labelsize= self.font_size) 
+        self.cbar_ax.tick_params(labelsize=  self.fontsize) 
         
         self.update_colorbar()
         #self.cbar = self.fig.colorbar(self.tomo_img, cax=self.cbar_ax)
-        self.ax.set_title('SXR emissivity [kW/m$^3$]',fontsize=self.font_size)
+        self.ax.set_title('SXR emissivity [kW/m$^3$]',fontsize= self.fontsize)
         self.plot_description = self.ax.text(1.008,.05,'',rotation='vertical', 
                 transform=self.ax.transAxes,verticalalignment='bottom',
                 size='xx-small',backgroundcolor='none')
         
         self.ax.axis('equal')
-        self.ax.set_xlabel('R [m]',fontsize=self.font_size)
-        self.ax.set_ylabel('z [m]',fontsize=self.font_size)
+        self.ax.set_xlabel('R [m]',fontsize= self.fontsize)
+        self.ax.set_ylabel('z [m]',fontsize= self.fontsize)
         self.ax.yaxis.labelpad = -5
         
         self.ax.patch.set_facecolor(self.cmap(0))
@@ -999,53 +1189,16 @@ class Roto_tomo:
         self.cid_scroll  = self.fig.canvas.mpl_connect('scroll_event',self.MouseWheelInteraction)
         self.cid_press   = self.fig.canvas.mpl_connect('key_press_event',   self.onKeyPress)
         self.cid_release = self.fig.canvas.mpl_connect('key_release_event', self.onKeyRelease)
-        
+
   
-        
-    def prepare_tomo(self, tok_lbl, shot, tmin, tmax, fmin, fmax, eqm, tvec0, sig0):
 
-        self.shot = shot
-        self.tmin = tmin
-        self.tmax = tmax
-        t0 = (tmin+tmax)/2
 
-        if t0 is np.nan:
-            print( 'Select valid time range')
-            return 
+    def prepare_tok_object(self, tok_lbl, shot):
 
-        QApplication.setOverrideCursor(Qt.WaitCursor)
+       
 
-        self.eqm  = eqm
-        self.fmin = fmin
-        self.fmax = fmax
-        self.rhop = np.linspace(0,1,self.nr)
-        theta_in  = np.linspace(0,2*np.pi,self.ntheta)
-
-        if tok_lbl == 'AUG':
-            magr, magz= sf.rhoTheta2rz(eqm, self.rhop,theta_in,t0,coord_in=self.rho_lbl)
-            self.rho = sf.rho2rho(eqm, self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
-        elif tok_lbl == 'DIIID':
-            magr, magz= eqm.rhoTheta2rz(self.rhop,theta_in,t0,coord_in=self.rho_lbl)
-            self.rho = eqm.rho2rho(self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
-        self.magr = magr[0]
-        self.magz = magz[0]
-        
-        #set view to contain rho = 0.7 contour 
-        ir = np.argmin(np.abs(self.rhop - 0.5))
-        self.ax.axis([self.magr[:,ir].min(),self.magr[:,ir].max(),self.magz[:,ir].min(),self.magz[:,ir].max()])
-
-        if hasattr(eqm, 'getQuantity'): #different eqm_map version on DIII-D
-            self.q_prof = eqm.getQuantity(self.rhop, 'Qpsi', t_in=t0)	
-        else:#  and AUG
-            jtq = np.argmin(abs(eqm.time - t0))
-            nrho = np.max(self.eqm.lpfp) + 1
-            psi = eqm.pfl[jtq, :nrho]
-            q   = eqm.q[jtq, :nrho]
-            rhop_q = sf.rho2rho(self.eqm, psi, t_in=t0, coord_in='Psi', coord_out='rho_pol')[0]
-            self.q_prof = np.interp(self.rhop, rhop_q, q)
- 
         #Prepare tokamak object from original tomography code
-        input_parameters = read_config(tomo_code_path+"tomography.cfg")
+        input_parameters = read_config(tomo_code_path+"tomography_D3D.cfg")
         input_parameters['shot'] = shot
         input_parameters['local_path'] = tomo_local_path
         input_parameters['program_path'] = tomo_code_path
@@ -1058,8 +1211,14 @@ class Roto_tomo:
 
         if tok_lbl == 'DIIID':
             import geometry.DIIID as Tok
+            #if self.sxr_harmonics is None:
             diag = 'SXR fast'
+ 
             diag_path = tomo_local_path+ 'geometry/DIIID/SXR'
+            
+            #$use only two poloidal cameras 
+            config.wrong_dets_pref = np.unique(list(config.wrong_dets_pref)+list(range(64,88)))
+            
         elif tok_lbl == 'AUG':
             import geometry.ASDEX as Tok
             diag = 'SXR_fast'
@@ -1070,7 +1229,8 @@ class Roto_tomo:
         logger.debug('diag_path %s', diag_path)
         if not os.path.exists(diag_path):
             os.makedirs(diag_path)
-  
+        
+         
         try:
             self.tok = Tok(diag, input_parameters, load_data_only=True, only_prepare=True)#BUG 
         except:
@@ -1078,6 +1238,66 @@ class Roto_tomo:
             print( traceback.format_exc())
             QMessageBox.warning(self.parent,"Load SXR data issue", "Fast SXR data probably do not exist",QMessageBox.Ok)
             return 
+
+        #calculate complex geometry matrix including all informations about diagnostic            
+        self.T_full = geom_mat_setting( self.tok,self.nx, self.ny, 
+                             self.tok.virt_chord, path=None)[0]
+       
+
+        
+  
+        
+    def prepare_tomo(self, tok_lbl, shot ,t_range, f_range, t0, f0,  cross_sig_name = None, 
+                              sxr_harmonics=None, cmplx_cross_sig=None):
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+
+        t = time.time()
+
+      
+        self.t_range = t_range
+        self.f_range = f_range
+        self.t0 = t0  #time where exactly sxr_harmonics are evaluated
+        self.F0 = self.F1 = f0  #median frequency in the t_range
+        self.sxr_harmonics = sxr_harmonics
+        self.cmplx_cross_sig = cmplx_cross_sig
+        self.cross_sig_name  = cross_sig_name
+        self.shot = shot
+        self.tok_lbl = tok_lbl
+  
+
+        self.rhop = np.linspace(0,1,self.nr)
+        theta_in  = np.linspace(0,2*np.pi,self.ntheta)
+
+        if not hasattr(self, 'tok'):
+            self.prepare_tok_object(tok_lbl, shot)
+
+
+        if self.tok_lbl == 'AUG':
+            magr, magz = sf.rhoTheta2rz(self.eqm, self.rhop,theta_in,t0,coord_in=self.rho_lbl)
+            self.rho = sf.rho2rho(self.eqm, self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
+        elif self.tok_lbl == 'DIIID':
+            magr, magz = self.eqm.rhoTheta2rz(self.rhop,theta_in,t0,coord_in=self.rho_lbl)
+            self.rho = self.eqm.rho2rho(self.rhop, t0, coord_in='rho_pol', coord_out=self.rho_lbl)[0]
+        self.magr = magr[0]
+        self.magz = magz[0]
+        
+        #set view to contain rho = 0.7 contour 
+        ir = np.argmin(np.abs(self.rhop - 0.5))
+        self.ax.axis([self.magr[:,ir].min(),self.magr[:,ir].max(),self.magz[:,ir].min(),self.magz[:,ir].max()])
+
+        if hasattr(self.eqm, 'getQuantity'): #different eqm_map version on DIII-D
+            self.q_prof = self.eqm.getQuantity(self.rhop, 'Qpsi', t_in=t0)	
+        else:#  and AUG
+            jtq = np.argmin(abs(eqm.time - t0))
+            nrho = np.max(self.eqm.lpfp) + 1
+            psi = self.eqm.pfl[jtq, :nrho]
+            q   = self.eqm.q[jtq, :nrho]
+            rhop_q = sf.rho2rho(self.eqm, psi, t_in=t0, coord_in='Psi', coord_out='rho_pol')[0]
+            self.q_prof = np.interp(self.rhop, rhop_q, q)
+ 
+        
+        
         
         self.xgridc = (self.tok.xgrid+self.tok.dx/2)/self.tok.norm  #centers of the pixels
         self.ygridc = (self.tok.ygrid+self.tok.dy/2)/self.tok.norm  #centers of the pixels
@@ -1085,50 +1305,41 @@ class Roto_tomo:
         
         if not self.show_contours:
             self.tomo_img.set_extent([self.tok.xgrid[0],self.tok.xgrid[-1]+self.tok.dx,
-                                  self.tok.ygrid[0],self.tok.ygrid[-1]+self.tok.dy])
-        
-        if tok_lbl == 'DIIID':
-            config.useCache = False  #force not using catchd SXR geometry
+                                      self.tok.ygrid[0],self.tok.ygrid[-1]+self.tok.dy])
 
-        #calculate complex geometry matrix including all informations about diagnostic            
-        self.T_full = geom_mat_setting( self.tok,self.nx, self.ny, 
-                             self.tok.virt_chord, path=None)[0]
+        
+        if self.tok_lbl == 'DIIID':
+            config.useCache = False  #force not using cached SXR geometry
+ 
+        
 
 
         #Auxiliarly tokamak to avoid loading of equilibrium from tomography
         self.aux_tok = tokamak(self.rhop,self.magr, self.magz,self.tok.xgrid,self.tok.ygrid)
         self.aux_tok.vessel_boundary = self.tok.vessel_boundary
 
-
-        #find a mean frequency of the mode
-        self.F0 = (fmin+fmax)/2
-        # is the signal selected in the spectrogram tvec0, sig0
-
-        #identify strongest mode frequency in the selected range
-        tind = slice(*tvec0.searchsorted([tmin,tmax]))
-        self.F0 = OptimizeF0(tvec0[tind], sig0[tind], self.F0,df0= fmax-self.F0,n_steps=200)
-   
-        
         #Load diagnostic infomation
         n_harm_max = 10
         self.A   = np.ones((self.nl,n_harm_max-1)) #assume n_harm_max harmonic at most!
         self.phi = np.zeros((self.nl,n_harm_max-1))
         self.Phi = np.asarray(self.tok.Phi)  #BUG co ten posuv o 45 stupnu? 
-        self.Phi0 = np.median(self.Phi) #toroidal position of SXR cameras
+        self.Phi0 = np.median(self.Phi) #toroidal position of SXR cameras in radians!
 
         #add correction for finite DAS IIR
+        if self.tok_lbl == 'AUG':
 
-        if tok_lbl == 'AUG':
             slow_das = np.loadtxt(loc_dir+'/slow_sxr_diag.txt' )
             fast_das = np.loadtxt(loc_dir+'/fast_sxr_das.txt'  )
-            SampFreq =  self.tok.SampFreq#[dets]
+            SampFreq =  self.tok.SampFreq 
             #amplitude reduction of DAS IIR
             self.A[  SampFreq == 5e5] = np.interp(self.F0*np.arange(1,n_harm_max),slow_das[:,0],slow_das[:,1])
             self.A[  SampFreq == 2e6] = np.interp(self.F0*np.arange(1,n_harm_max),fast_das[:,0],fast_das[:,1])
             #phase shift of DAS IIR
             self.phi[SampFreq == 5e5] = np.interp(self.F0*np.arange(1,n_harm_max),slow_das[:,0],slow_das[:,2])
             self.phi[SampFreq == 2e6] = np.interp(self.F0*np.arange(1,n_harm_max),fast_das[:,0],fast_das[:,2])
-
+        if self.tok_lbl == 'DIIID':
+            pass
+            #response of unknown... :( 
 
         #calculate equilibrium related properties
         theta_star_rz, theta_star = self.tok.mag_theta_star(t0,self.rhop,self.magr,self.magz,rz_grid=True)
@@ -1138,14 +1349,13 @@ class Roto_tomo:
 
         #self.BdMat|= self.theta_star_rz==0 
         #remove points outside of boundary
-        self.T_full = prune_geo_matrix(self.T_full,self.BdMat)
+        self.T_full_prunned = prune_geo_matrix(self.T_full,self.BdMat)
  
         #regularization matrix
         self.Bmat, diag_mat = mat_deriv_B(self.aux_tok, 0, 1,None)
         self.Ht = build_reg_mat_time(self.rho_mat,self.theta_star_rz,theta_star,self.rhop,self.magr,
                                 self.magz,self.xgridc,self.ygridc,self.BdMat,self.dtheta)
 
-        
         #contours of constant theta star
         t = np.linspace(0,2*np.pi,self.n_theta_plot,endpoint=False)
         self.isotheta_R = np.array([np.interp(t,ts,r) for ts,r in zip(theta_star.T,self.magr.T)]).T
@@ -1164,20 +1374,19 @@ class Roto_tomo:
         for ip,p in enumerate(self.plot_mag_rho):
             p.set_data(self.isoflux_R[ip],self.isoflux_Z[ip])
         
-        QApplication.restoreOverrideCursor()
-
+      
         self.initialized = True
-        try:
-            self.load_data()
-        except:
-            import traceback
-            print( traceback.format_exc())
-            return
+        
+        self.load_data()
+
+
+
         self.calculate_tomo()
         
         #update also Te if already shown
         self.TeOverplot()
 
+        QApplication.restoreOverrideCursor()
 
 
     def calculate_tomo(self):
@@ -1190,6 +1399,7 @@ class Roto_tomo:
 
         for h in self.hsolvers:
             h.qin.put(None) #send kill signal
+            h.terminate()
             h.join(1e-2)  #join process
             h.qin.close()
             h.qout.close()
@@ -1197,7 +1407,7 @@ class Roto_tomo:
             
         self.hsolvers = []
         QApplication.restoreOverrideCursor()
-        
+         
         #convert time dependent signals in complex harmonics 
         self.prepare_harms()
         #prepare inversion
@@ -1205,55 +1415,106 @@ class Roto_tomo:
         #use m and n number from the GUI and evaluate tomography 
         self.update_mode_number()
         
-        print( 'Inversion calculated in %.1fs'%(time.time()-tcalc))
+        print( 'Tomographic inversion calculated in %.1fs'%(time.time()-tcalc))
 
         
-    def load_data(self):
-        print( 'Loading SXR data ... ')
-
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        config.useCache = True  #force storing of the data
-
-        #load SXR data 
-        signals,error_sig, self.tvec, dets,_,_ = \
-                    self.tok.prepare_data(self.tmin,self.tmax,1,1,1,detsCutOff=False)
-        self.signals,self.error_sig = signals.T,error_sig.T
-      
-        self.dets = dets[np.all(np.isfinite(error_sig),1)[dets]]
-        
-        #initialise it only once 
-        dets_index = self.tok.dets_index[:-1]  
-        dF = (self.fmax-self.fmin)/2
-        self.SVDF = SVDFilter(self.tvec, self.signals,np.nanmean(self.error_sig ,0),dets_index,
-                            self.F0, dF, self.n_harm,self.n_svd)
-        invalid = ~np.in1d(np.arange(self.signals.shape[1]), self.dets)
-        self.SVDF.set_corrupted_ch(invalid)       
-       
-        QApplication.restoreOverrideCursor()
-
-
     def prepare_harms(self):
         #calculate complex harmonics out of the measured signals
-                                                
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
+        if self.sxr_harmonics is not None:
+ 
+            ind_correct = self.tok.get_correct_dets()
 
-        #apply SVD filter to get complex harmonic 
-        self.SVDF.run_filter(update_plots=False)
-        
-        
-        self.F1 = self.SVDF.f0
-        self.t0 = self.SVDF.t0
-        self.bb = list(self.SVDF.harm)
-        self.bb[0] = self.bb[0].real
-        self.bb_err = [np.copy(self.SVDF.harm_err)+1e-6 for h in self.bb]
-        
-        #NOTE errorbars found this ways are too small for zeroth and first harmonics
-        self.bb_err[0] += self.SVDF.err[~self.SVDF.invalid]
-        self.bb_err[0] += np.abs(self.bb[0])*0.01+0.005*np.abs(self.bb[0]).mean()#add at least 1% noise
+            self.dets = np.where(ind_correct)[0]
+            self.bb = [bb[ind_correct] for bb in self.all_bb]
+            self.bb_err = [be[ind_correct] for be in self.all_bb_err]
+            
+        else:
+
+
+
+            #apply SVD filter to get complex harmonic 
+            self.SVDF.run_filter(update_plots=False)
+            
+            self.F1 = self.SVDF.f0
+            self.t0 = self.SVDF.t0
+            self.bb = list(self.SVDF.harm)
+            self.bb[0] = self.bb[0].real
+            self.bb_err = [np.copy(self.SVDF.harm_err)+1e-6 for h in self.bb]
+            
+            #NOTE errorbars found this ways are too small for zeroth and first harmonics
+            self.bb_err[0] += self.SVDF.err[~self.SVDF.invalid]
+
+            QApplication.restoreOverrideCursor()
+ 
+            #add at least 5% noise to zero'th harmonics    
+            self.bb_err[0] += np.abs(self.bb[0])*0.05+0.03*np.abs(self.bb[0]).mean()
+
+
         QApplication.restoreOverrideCursor()
 
+
+    def load_data(self):
+
+
+        if self.sxr_harmonics is not None:
+            
+            #SXR data were loaded directly by PYSPECVIEW, works only for DIII-D now
+
+            bb = []
+            bb_err = []
+            dets = []
+            idet = 0
+            #calibration factors for each camera estimated by PYTOMO 
+            camera_calib = self.tok.get_calb()
+            #sort signals n the order expected by the geometry matrix 
+            for c, (cam, channels) in zip(camera_calib, self.tok.detectors_dict.items()):
+                for ch in channels:
+                    ch = int(ch.split('_')[1])
+                    hdata = self.sxr_harmonics[(cam[:5], ch)]
+                    bb.append([h*c for h in hdata['harm']])
+                    bb_err.append([c*hdata['error']]*len(bb[-1]))
+                    if hdata['valid'] and idet in self.tok.dets:
+                        dets.append(idet)
+                    idet += 1 
+            self.all_bb = [np.array(bb) for bb in zip(*bb)]
+            self.all_bb_err = [np.array(be)+1e-6 for be in zip(*bb_err)]
+
+            #add at least 5% noise to 0th an 1th harmonics    
+            self.all_bb_err[0] += np.abs(self.all_bb[0])*0.05+0.03*np.abs(self.all_bb[0]).mean()
+            self.all_bb_err[1] += np.abs(self.all_bb[1])*0.05+0.03*np.abs(self.all_bb[1]).mean()
+            self.tok.dets = np.array(dets)
+
+        else:
+            print( 'Loading SXR data ... ')
+
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            config.useCache = True  #force storing of the data
+
+            #load SXR data 
+            t =  time.time()
+            signals,error_sig, self.tvec, dets,_,_ = self.tok.prepare_data(self.t_range[0],self.t_range[1],1,1,1,detsCutOff=False)
+
+            
+            self.signals,self.error_sig = signals.T,error_sig.T
+
+        
+            self.dets = dets[np.all(np.isfinite(error_sig),1)[dets]]
+    
+            #initialise it only once 
+            dets_index = self.tok.dets_index[:-1]  
+            dF = np.diff(self.f_range)[0]/2
+            self.SVDF = SVDFilter(self.tvec, self.signals,np.nanmean(self.error_sig ,0),dets_index,
+                                self.F0, dF, self.n_harm,self.n_svd, self.tau, self.cmplx_cross_sig)
+            invalid = ~np.in1d(np.arange(self.signals.shape[1]), self.dets)
+            self.SVDF.set_corrupted_ch(invalid)       
+               
+
+   
+
     def precalc_tomo(self):
+       
         #first iterations of the tomography algorithm
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
@@ -1264,13 +1525,13 @@ class Roto_tomo:
         G0[self.BdMat] = 0
    
         #use only valid detectors
-        self.T = self.T_full[self.dets]
-
+        self.T = self.T_full_prunned[self.dets]
+     
         #solution of tomography for stationary profile 
         t = time.time()
 
         for ifisher in range(self.nfisher):
-            Hper,Hpar = create_derivation_matrix( G0.reshape(-1,1,order='F'), self.Bmat,self.danis)
+            Hper,Hpar = create_derivation_matrix(G0.reshape(-1,1,order='F'), self.Bmat,self.danis)
             qin, qout = Queue(),Queue() 
 
             if ifisher < self.nfisher-1:  #the last step will be evaluated with the others  #BUG slow!!! 
@@ -1282,6 +1543,7 @@ class Roto_tomo:
                 qin.put(None) #kill process
                 qin.close()
                 qout.close()
+                h.terminate()
                 h.join(1e-2)
                 
                 
@@ -1337,6 +1599,7 @@ class Roto_tomo:
 
     def set_reg(self, val):
         if self.lam0*100 == val: return
+
         self.lam0 = val/100.
         self.eval_tomo()
         self.update(update_cax=True)
@@ -1364,7 +1627,7 @@ class Roto_tomo:
         cb.update_ticks()     
                     
     def TeOverplot(self):
-        #show contours of 
+        #show contours of Te
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
         self.showTe = self.TeOver.isChecked()
@@ -1378,8 +1641,8 @@ class Roto_tomo:
         
         #load ECE data, prepare 2D profile
         if not self.parent.Te2Dmap.initialized:
-            self.parent.radial_view.t_range = self.tmin,self.tmax
-            self.parent.radial_view.f_range = self.fmin,self.fmax
+            self.parent.radial_view.t_range = self.t_range
+            self.parent.radial_view.f_range = self.f_range
 
             id_2D = self.parent.tables_names.index('2D Te')
             self.parent.updatePanels(id_2D)
@@ -1392,8 +1655,7 @@ class Roto_tomo:
 
         self.Te2Dmap.UpdateModeM(np.searchsorted(self.parent.m_numbers,self.m), animate=True)
         self.fig.canvas.draw_idle()
-
-    
+        self.update( update_mag=False)
         QApplication.restoreOverrideCursor()
 
         
@@ -1419,7 +1681,7 @@ class Roto_tomo:
             plt.figure('Retrofit').clf()
             
         f,axes = plt.subplots(max((self.n_harm+1)//2,1),2,sharex=True,num='Retrofit',figsize=(9,8))
-        f.suptitle('t=%.3f'%self.t0)
+        f.suptitle('t = %.3fs'%self.t0)
         for ax in np.atleast_2d(axes)[:,0]:
             ax.set_ylabel('SXR [kW/m$^2$]')
             
@@ -1447,36 +1709,40 @@ class Roto_tomo:
             phase_shift =  np.average(phase_retro, weights=aplitude_retro )
             phase_data  -= phase_shift
             phase_retro -= phase_shift
-            #print(phase_retro.min(), phase_retro.max())
             
             weak = aplitude_data < np.nanmax(aplitude_data)*0.05
             phase_data[weak] = np.nan
             phase_retro[weak] = np.nan
-
-
-            norm = np.amax(aplitude_retro)/3./1e3
-            #print(n,  norm)
+   
             ax.plot(self.dets, aplitude_retro/1e3, 'b',label='retro')
             ax.errorbar(self.dets,aplitude_data/1e3, aplitude_err/1e3,c='r',label='data')
             ymax = max(aplitude_data.max(),aplitude_retro.max())/1e3
-            if n == 0:
-                ax.set_ylim(0,ymax)
-            else:
-                ax.set_ylim(-ymax,ymax)
+            
+            ax_phase = ax.twinx()
 
+            ax.set_ylim(0,ymax)
+       
             w = aplitude_data/np.nanmax(aplitude_data)
             w[weak] = 0
             if any(~np.isreal(self.bb[n])):
-                ax.scatter(self.dets, phase_data*norm,facecolor=(np.outer((1,0,0), w)+1-w).T,      
+                ax_phase.scatter(self.dets, phase_data,facecolor=(np.outer((1,0,0), w)+1-w).T,      
                            edgecolors=(1,0,0),s=50,linewidths=.5)
-                ax.plot( self.dets,  phase_retro*norm ,'.--b')
+                ax_phase.plot( self.dets,  phase_retro ,'.--b')
             ax.set_xlim(self.dets[0], self.dets[-1]+1)
+            ax_phase.set_ylim(-2*np.pi, 2*np.pi)
+          
+            y_tick = np.linspace(-np.pi*2, np.pi*2, 9)
+            y_label = [r"$-2\pi$", r"$-3\pi/2$", r"$-\pi$", r"$-\pi/2$", "$0$", 
+                   r"$\pi/2$", r"$\pi$", r"$3\pi/2$", r"$2\pi$"]
+            ax_phase.set_yticks(y_tick)
+            ax_phase.set_yticklabels(y_label ) 
             ax.legend()
             [ax.axvline(i-0.5,c='k') for i in det_ind]
             ax.axhline(y=0,c='k')
             ax.set_title('%d. harmonic: $\gamma$ = %.2f  $\chi^2$=%.2f'%(n,self.gamma[n],self.chi2[n]))
             
         plt.tight_layout()
+        self.multi_retrofit = MultiCursor(f.canvas, axes ,horizOn=False, color='k', lw=1)
 
         self.AxZoom = fconf.AxZoom()
         self.zoom_cid = f.canvas.mpl_connect('button_press_event', self.AxZoom.on_click)
@@ -1494,6 +1760,7 @@ class Roto_tomo:
 
         
     def set_mode_numbes(self):
+   
         #do reconstruction assuming certain M and N mode number
         QApplication.setOverrideCursor(Qt.WaitCursor)
 
@@ -1514,6 +1781,7 @@ class Roto_tomo:
         #close threats from previous calculation
         for h in self.hsolvers:
             h.qin.put(None) #send kill signal
+            h.terminate()
             h.join(1e-2)  #join process
             h.qin.close()
             h.qout.close()
@@ -1545,34 +1813,48 @@ class Roto_tomo:
         for h in self.hsolvers[1:]:
             h.qin.put(self.lam0) 
 
-        #get output
+        #get output, usually fast
         out = [h.qout.get() for h in self.hsolvers]
         self.G     = [o[0].reshape(self.ny,self.nx,order='F') for o in out]
         self.retro = [o[1]*be for o,be in zip(out,self.bb_err)]
         self.gamma = [o[2] for o in out]
         self.chi2  = [o[3] for o in out]
         
-        cmplx_phase = np.exp(2*np.pi*self.F1*1j*(self.tvec-self.t0))
-         
-        self.retro_t    = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.retro)],0).T
-        self.filtered_t = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.bb)],0).T
-
+        #estimate vmax for the tomography image
         G_t = [np.abs(g) for g in self.G]
         self.vmax = np.sum(G_t,0).max()
         self.vmax_bcg = np.sum(G_t[1:],0).max()
+        
+        return
+    
+        #rest is just for debugging
 
+        cmplx_phase = np.exp(2*np.pi*self.F1*1j*(self.tvec-self.t0))
+        
+
+        #retrofit in time domain
+        self.retro_t    = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.retro)],0).T
+        #filtered data in time domain
+        self.filtered_t = sum([np.outer(r,cmplx_phase**i).real for i,r in enumerate(self.bb)],0).T
+ 
+        #this is exactly equal to self.retro_t
+        self.retro_gt = np.sum([np.real(self.T*g.flatten(order='F')*cmplx_phase**i) for i,g in enumerate(self.G)],0).T
+
+        
+        
 
     def shift_phase(self,shift_phi):
         self.shift_phi %= 2*np.pi #periodicity
         self.time = self.t0 + self.shift_phi/(2*np.pi*self.F1)*np.abs(self.m)
-        description = '#%d  at %.6fs,  f$_0$ = %.4fkHz and m/n=%d/%d'%(self.shot, self.time, self.F1/1e3, self.m,self.n)
+        description = '#%d  at %.6fs, $\psi_0$ = %d, f$_0$ = %.4fkHz and m/n=%d/%d'%(self.shot,
+                                    self.time,np.rad2deg(self.Phi0), self.F1/1e3, self.m,self.n)
         self.plot_description.set_text(description)
 
 
     def update(self,update_mag=True,animate=False,update_cax=False,):
 
         w = 2*np.pi*self.F1
-        G_t = [np.real(g*np.exp(1j*w*(self.time-self.t0)*i)) for i,g in enumerate(self.G)]
+        G_t = [np.real(g*np.exp(i*1j*w*(self.time-self.t0))) for i,g in enumerate(self.G)]
         G_t = np.sum(G_t[1:] if self.substract else G_t,0)
         
         if self.substract:
@@ -1622,10 +1904,11 @@ class Roto_tomo:
  
  
     def MouseWheelInteraction(self,event):
-        if event.inaxes == self.ax:
-            
+        if event.inaxes is self.ax:
             if self.keyCtrl:
-                self.dPhi += event.step*2*np.pi/360             
+                self.dPhi += event.step*2*np.pi/360 
+                print('ECE is shifted by %d deg'%(np.rad2deg(self.dPhi)%360))
+
             else:
                 steps = 360 if self.keyCtrl else 36
                 self.shift_phi +=  event.step*2*np.pi/steps
@@ -1665,6 +1948,7 @@ class Roto_tomo:
         try:
             for h in self.hsolvers:
                 h.qin.put(None) #send kill signal
+                h.terminate()
                 h.join(1e-2)  #join process
                 h.qin.close()
                 h.qout.close()
@@ -1680,5 +1964,4 @@ class Roto_tomo:
         except Exception as e:
             print('Error __del__', e)
             
-
 
