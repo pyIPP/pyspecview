@@ -723,11 +723,11 @@ class loader_SXR(loader):
         time_header = self.MDSconn.get(f'PTHEAD2("SX90MF01",{self.shot}); __real64').data()[2:]
         self.time_header["90RM1"] = self.time_header["90RP1"] = time_header.reshape(-1,2).T    
         time_header = self.MDSconn.get(f'PTHEAD2("SX195F01",{self.shot}); __real64').data()[2:]
-        self.time_header["45R1"] = self.time_header["165R1"] = self.time_header["195R1"] = time_header.reshape(-1,2).T    
+        self.time_header["45R1"]  = self.time_header["195R1"] = time_header.reshape(-1,2).T    
 
         
         for group, timeh in self.time_header.items():
-            if all(timeh==0):
+            if all(timeh==0) and group in self.groups:
                 self.groups.remove(group)
         
         if len(self.groups) == 0:
