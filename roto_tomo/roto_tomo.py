@@ -1213,9 +1213,12 @@ class Roto_tomo:
             import geometry.DIIID as Tok
             #if self.sxr_harmonics is None:
             diag = 'SXR fast'
-            #else:
-             #   diag = 'SXR'
+ 
             diag_path = tomo_local_path+ 'geometry/DIIID/SXR'
+            
+            #$use only two poloidal cameras 
+            config.wrong_dets_pref = np.unique(list(config.wrong_dets_pref)+list(range(64,88)))
+            
         elif tok_lbl == 'AUG':
             import geometry.ASDEX as Tok
             diag = 'SXR_fast'

@@ -1,5 +1,4 @@
 import MDSplus
-from .map_equ import equ_map
 from time import time
 from IPython import embed
 import numpy as np
@@ -7,9 +6,13 @@ import matplotlib.pylab as plt
 from scipy.interpolate import interp1d, RectBivariateSpline
 from scipy.integrate import cumtrapz
 
+try:
+    from .map_equ import equ_map
+except:
+    from map_equ import equ_map
 
 
-def ece_los(f_los, z_los, Rgrid, Zgrid, B0, ne, Te):
+def ece_los(f_los, z_los, Rgrid, Zgrid, B0, ne, Te, niter=5):
 
     from scipy.constants import c, e,m_e, epsilon_0
 
@@ -40,18 +43,22 @@ def ece_los(f_los, z_los, Rgrid, Zgrid, B0, ne, Te):
     
 
     #calculate Z_los in 3 iterations
-    for i in range(3):
+    for i in range(niter):
         dNdZ_los = Nspline.ev(Z_los, R_los, dx=1)
         intdNdz = cumtrapz(dNdZ_los, R_los,initial=0)
         N_los = np.maximum(Nspline.ev(Z_los, R_los), 1e-6) #to avoid issues at n=1 resonance
         Z_los = z_los+cumtrapz(intdNdz/N_los, R_los,initial=0)
     
+ 
     ##calculare resonance location
     wc_los = RectBivariateSpline(Zgrid,Rgrid, wc*nharm).ev(Z_los, R_los)
+    ivalid = np.where(np.cumprod(np.diff(wc_los) > 0))[0][-1]+2
     
-    R_res = np.interp(w0, wc_los, R_los)
-    Z_res = np.interp(w0, wc_los, Z_los)
-
+    
+    R_res = np.interp(w0, wc_los[:ivalid], R_los[:ivalid])
+    Z_res = np.interp(w0, wc_los[:ivalid], Z_los[:ivalid])
+    
+ 
 
     #dNdZ = np.gradient(N, Zgrid, axis=0)
     #plt.pcolor(Rgrid,Zgrid, dNdZ  , vmin =-1, vmax=1, cmap='seismic' )
@@ -62,6 +69,7 @@ def ece_los(f_los, z_los, Rgrid, Zgrid, B0, ne, Te):
     #plt.plot(R_los, Z_los)
     #plt.plot(R_res, Z_res,'o')
     #plt.show()
+  
 
 
     return R_los, Z_los, R_res, Z_res

@@ -4,12 +4,11 @@ dependencies:
   - python=3.7
   - numpy
   - scipy
-  - matplotlib<3.5
+  - matplotlib
   - pyfftw=0.12
   - pyqt=5.12
   - configparser
   - MDSplus
-  - ffmpeg
-  - ipython
- 
+  - IPython
+  - scikit-sparse
 

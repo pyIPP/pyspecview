@@ -2925,7 +2925,7 @@ class MainGUI(QMainWindow):
         try:
             self.data_loader_phase = loader(self.shot, 
                         ed=0, eqm=self.eqm, rho_lbl=self.rho_lbl, MDSconn=self.MDSconn)
-        except:
+        except Exception as e:
             print( traceback.format_exc())
             QMessageBox.warning(self, "Loading problem", str(e), QMessageBox.Ok)
             return 

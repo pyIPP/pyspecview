@@ -235,7 +235,11 @@ class loader_ECEI(loader):
         try:
             B = self.eqm.rz2brzt(r_in=Rmesh, z_in=Zmesh, t_in=time)
             Btot = squeeze(linalg.norm(B,axis=0)).T
-            from ._ECE_chord import ece_los
+            try:
+                from ._ECE_chord import ece_los
+            except:
+                from ._ECE_chord import ece_los
+
             Rcm,Zcm = np.meshgrid(Rmesh, Zmesh)
             _, Te, Ne = self.get_Te0(time,time,R=Rcm,Z=Zcm, returnTeNe=True)
             #pcolor(Rcm, Zcm, Ne)
@@ -517,7 +521,7 @@ def main():
     names = ecei.get_names('LFS')
     R,Z,T = ecei.get_RZ_theta(2.1, 'LFS', names)
         #def get_RZ_theta(self, time, system, names,dR=0,dZ=0):
-
+    plot(R,Z,'o')
     #TT =  T()
     #signals = ecei.get_signal('LFS',names, calib=True, tmin=3, tmax=3.6)
     #print(T()-TT)
