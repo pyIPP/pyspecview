@@ -1499,7 +1499,7 @@ class RadialViewer:
 
     def update(self):
 
-        description = self.description+'  from %.2f to %.2fs, from %.1f to %.1fkHz'%(self.t_range[0], 
+        description = self.description+'  from %.3f to %.3fs, from %.1f to %.1fkHz'%(self.t_range[0], 
                                     self.t_range[1], self.f_range[0]/1e3, self.f_range[1]/1e3)
         self.plot_description.set_text(description)
         
@@ -2559,7 +2559,7 @@ class MainGUI(QMainWindow):
             suffix = 'Te'
 
         elif self.tables_names[self.curr_tab] == '2D SXR':
-            t = self.roto_tomo.tmin
+            t = self.roto_tomo.t_range[0]
             obj = self.roto_tomo
             suffix = 'SXR'
         else:
