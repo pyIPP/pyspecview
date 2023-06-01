@@ -222,11 +222,11 @@ class DataSettingWindow(QMainWindow):
          
         self.verticalLayout_harm.addLayout(hbox) 
         def apply_nharm_slider(self):
-            self.nharm = self.nharm_slider.value()
+            self.n_harm = self.nharm_slider.value()
             self.RefreshEvent()
 
             
-        self.nharm.valueChanged.connect(self.apply_nharm_slider)
+        self.nharm_slider.valueChanged.connect(self.apply_nharm_slider)
 
 
         #tooltips
@@ -255,9 +255,9 @@ class DataSettingWindow(QMainWindow):
         self.invalid_plot, = self.ax_harm0.plot([], [], 'ro',picker=True)
 
         c = 'b', 'g', 'r', 'y', 'm'
-        for iharm in range(1,self.nharm):
+        for iharm in range(1,self.n_harm):
             self.err_plots.append(self.ax_harm1.errorbar(0, 0, 0, fmt='.-'+c[iharm%len(c)], 
-                            capsize=0, zorder=self.nharm-iharm, picker=True,
+                            capsize=0, zorder=self.n_harm-iharm, picker=True,
                             label=f'{iharm}. harmonic'))
 
         self.ax_harm0.legend(loc='upper right', fontsize  =  self.fontsize) 
@@ -1459,8 +1459,8 @@ class Roto_tomo:
             ind_correct = self.tok.get_correct_dets()
 
             self.dets = np.where(ind_correct)[0]
-            self.bb = [bb[ind_correct] for bb in self.all_bb[:self.nharm]]
-            self.bb_err = [be[ind_correct] for be in self.all_bb_err[:self.nharm]]
+            self.bb = [bb[ind_correct] for bb in self.all_bb[:self.n_harm]]
+            self.bb_err = [be[ind_correct] for be in self.all_bb_err[:self.n_harm]]
             
         else:
             #apply SVD filter to get complex harmonic 
