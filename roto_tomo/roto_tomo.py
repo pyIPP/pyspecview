@@ -192,6 +192,41 @@ class DataSettingWindow(QMainWindow):
 
         #self.mpl_toolbar_harm = NavigationToolbar2QT(self.canvas_harm, self.cWidget)
         #self.verticalLayout_harm.addWidget(self.mpl_toolbar_harm)
+        
+        
+        #vbox = QVBoxLayout()
+        #self.verticalLayout_harm.addWidget(self.canvas_svd)
+        
+
+        label_slider_nharm = QLabel('N HARM:')
+        self.nharm_slider = QSlider(Qt.Horizontal)
+        self.nharm_slider.setToolTip('Set number of filtered harmononics')
+        
+        nharm_max, self.nch = np.shape(self.tomo.all_bb)
+
+        self.nharm_slider.setRange(1, nharm_max)
+        self.nharm_slider.setTracking(False)
+        self.nharm_slider.setTickPosition(QSlider.TicksBelow)
+        self.nharm_slider.setTickInterval(1)
+        self.nharm_slider.setValue(nharm_max)
+        self.nharm_slider.setMinimumSize(50,20)
+         
+
+       # spacer = QSpacerItem(0,0,)
+
+        hbox = QHBoxLayout()
+        hbox.addWidget(label_slider_nharm)
+        hbox.setAlignment(label_slider_nharm, Qt.AlignRight)
+        hbox.addWidget(self.nharm_slider)
+        hbox.setAlignment(self.nharm_slider, Qt.AlignRight)
+         
+        self.verticalLayout_harm.addLayout(hbox) 
+        def apply_nharm_slider(self):
+            self.nharm = self.nharm_slider.value()
+            self.RefreshEvent()
+
+            
+        self.nharm.valueChanged.connect(self.apply_nharm_slider)
 
 
         #tooltips
@@ -211,16 +246,13 @@ class DataSettingWindow(QMainWindow):
         self.ax_harm1.point_label = self.ax_harm1.text(0,0,'', fontsize=8 ,zorder=99)
 
         
-        self.nharm, self.nch = np.shape(self.tomo.all_bb)
  
         self.err_plots = []
-
         self.err_plots.append( self.ax_harm0.errorbar(0, 0, 0, fmt='.-',picker=True,
                                 capsize=0, label='0. harmonic'))
 
 
         self.invalid_plot, = self.ax_harm0.plot([], [], 'ro',picker=True)
-
 
         c = 'b', 'g', 'r', 'y', 'm'
         for iharm in range(1,self.nharm):
@@ -411,12 +443,12 @@ class DataSettingWindow(QMainWindow):
                fact,pre = 1e0, 'W'
 
 
-           self.ax_harm0.set_ylabel( 'Mean signal  ['+pre+'/m$^2$]', fontsize=self.fontsize)
+           self.ax_harm0.set_ylabel('Mean signal  ['+pre+'/m$^2$]', fontsize=self.fontsize)
            self.ax_harm1.set_ylabel('Amplitudes ['+pre+'/m$^2$]', fontsize=self.fontsize)
            self.invalid_plot.set_data(x[~ind_correct], np.abs(bb[0,~ind_correct])/fact)
            bb[:,~ind_correct] = np.nan
            #TODO plot also phase?
-           for i, err_plot in enumerate(self.err_plots):
+           for i, err_plot in enumerate(self.err_plots[:self.nharm]):
                y,yerr = np.abs(bb[i])/fact, bb_err[i]/fact
                plotline, caplines, barlinecols = err_plot
                plotline.set_data(x, y)
@@ -1375,10 +1407,10 @@ class Roto_tomo:
             p.set_data(self.isoflux_R[ip],self.isoflux_Z[ip])
         
       
-        self.initialized = True
         
         self.load_data()
 
+        self.initialized = True
 
 
         self.calculate_tomo()
@@ -1427,13 +1459,10 @@ class Roto_tomo:
             ind_correct = self.tok.get_correct_dets()
 
             self.dets = np.where(ind_correct)[0]
-            self.bb = [bb[ind_correct] for bb in self.all_bb]
-            self.bb_err = [be[ind_correct] for be in self.all_bb_err]
+            self.bb = [bb[ind_correct] for bb in self.all_bb[:self.nharm]]
+            self.bb_err = [be[ind_correct] for be in self.all_bb_err[:self.nharm]]
             
         else:
-
-
-
             #apply SVD filter to get complex harmonic 
             self.SVDF.run_filter(update_plots=False)
             
@@ -1844,6 +1873,11 @@ class Roto_tomo:
         
 
     def shift_phase(self,shift_phi):
+        
+        if not self.initialized:
+            return
+        
+        
         self.shift_phi %= 2*np.pi #periodicity
         self.time = self.t0 + self.shift_phi/(2*np.pi*self.F1)*np.abs(self.m)
         description = '#%d  at %.6fs, $\psi_0$ = %d, f$_0$ = %.4fkHz and m/n=%d/%d'%(self.shot,
