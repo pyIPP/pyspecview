@@ -175,6 +175,44 @@ class DataSettingWindow(QMainWindow):
 
         self.link = self.fig_harm.canvas.mpl_connect('pick_event', self.onpick_data)
     
+
+
+
+        #self.mpl_toolbar_harm = NavigationToolbar2QT(self.canvas_harm, self.cWidget)
+        #self.verticalLayout_harm.addWidget(self.mpl_toolbar_harm)
+        
+        
+        #vbox = QVBoxLayout()
+        #self.verticalLayout_harm.addWidget(self.canvas_svd)
+        
+
+        label_slider_nharm = QLabel('Number of used signal harmonics: ')
+        self.nharm_slider = QSlider(Qt.Horizontal)
+        self.nharm_slider.setToolTip('Set number of filtered harmononics')
+        
+        nharm_max, self.nch = np.shape(self.tomo.all_bb)
+        self.n_harm = nharm_max
+
+        self.nharm_slider.setRange(1, nharm_max-1)
+        self.nharm_slider.setTracking(False)
+        self.nharm_slider.setTickPosition(QSlider.TicksBelow)
+        self.nharm_slider.setTickInterval(1)
+        self.nharm_slider.setValue(nharm_max)
+        self.nharm_slider.setMinimumSize(150,20)
+         
+
+       # spacer = QSpacerItem(0,0,)
+
+        hbox = QHBoxLayout()
+        hbox.addWidget(label_slider_nharm)
+        hbox.setAlignment(label_slider_nharm, Qt.AlignRight)
+        hbox.addWidget(self.nharm_slider)
+        hbox.setAlignment(self.nharm_slider, Qt.AlignRight)
+         
+        self.verticalLayout_harm.addLayout(hbox) 
+
+        self.nharm_slider.valueChanged.connect(self.apply_nharm_slider)
+
         #prepare first data
         self.groupBox = QGroupBox("")
         self.gridLayout = QGridLayout(self.groupBox)
@@ -189,44 +227,6 @@ class DataSettingWindow(QMainWindow):
     
         self.gridLayout.addWidget(self.OkButton, 0, 2)
 
-
-        #self.mpl_toolbar_harm = NavigationToolbar2QT(self.canvas_harm, self.cWidget)
-        #self.verticalLayout_harm.addWidget(self.mpl_toolbar_harm)
-        
-        
-        #vbox = QVBoxLayout()
-        #self.verticalLayout_harm.addWidget(self.canvas_svd)
-        
-
-        label_slider_nharm = QLabel('N HARM:')
-        self.nharm_slider = QSlider(Qt.Horizontal)
-        self.nharm_slider.setToolTip('Set number of filtered harmononics')
-        
-        nharm_max, self.nch = np.shape(self.tomo.all_bb)
-
-        self.nharm_slider.setRange(1, nharm_max)
-        self.nharm_slider.setTracking(False)
-        self.nharm_slider.setTickPosition(QSlider.TicksBelow)
-        self.nharm_slider.setTickInterval(1)
-        self.nharm_slider.setValue(nharm_max)
-        self.nharm_slider.setMinimumSize(50,20)
-         
-
-       # spacer = QSpacerItem(0,0,)
-
-        hbox = QHBoxLayout()
-        hbox.addWidget(label_slider_nharm)
-        hbox.setAlignment(label_slider_nharm, Qt.AlignRight)
-        hbox.addWidget(self.nharm_slider)
-        hbox.setAlignment(self.nharm_slider, Qt.AlignRight)
-         
-        self.verticalLayout_harm.addLayout(hbox) 
-        def apply_nharm_slider(self):
-            self.n_harm = self.nharm_slider.value()
-            self.RefreshEvent()
-
-            
-        self.nharm_slider.valueChanged.connect(self.apply_nharm_slider)
 
 
         #tooltips
@@ -255,9 +255,9 @@ class DataSettingWindow(QMainWindow):
         self.invalid_plot, = self.ax_harm0.plot([], [], 'ro',picker=True)
 
         c = 'b', 'g', 'r', 'y', 'm'
-        for iharm in range(1,self.n_harm):
+        for iharm in range(1,nharm_max):
             self.err_plots.append(self.ax_harm1.errorbar(0, 0, 0, fmt='.-'+c[iharm%len(c)], 
-                            capsize=0, zorder=self.n_harm-iharm, picker=True,
+                            capsize=0, zorder=nharm_max-iharm, picker=True,
                             label=f'{iharm}. harmonic'))
 
         self.ax_harm0.legend(loc='upper right', fontsize  =  self.fontsize) 
@@ -309,6 +309,13 @@ class DataSettingWindow(QMainWindow):
         self.RefreshEvent()
         self.OkButton.clicked.connect(self.closeEvent)
         
+    def apply_nharm_slider(self):
+        self.n_harm = self.nharm_slider.value()
+        #set number of used harmonics in the original GUI
+        self.tomo.n_harm = self.n_harm+1  #there is a bug in the way how the harmonics are counted. 
+        self.RefreshEvent()
+
+            
     def create_Data_table(self):
         
         self.tab_widget_data = QWidget(self)
@@ -448,8 +455,13 @@ class DataSettingWindow(QMainWindow):
            self.invalid_plot.set_data(x[~ind_correct], np.abs(bb[0,~ind_correct])/fact)
            bb[:,~ind_correct] = np.nan
            #TODO plot also phase?
-           for i, err_plot in enumerate(self.err_plots[:self.nharm]):
+
+           for i, err_plot in enumerate(self.err_plots):
+
                y,yerr = np.abs(bb[i])/fact, bb_err[i]/fact
+               if i > self.n_harm:
+                   y *= np.nan
+
                plotline, caplines, barlinecols = err_plot
                plotline.set_data(x, y)
                # Find the ending points of the errorbars
@@ -460,6 +472,7 @@ class DataSettingWindow(QMainWindow):
            self.ax_harm0.set_ylim(0, data_max/fact)
            self.ax_harm1.set_ylim(0, np.nanmax(np.abs(bb[1:]))/fact)
            self.canvas_harm.draw()
+           #print('self.canvas_harm.draw()')
            #load data with new set of enabled detectors by self.dets
            #ind_correct = self.tomo.tok.get_correct_dets()
 
@@ -1876,8 +1889,8 @@ class Roto_tomo:
         
         if not self.initialized:
             return
-        
-        
+  
+        self.shift_phi = shift_phi
         self.shift_phi %= 2*np.pi #periodicity
         self.time = self.t0 + self.shift_phi/(2*np.pi*self.F1)*np.abs(self.m)
         description = '#%d  at %.6fs, $\psi_0$ = %d, f$_0$ = %.4fkHz and m/n=%d/%d'%(self.shot,
@@ -1929,7 +1942,8 @@ class Roto_tomo:
             self.Te2Dmap.shift_phi = self.shift_phi +dPhi+self.dPhi/self.n
             anim_obj += self.Te2Dmap.update(update_cax=False,update_mag=False,animate=animate,
                                 ax = self.ax, filled_contours=False)
-            
+
+ 
         if animate:
             return anim_obj
         
@@ -1998,4 +2012,3 @@ class Roto_tomo:
         except Exception as e:
             print('Error __del__', e)
             
-
