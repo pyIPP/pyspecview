@@ -2012,4 +2012,3 @@ class Roto_tomo:
         except Exception as e:
             print('Error __del__', e)
             
-
