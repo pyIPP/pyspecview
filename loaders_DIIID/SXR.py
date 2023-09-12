@@ -745,7 +745,7 @@ class loader_SXR(loader):
         
         
     def get_signal(self,groups, names,calib=False,tmin=None,tmax=None):
- 
+        
                 
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
@@ -771,9 +771,15 @@ class loader_SXR(loader):
         
             group_ = group.split('R')        
             group_ = group_[0]+group_[1][:-1]
-    
+            
+            
 
-            indmin = np.where(self.time_header[group][1] > tmin)[0][0]
+            indmin = np.where(self.time_header[group][1] > tmin)[0]
+            if len(indmin) == 0:
+                print(f'tmin {tmin}s is outside of data range {self.time_header[group][1].max()}')
+                continue
+            else:
+                indmin = indmin[0]
             indmax = np.where(self.time_header[group][0] < tmax)[0][-1]+1
 
             index = np.arange(indmin,indmax)
@@ -799,7 +805,7 @@ class loader_SXR(loader):
         #collect all data
         outputs = []
 
-       
+
         for g in groups:
 
             if len(names) == 0:
@@ -854,8 +860,7 @@ class loader_SXR(loader):
                     sxr = np.zeros(imax-imin, dtype='single')
                 output.append([tvec[ind], sxr]) 
 
-            outputs += self.hardcoded_corrections(output, g, names, True)
-
+            outputs += self.hardcoded_corrections(output, g, channels, True)
 
         if len(output) == 1:
             return outputs[0]
