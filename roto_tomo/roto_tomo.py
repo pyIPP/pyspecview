@@ -1262,7 +1262,7 @@ class Roto_tomo:
             diag_path = tomo_local_path+ 'geometry/DIIID/SXR'
             
             #$use only two poloidal cameras 
-            config.wrong_dets_pref = np.unique(list(config.wrong_dets_pref)+list(range(64,88)))
+            #config.wrong_dets_pref = np.unique(list(config.wrong_dets_pref)+list(range(64,88)))
             
         elif tok_lbl == 'AUG':
             import geometry.ASDEX as Tok
@@ -1522,10 +1522,11 @@ class Roto_tomo:
                     idet += 1 
             self.all_bb = [np.array(bb) for bb in zip(*bb)]
             self.all_bb_err = [np.array(be)+1e-6 for be in zip(*bb_err)]
-
+            for ih, h in enumerate(self.all_bb):
+                self.all_bb_err[ih] = np.hypot(self.all_bb_err[ih], np.abs(h)*0.05) 
             #add at least 5% noise to 0th an 1th harmonics    
-            self.all_bb_err[0] += np.abs(self.all_bb[0])*0.05+0.03*np.abs(self.all_bb[0]).mean()
-            self.all_bb_err[1] += np.abs(self.all_bb[1])*0.05+0.03*np.abs(self.all_bb[1]).mean()
+            #self.all_bb_err[0] += np.abs(self.all_bb[0])*0.05#+0.03*np.abs(self.all_bb[0]).mean() #issue if the noise in some camera was too high
+            #self.all_bb_err[1] += np.abs(self.all_bb[1])*0.05#+0.03*np.abs(self.all_bb[1]).mean()
             self.tok.dets = np.array(dets)
 
         else:
@@ -1893,7 +1894,7 @@ class Roto_tomo:
         self.shift_phi = shift_phi
         self.shift_phi %= 2*np.pi #periodicity
         self.time = self.t0 + self.shift_phi/(2*np.pi*self.F1)*np.abs(self.m)
-        description = '#%d  at %.6fs, $\psi_0$ = %d, f$_0$ = %.4fkHz and m/n=%d/%d'%(self.shot,
+        description = '#%d  at %.6fs, $\phi_0$ = %d, f$_0$ = %.4fkHz and m/n=%d/%d'%(self.shot,
                                     self.time,np.rad2deg(self.Phi0), self.F1/1e3, self.m,self.n)
         self.plot_description.set_text(description)
 

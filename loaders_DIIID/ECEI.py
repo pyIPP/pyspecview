@@ -229,8 +229,9 @@ class loader_ECEI(loader):
 
         Rmesh = np.linspace(self.eqm.Rmesh[0], self.eqm.Rmesh[-1], 200)
         Zmesh = np.linspace(self.eqm.Zmesh[0], self.eqm.Zmesh[-1], 300)
-
-        
+        #R_res_warm = loadtxt(r'C:\Users\odstrcil\projects\pyspecview\loaders_DIIID\ECEI_res\R_res_warm.txt').reshape(20,8,order='F')
+        #Z_res_warm = loadtxt(r'C:\Users\odstrcil\projects\pyspecview\loaders_DIIID\ECEI_res\z_res_warm.txt').reshape(20,8,order='F')
+    
         #position including relativistic shift and refraction
         try:
             B = self.eqm.rz2brzt(r_in=Rmesh, z_in=Zmesh, t_in=time)
@@ -248,8 +249,16 @@ class loader_ECEI(loader):
                 z_los = Zmod[len(Zmod)-int(n[:2])+3-1]
                 f_los = fc[len(fc)-int(n[2:])+1-1]*1e9
                 r,z, R_res, Z_res = ece_los(f_los, z_los, Rmesh, Zmesh, Btot, Ne, Te)
+                
+                
+                #Rc.append(R_res_warm[len(Zmod)-int(n[:2])+3-1, len(fc)-int(n[2:])+1-1, ])
+                #Zc.append(Z_res_warm[len(Zmod)-int(n[:2])+3-1, len(fc)-int(n[2:])+1-1, ])
+            
+                
                 Rc.append(R_res)
                 Zc.append(Z_res)
+                
+                
                 #plot(r,z,lw=.3)
             #plot(Rc,Zc,'o')
             #ylim(Zmesh[0], Zmesh[-1])
@@ -522,6 +531,7 @@ def main():
     R,Z,T = ecei.get_RZ_theta(2.1, 'LFS', names)
         #def get_RZ_theta(self, time, system, names,dR=0,dZ=0):
     plot(R,Z,'o')
+    show()
     #TT =  T()
     #signals = ecei.get_signal('LFS',names, calib=True, tmin=3, tmax=3.6)
     #print(T()-TT)

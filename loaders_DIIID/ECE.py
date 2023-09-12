@@ -163,6 +163,7 @@ class loader_ECE(loader):
 
         #BUG https://diii-d.gat.com/diii-d/ECE#pointnames
         #Ask if ther are any issues with timing in the new discharges 
+        ##embed()
         
         if len(load_ch) >= 1:
             #NOTE ece data can be splitted in halve and fetch separatelly
@@ -215,7 +216,7 @@ class loader_ECE(loader):
             if len(self.data_dict[n]) > 1:
                 output.append([self.tvec[imin:imax],  self.data_dict[n][imin:imax]])
             else:
-                output.append([self.tvec[imin:imax],  self.zeros(imax-imin, dtype='single')])
+                output.append([self.tvec[imin:imax],  np.zeros(imax-imin, dtype='single')])
  
         if len(nch) == 1:
             return output[0]
@@ -261,10 +262,12 @@ class loader_ECE(loader):
  
         except:
             #raise
+            B = self.eqm.rz2brzt(r_in=Rmesh, z_in=np.mean(self.z), t_in=time)
+            Btot = squeeze(linalg.norm(B,axis=0)).T
             from scipy.constants import m_e, e, c
             wce = e*Btot/m_e
             nharm = 2
-            R = interp(-2*pi*self.freq[ch_ind],-wce*nharm,self.eqm.Rmesh)
+            R = interp(-2*pi*self.freq[ch_ind],-wce*nharm,Rmesh)
             z = self.z*ones_like(R)+Zlos
 
         r0 = interp(time, self.eqm.t_eq, self.eqm.ssq['Rmag'])+dR
@@ -389,11 +392,11 @@ def main():
     MDSconn = mds.Connection(mds_server )
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
-    eqm.Open( 191823 ,diag='EFIT01' )
+    eqm.Open( 194440 ,diag='EFIT01' )
     MDSconn2 = mds.Connection(mds_server )
 
 
-    ece = loader_ECE( 191823 ,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
+    ece = loader_ECE( 194440 ,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
     #cd 
     ece.get_RZ_theta( 3,range(1,40),dR=0,dZ=0)
     #ece.get_Te0(2,3)
@@ -409,7 +412,7 @@ def main():
 
     #import IPython
     #IPython.embed()
-    exit()
+    #exit()
 
     #f = file('pokus', 'wb')
     #pickle.dump(MDSconn , f, 2)
