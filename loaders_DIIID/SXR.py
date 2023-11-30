@@ -814,7 +814,7 @@ class loader_SXR(loader):
                 channels = np.atleast_1d(np.squeeze(np.int_(names)))
             
             indmin = np.where(self.time_header[g][1] > tmin)[0]
-            if len(indmin) == :
+            if len(indmin) == 0:
                 continue
             indmin = indmin[0]
             indmax = np.where(self.time_header[g][0] < tmax)[0][-1]+1

@@ -1300,13 +1300,14 @@ def extract_harmonics(tvec_data,t_range, f_range,n_harm_max, cross_tvec_signal=N
     #demodulation signal from the measured signal 
     t0,f0,cmplx_sig = calculate_cmplx_phase(tvec, cross_signal,  f_range)
  
-
+    #BUG how is this possible?
+    tvec = tvec[:cmplx_sig.size]
 
     from scipy.signal import butter, sosfiltfilt
     sosbutter = butter(5,f0/5, btype='low',  output='sos', fs=fnq)
 
     #demodulate signal and find the first component
-    complex_harm = np.zeros((n_harm, tvec.size), dtype='complex')
+    complex_harm = np.zeros((n_harm, cmplx_sig.size), dtype='complex')
     complex_harm[0] = cmplx_sig
     for i in range(1, n_harm):
         complex_harm[i] = complex_harm[i-1]*cmplx_sig
