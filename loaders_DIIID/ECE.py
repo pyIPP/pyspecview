@@ -150,7 +150,7 @@ class loader_ECE(loader):
             pass
     
     def get_signal(self,group, names,calib=False,tmin=None,tmax=None):    
-    
+      
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
         
@@ -163,7 +163,7 @@ class loader_ECE(loader):
 
         #BUG https://diii-d.gat.com/diii-d/ECE#pointnames
         #Ask if ther are any issues with timing in the new discharges 
-        ##embed()
+        ##
         
         if len(load_ch) >= 1:
             #NOTE ece data can be splitted in halve and fetch separatelly
@@ -176,7 +176,13 @@ class loader_ECE(loader):
         
         if self.tvec is None:
             time_header = self.MDSconn.get(f'PTHEAD2("{self.channels[0]}",{self.shot}); __real64').data()
-            tbeg, tend = time_header[2], time_header[-1]
+            
+            #new data format
+            if len(time_header) == 6:
+                tbeg, tend = time_header[2], time_header[-1]
+            else:
+                tbeg, tend = time_header[2], time_header[3]
+      
             self.tvec = np.linspace(tbeg, tend, len(Te))
         
         imin,imax = self.tvec.searchsorted([tmin,tmax])
@@ -385,18 +391,18 @@ from matplotlib.pylab import *
 def main():
 
     
-    mds_server = "localhost"
-    #mds_server = "atlas.gat.com"
+    #mds_server = "localhost"
+    mds_server = "atlas.gat.com"
     import MDSplus as mds
 
     MDSconn = mds.Connection(mds_server )
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
-    eqm.Open( 194440 ,diag='EFIT01' )
+    eqm.Open( 147258 ,diag='EFIT01' )
     MDSconn2 = mds.Connection(mds_server )
 
 
-    ece = loader_ECE( 194440 ,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
+    ece = loader_ECE( 147258 ,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn2)
     #cd 
     ece.get_RZ_theta( 3,range(1,40),dR=0,dZ=0)
     #ece.get_Te0(2,3)
