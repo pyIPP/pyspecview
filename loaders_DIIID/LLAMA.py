@@ -37,13 +37,13 @@ class loader_LAMMA(loader):
         if name not in self.catch:
             #from IPython import embed
             #embed()
-            self.catch[name] = self.MDSconn.get(PTNAME)
+            self.catch[name] = self.MDSconn.get(PTNAME).data()
      
             if len(self.catch[name]) == 1:
                 raise Exception('No LLAMA data')
             
             if self.tvec is None:
-                self.tvec = self.MDSconn.get(f'dim_of({PTNAME})')/1e3
+                self.tvec = self.MDSconn.get(f'dim_of({PTNAME})').data()/1e3
     
     
         if tmin is None:    tmin = self.tmin
@@ -52,7 +52,7 @@ class loader_LAMMA(loader):
         
         imin,imax = self.tvec.searchsorted([tmin,tmax])
         
-        
+ 
         return self.tvec[imin:imax], self.catch[name][imin:imax]
     
       
@@ -60,7 +60,7 @@ class loader_LAMMA(loader):
 
 
     def signal_info(self,group,name, time):
-        return 'sig:%s %.2d   %s:%.2f  '%(group,name )
+        return 'sig:%s %s  '%(group,name )
     
  
  

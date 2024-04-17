@@ -17,7 +17,7 @@ export PATH="${PATH}:/fusion/projects/codes/pyspecview/"
 module purge  
 #module load mdsplus 
 #module load fftw
-module load omfit
+module load omfit/unstable
 
 
 echo ' If you find any bugs, please sent email to odstrcilt@fusion.gat.com'
