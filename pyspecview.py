@@ -279,7 +279,7 @@ class SpectraViewer(object):
         #time trace of the mhd mode 
         self.plt_trace, = self.ax.plot([], [], 'gray', zorder=99)
 
-        c  = 1-np.array( matplotlib.colormaps.get_cmap( cmap)(0))[:3] #inverse of the lowest color in the colormap
+        c  = 1-np.array( matplotlib.pyplot.get_cmap( cmap)(0))[:3] #inverse of the lowest color in the colormap
         self.plt_plasma_freq_n1, = self.ax.plot([], [], c=c, zorder=99, lw=.5)
         #self.plt_plasma_freq_n2, = self.ax.plot([], [], c=c, zorder=99, lw=.5,ls='--')
 
@@ -1889,7 +1889,7 @@ class Diag2DMapping(object):
             self.cmap = 'seismic'
         else:
             from copy import copy
-            self.cmap = copy(matplotlib.colormaps.get_cmap('nipy_spectral'))
+            self.cmap = copy(matplotlib.pyplot.get_cmap('nipy_spectral'))
             self.cmap._init()
             self.cmap.set_under('w')
 
