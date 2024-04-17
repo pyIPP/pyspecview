@@ -5,7 +5,6 @@ import sys, os, random, time, argparse, logging
 import traceback
 import matplotlib  
 from copy import deepcopy
-
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -57,7 +56,8 @@ import numpy as np
 from scipy.stats.mstats import mquantiles
 from scipy.interpolate import interp1d
 from scipy.signal import butter, filtfilt, hilbert, detrend
-        
+from scipy.fftpack import next_fast_len
+"""
 try:
     from scipy.signal.signaltools import _next_regular as next_fast_len
 except:
@@ -65,7 +65,7 @@ except:
         from scipy.fftpack.helper import next_fast_len
     except:
         from scipy.fftpack import next_fast_len 
-
+"""
 from stft import stft
 from sfft import sfft
 from sstft import sstft
@@ -246,16 +246,16 @@ class SpectraViewer(object):
         self.method = method
         
         #set parameters of the gamma slider
-        sgamma.setRange(0.001*self.sdpi, 1*self.sdpi)
-        sgamma.setValue(.5*self.sdpi)
+        sgamma.setRange(int(0.001*self.sdpi), int(1*self.sdpi))
+        sgamma.setValue(int(.5*self.sdpi))
         sgamma.setTracking(True)
         sgamma.setTickPosition(QSlider.NoTicks)
-        sgamma.setSingleStep(.1)
+        sgamma.setSingleStep(1)
 
         #set parameters of the NFFT slider
         self.tau0 = .6 #dimensionaless parameter for time resolution between 0 and 1
-        stau.setRange(.3*self.sdpi, .8*self.sdpi)
-        stau.setValue(self.tau0*self.sdpi)
+        stau.setRange(int(.3*self.sdpi), int(.8*self.sdpi))
+        stau.setValue(int(self.tau0*self.sdpi))
         stau.setTracking(True)
         stau.setTickPosition(QSlider.NoTicks)
         stau.setSingleStep(1)
@@ -279,7 +279,7 @@ class SpectraViewer(object):
         #time trace of the mhd mode 
         self.plt_trace, = self.ax.plot([], [], 'gray', zorder=99)
 
-        c  = 1-np.array(plt.cm.get_cmap( cmap)(0))[:3] #inverse of the lowest color in the colormap
+        c  = 1-np.array( matplotlib.colormaps.get_cmap( cmap)(0))[:3] #inverse of the lowest color in the colormap
         self.plt_plasma_freq_n1, = self.ax.plot([], [], c=c, zorder=99, lw=.5)
         #self.plt_plasma_freq_n2, = self.ax.plot([], [], c=c, zorder=99, lw=.5,ls='--')
 
@@ -290,7 +290,7 @@ class SpectraViewer(object):
                                         useblit=True, 
                                         button=[1, ], # don't use middle button
                                        minspanx=5, minspany=5,
-                                       rectprops=rectprops, 
+                                       props=rectprops,
                                        spancoords='pixels')
         
     def __del__(self):
@@ -669,6 +669,7 @@ class SpectraViewer(object):
                     try:
                         f = self.stft_img.z[1].T[ix, iy]
                         n = self.stft_img.N_mode[0][self.stft_img.N_mode[1]==f]
+                        print(x, y/1e3, n)
                         self.message_out('t: %.5fs f: %.3gkHz, mode num.:%d'%(x, y/1e3, n), 1000)
                     except:
                         pass
@@ -695,7 +696,7 @@ class SpectraViewer(object):
                     #for older matplotlib
                     if all(np.array(self.cax.get_ylim()) == np.array((0.,1.))):
                         n = self.stft_img.N_mode[1][int(event.ydata*len(self.stft_img.N_mode[0]))]
-                    else: #new matploltib
+                    else: #new matplotlib
                         n_ = int(round(event.ydata))
                         n = self.stft_img.N_mode[1][self.stft_img.N_mode[0]==n_]
                
@@ -793,14 +794,17 @@ class STFTImage():
         self.cmap = matplotlib.colors.ListedColormap(self.colors(self.N_mode[1], 1))
 
         bounds = np.linspace(N_min-.5, N_max+.5, N_max-N_min+2  )
+        norm = matplotlib.colors.BoundaryNorm(bounds, self.cmap.N)
+
         if not self.colorbar_ax is None:
             self.colorbar_ax.cla()
-            self.cb = matplotlib.colorbar.ColorbarBase(self.colorbar_ax, 
+            self.cb = matplotlib.colorbar.ColorbarBase(self.colorbar_ax, norm=norm,
                         cmap=self.cmap , boundaries=bounds, extendfrac='auto', 
                         ticks=np.arange(N_min, N_max+1), spacing='uniform')
             self.colorbar_ax.set_xlabel(self.mode_num_lbl, fontsize='small')
             self.colorbar_ax.xaxis.set_label_position('top') 
             self.colorbar_ax.tick_params(labelsize=8) 
+
 
        
     def GammaTransform(self, z, typ='log'):
@@ -1885,7 +1889,7 @@ class Diag2DMapping(object):
             self.cmap = 'seismic'
         else:
             from copy import copy
-            self.cmap = copy(plt.cm.get_cmap('nipy_spectral'))
+            self.cmap = copy(matplotlib.colormaps.get_cmap('nipy_spectral'))
             self.cmap._init()
             self.cmap.set_under('w')
 
@@ -2244,8 +2248,8 @@ class MainGUI(QMainWindow):
         #correction of the error in the plasma or diagnostic  position
         self.dR_corr = 0
         self.dZ_corr = 0        
-        self.m_numbers = np.r_[-4:0, 1:8]
-        self.n_numbers = np.r_[-3:0, 1:4]
+        self.m_numbers = list(np.r_[-4:0, 1:8])
+        self.n_numbers = list(np.r_[-3:0, 1:4])
  
         path = os.path.dirname(os.path.realpath(__file__))
         current_path = os.getcwd()
@@ -2722,7 +2726,7 @@ class MainGUI(QMainWindow):
         self.SpecWin_phase.reset()
 
         #set mode number back to one
-        self.radial_m_num.setCurrentIndex(np.where(self.m_numbers == 1)[0])
+        self.radial_m_num.setCurrentIndex( self.m_numbers.index(1))
 
         self.cross_signal.setCurrentIndex( -1)
         self.cb_diagnostics.clear()
@@ -3722,7 +3726,7 @@ class MainGUI(QMainWindow):
         self.radial_m_num.setFixedWidth(50)
 
         for n in self.m_numbers:  self.radial_m_num.addItem(str(n)) 
-        self.radial_m_num.setCurrentIndex(np.where(self.m_numbers == 1)[0])
+        self.radial_m_num.setCurrentIndex( self.m_numbers.index(1))
 
         label2 = QLabel('Diag:')
         label3 = QLabel('Group:')
@@ -3955,7 +3959,7 @@ class MainGUI(QMainWindow):
         self.tomo_limit.setValue(70)
         self.tomo_limit.setTracking(True)
         self.tomo_limit.setTickPosition(QSlider.NoTicks)
-        self.tomo_limit.setSingleStep(.05)
+        self.tomo_limit.setSingleStep(1)
 
         self.canvas_2Dmap.mpl_connect('pick_event', self.on_pick)
 
@@ -3979,7 +3983,7 @@ class MainGUI(QMainWindow):
         self.tomo_plot_substract.setToolTip('Substract the time averaged signal')
         
         for n in self.m_numbers:  self.tomo_m_num.addItem(str(n)) 
-        self.tomo_m_num.setCurrentIndex( np.where(self.m_numbers == 1)[0])
+        self.tomo_m_num.setCurrentIndex(  self.m_numbers.index(1))
 
         self.Te2Dmap = Diag2DMapping(self, self.fig_tomo, self.n_contour_2Dprof,
                                      self.tomo_plot_substract, self.tomo_plot_ecei)
@@ -4061,14 +4065,14 @@ class MainGUI(QMainWindow):
         self.rototomo_limit.setValue(100)
         self.rototomo_limit.setTracking(True)
         self.rototomo_limit.setTickPosition(QSlider.NoTicks)
-        self.rototomo_limit.setSingleStep(.05)
+        self.rototomo_limit.setSingleStep(1)
            
         self.rototomo_reg = QSlider(Qt.Horizontal)
         self.rototomo_reg.setRange(1, 100)
         self.rototomo_reg.setValue(70)
         self.rototomo_reg.setTracking(True)
         self.rototomo_reg.setTickPosition(QSlider.NoTicks)
-        self.rototomo_reg.setSingleStep(.01)
+        self.rototomo_reg.setSingleStep(1)
 
         self.rototomo_canvas.mpl_connect('pick_event', self.on_pick)
         
@@ -4114,9 +4118,9 @@ class MainGUI(QMainWindow):
 
 
         for m in self.m_numbers:  self.rototomo_m_num.addItem(str(m)) 
-        self.rototomo_m_num.setCurrentIndex( np.where(self.m_numbers == 1)[0])
+        self.rototomo_m_num.setCurrentIndex( self.m_numbers.index(1))
         for n in self.n_numbers:  self.rototomo_n_num.addItem(str(n)) 
-        self.rototomo_n_num.setCurrentIndex( np.where(self.n_numbers == -1)[0])
+        self.rototomo_n_num.setCurrentIndex( self.n_numbers.index(-1))
    
         label_lim = QLabel('Scale')
         self.rototomo_limit.setToolTip('Set a lower limit for the colorscale')
