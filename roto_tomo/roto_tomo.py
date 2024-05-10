@@ -1397,7 +1397,7 @@ class Roto_tomo:
         self.T_full_prunned = prune_geo_matrix(self.T_full,self.BdMat)
  
         #regularization matrix
-        self.Bmat, diag_mat = mat_deriv_B(self.aux_tok, 0, 1,None)
+        self.Bmat, diag_mat = mat_deriv_B(self.aux_tok, 0, 1,{})
         self.Ht = build_reg_mat_time(self.rho_mat,self.theta_star_rz,theta_star,self.rhop,self.magr,
                                 self.magz,self.xgridc,self.ygridc,self.BdMat,self.dtheta)
 
