@@ -285,14 +285,22 @@ class SpectraViewer(object):
 
         if allow_selector:
             rectprops = dict(facecolor='gray', edgecolor='black', alpha=0.5, fill=True, zorder=1000)
-            self.RS1 = RectangleSelector(self.ax, self.line_select_callback, 
-                                        #drawtype='box',
-                                        useblit=True, 
-                                        button=[1, ], # don't use middle button
-                                       minspanx=5, minspany=5,
-                                       props=rectprops,
-                                       spancoords='pixels')
-        
+            try: #BUG remove in future
+                self.RS1 = RectangleSelector(self.ax, self.line_select_callback, 
+                                            #drawtype='box',
+                                            useblit=True, 
+                                            button=[1, ], # don't use middle button
+                                           minspanx=5, minspany=5,
+                                           rectprops=rectprops,
+                                           spancoords='pixels')
+            except:
+                self.RS1 = RectangleSelector(self.ax, self.line_select_callback, 
+                                            #drawtype='box',
+                                            useblit=True, 
+                                            button=[1, ], # don't use middle button
+                                           minspanx=5, minspany=5,
+                                           props=rectprops,
+                                           spancoords='pixels')
     def __del__(self):
        pass
 
