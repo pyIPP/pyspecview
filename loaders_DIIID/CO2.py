@@ -100,50 +100,71 @@ class loader_CO2(loader):
     def get_names(self,group):
         return self.names
         
-    def get_signal(self,group, names,calib=False,tmin=None,tmax=None):
+    def get_signal(self,group, names, calib=False, tmin=None, tmax=None):
         
         #TODO raw data ? fast?  
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
         
-        if size(names) > 1:
+        if not isinstance(names, str):
             data = [self.get_signal(group, n, calib=calib, tmin=tmin,tmax=tmax) for n in names]
             return data
         
         name = names
         
         node = 'PL1' if group == "PHASE" else 'DEN'
-        TDI = '\\ELECTRONS::TOP.BCI.DPD.%s.%s:%s_UF_'%(name, group,node)+'%d'
         
+        if self.shot < 198000: #before 2024 campaign
+            TDI = '\\ELECTRONS::TOP.BCI.DPD.%s.%s:%s_UF_'%(name, group,node)+'%d'
         
-        if not hasattr(self,'tvec'):
-            index = list(range(self.n_chunks))
-     
-            self.tvec = mds_par_load(self.MDSconn.hostspec,
-                    self.tree,self.shot,'dim_of('+TDI+')',index)
-        
-            for i in range(self.n_chunks):
-                self.tvec[i] /= 1e3 #s
+            
+            if not hasattr(self,'tvec'):
+                index = list(range(self.n_chunks))
+                print(TDI)
+                self.tvec = mds_par_load(self.MDSconn.hostspec,
+                        self.tree,self.shot,'dim_of('+TDI+')',index)
+            
+                for i in range(self.n_chunks):
+                    self.tvec[i] /= 1e3 #s
 
-  
-        indmin = where([t[-1] > tmin for t in self.tvec])[0][0]
-        indmax = where([t[ 0] < tmax for t in self.tvec])[0][-1]+1
       
-        index = list(range(indmin,indmax))
-        index_toload = []
-        for i in index:
-            if self.cache[group][name][i] is None:
-                index_toload.append(i)
-        #print index_toload
-        if len(index_toload):
-            data = mds_par_load(self.MDSconn.hostspec,self.tree,self.shot,TDI,index_toload)
-            for i, d in zip(index_toload, data):
-                d*=1e6/1e19 #10**19*m^-2
-                self.cache[group][name][i] = d 
+            indmin = where([t[-1] > tmin for t in self.tvec])[0][0]
+            indmax = where([t[ 0] < tmax for t in self.tvec])[0][-1]+1
+          
+            index = list(range(indmin,indmax))
+            index_toload = []
+            for i in index:
+                if self.cache[group][name][i] is None:
+                    index_toload.append(i)
+            
+            if len(index_toload):
+                data = mds_par_load(self.MDSconn.hostspec,self.tree,self.shot,TDI,index_toload)
+                for i, d in zip(index_toload, data):
+                    d*=1e6/1e19 #10**19*m^-2
+                    self.cache[group][name][i] = d 
+            
+            
+            tvec = hstack(self.tvec[indmin:indmax])
+            sig  = hstack(self.cache[group][name][indmin:indmax])
+            
+        else:
         
-        
-        tvec = hstack(self.tvec[indmin:indmax])
-        sig  = hstack(self.cache[group][name][indmin:indmax])
+            MDSconn = mds.Connection(self.MDSconn.hostspec)
+            MDSconn.openTree(self.tree, self.shot)
+            TDI = '_x=\\ELECTRONS::TOP.BCI.DPD.%s:%sUF'%(name,node)
+            if len(self.cache[group][name]) == self.n_chunks:
+                self.cache[group][name] = MDSconn.get(TDI).data().astype('single')
+                
+            if not hasattr(self,'tvec'):
+                self.tvec =  MDSconn.get('dim_of(_x)').data()
+                self.tvec /= 1e3 #s
+                
+             
+            tvec = self.tvec
+            sig = self.cache[group][name]
+
+
+    
         
 
         sig = self.remove_elms(tvec, sig)        
@@ -201,7 +222,7 @@ class loader_CO2(loader):
 from matplotlib.pylab import *
 def main():
 
-    
+    shot = 199035
     mds_server = "localhost"
     mds_server = "atlas.gat.com"
 
@@ -209,213 +230,18 @@ def main():
     MDSconn = mds.Connection(mds_server )
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
-    eqm.Open(153291,diag='EFIT01' )
-    sxr = loader_CO2(153291,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
+    eqm.Open(shot,diag='EFIT01' )
+    sxr = loader_CO2(shot,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
     data1 = sxr.get_signal( 'DEN',('V1',),tmin=-infty, tmax=infty,calib=True)
 
 
-    #import IPython
-    #IPython.embed()
-
-
-    g = sxr.groups[0]
-    n = sxr.get_names(g)
-    data1 = sxr.get_signal( '45R1',list(range(1,13)),tmin=-infty, tmax=infty,calib=True)
-    data2 = sxr.get_signal('165R1',list(range(1,13)),tmin=-infty, tmax=infty,calib=True)
-    data3 = sxr.get_signal('195R1',list(range(1,13)),tmin=-infty, tmax=infty,calib=True)
-
-
-    data = array([d for t,d in data1]+[d for t,d in data2]+[d for t,d in data3])
-    tvec = data1[0][0]
-    
-    
-    #\\ELECTRONS::TOP.BCI.DPD.V2.DEN:DEN_UF_8
-    #\\ELECTRONS::TOP.BCI.DPD.V1.DEN:PL1_UF_8
-
-    offset = tvec < .1
-    data_ = data[:,offset]-data[:,offset].mean(1)[:,None]
-    u1,s1,v1 = linalg.svd(data_[:12], full_matrices=False)
-    u2,s2,v2 = linalg.svd(data_[12:24], full_matrices=False)
-    u3,s3,v3 = linalg.svd(data_[24:], full_matrices=False)
-
-
-    from scipy import signal
-    fnq = len(tvec)/(tvec[-1]-tvec[0])/2
-    fmax = 50
-    b, a = signal.butter(4, fmax/fnq, 'low')
-    noise1 = inner(u1[:,0], data[:12].T)
-    noise1 -= signal.filtfilt(b,a,noise1)
-    noise2 = inner(u2[:,0], data[12:24].T)
-    noise2 -= signal.filtfilt(b,a,noise2)
-    noise3 = inner(u3[:,0], data[24:].T)
-    noise3 -= signal.filtfilt(b,a,noise3)
-    
-    
-    
-    filtered_data = copy(data)
-    filtered_data[:12]   -= outer( u1[:,0],noise1)
-    filtered_data[12:24] -= outer( u2[:,0],noise2)
-    filtered_data[24:]   -= outer( u3[:,0],noise3)
-
-    fmax = 3000
-    b, a = signal.butter(6, fmax/fnq, 'low')
-    filtered_data = signal.filtfilt(b,a,filtered_data,axis=1)
-    
-    #fmax = 2000
-    #b, a = signal.butter(6, fmax/fnq, 'low')
-    #filtered_data = signal.filtfilt(b,a,filtered_data,axis=1)
-    i1 = tvec<.1
-    i2 = tvec> tvec[-1]-.5
-    b1,b2 = filtered_data[:,i1].mean(1), filtered_data[:,i2].mean(1)
-    a1,a2 = tvec[i1].mean(), tvec[i2].mean()
-
-    filtered_data -= ((b2-b1)/(a2-a1)*(tvec[:,None]-a1)+b1).T
-    offset_err = sqrt(mean(filtered_data[:,tvec<.3]**2,1))
-    error =  offset_err[:,None]+filtered_data*0.05
-    cov_mat = corrcoef(filtered_data[:,tvec<.3])
-
-    
-    f,ax=subplots(2,1,sharex=True, sharey=True)
-    ax[0].plot(tvec, data[:12].T)    
-    #ax[1].plot(tvec, filtered_data.T)
-    ax[1].plot(tvec, filtered_data[:12].T)
-
-    ax[1].set_xlabel('time [s]')
-    ax[1].set_ylabel('filtered SXR')
-    ax[0].set_ylabel('raw SXR')
-
-    show()
-    
-    
-    [errorbar(list(range(36)), d,e) for d,e in zip(filtered_data[:,::10000].T,error[:,::10000].T)];show()
-
-    
-
-    imshow(filtered_data,interpolation='nearest',aspect='auto',vmax=-0.1,vmin=0.1);colorbar();show()
-
-    
     import IPython
     IPython.embed()
-    
-    exit()
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    #plot(range(32),data[:32,35000:35100])
-    #plot(range(32,64),data[32:,35000:35100])
-    #show()
-    
-    
 
-    data[2] = 0
-    offset = tvec < .1
-    data_ = data[:,offset]-data[:,offset].mean(1)[:,None]
-    u1,s1,v1 = linalg.svd(data_[:32], full_matrices=False)
-    u2,s2,v2 = linalg.svd(data_[32:], full_matrices=False)
 
-    #plot(range(28),u1[:,0] )
-    #plot(range(28,28*2), u2[:,0])
-    from scipy import signal
-    fnq = len(tvec)/(tvec[-1]-tvec[0])/2
-    fmax = 50
-    b, a = signal.butter(4, fmax/fnq, 'low')
-    noise1 = inner(u1[:,0], data[:32].T)
-    noise1 -= signal.filtfilt(b,a,noise1)
-    noise2 = inner(u2[:,0], data[32:].T)
-    noise2 -= signal.filtfilt(b,a,noise2)
-    filtered_data = copy(data)
-    filtered_data[:32]  -= outer( u1[:,0],noise1)
-    filtered_data[32:]  -= outer( u2[:,0],noise2)
-    
-    
-    fmax = 2000
-    b, a = signal.butter(6, fmax/fnq, 'low')
-    filtered_data = signal.filtfilt(b,a,filtered_data,axis=1)
-    
-    
-    i1 = tvec<.1
-    i2 = tvec> tvec[-1]-.5
-    b1,b2 = filtered_data[:,i1].mean(1), filtered_data[:,i2].mean(1)
-    a1,a2 = tvec[i1].mean(), tvec[i2].mean()
-
-    filtered_data -= ((b2-b1)/(a2-a1)*(tvec[:,None]-a1)+b1).T
-    offset_err = sqrt(mean(filtered_data[:,tvec<.3]**2,1))
-    error =  offset_err[:,None]+filtered_data*0.05
-    cov_mat = corrcoef(filtered_data[:,tvec<.3])
-
-    #plot(v1[0])
-    #plot(v2[0])
-
-    #print data.shape, tvec.shape
-    import IPython
-    IPython.embed()
-    #plot(abs(fft.rfft(data_[0])))
-
-    #NOTE odecist pozadi pred aplikaci IIR  filtru!
-    
-    f,ax=subplots(2,1,sharex=True, sharey=True)
-    ax[0].plot(tvec, data.T)    
-    #ax[1].plot(tvec, filtered_data.T)
-    ax[1].plot(tvec, filtered_data2.T)
-
-    ax[1].set_xlabel('time [s]')
-    ax[1].set_ylabel('filtered SXR')
-    ax[0].set_ylabel('raw SXR')
-
-    show()
     
     
     
-    offset = filtered_data[:,80000:].mean(1)[:,None]
-
-    contourf(data,20)
-    
-    #filtered_data-= filtered_data[:,80000:].mean(1)[:,None]
-    
-    imshow(filtered_data,interpolation='nearest',aspect='auto',vmin=-1000, vmax=1000, extent=(tvec[0], tvec[-1], 0,1));colorbar();show()
-    
-    
-    [errorbar(list(range(64)), d,e) for d,e in zip(filtered_data[:,::10000].T,error[:,::10000].T)];show()
-
-    imshow(filtered_data, interpolation='nearest',aspect='auto');colorbar();show()
-    plot((filtered_data-offset)[:,40000]);show()
-
-    import matplotlib.pylab as plt
-    plt.plot(tvec, sig)
-    plt.show()
     
 if __name__ == "__main__":
     main()
