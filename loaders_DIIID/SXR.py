@@ -754,7 +754,8 @@ class loader_SXR(loader):
             names = (names,)
        
         if groups == 'all':
-            groups = list(self.names.keys())
+            groups = self.groups
+            #groups = list(self.names.keys())
 
         if isinstance(groups,str):
             groups = (groups,)
@@ -775,6 +776,7 @@ class loader_SXR(loader):
             
 
             indmin = np.where(self.time_header[group][1] > tmin)[0]
+         
             if len(indmin) == 0:
                 print(f'tmin {tmin}s is outside of data range {self.time_header[group][1].max()}')
                 continue
@@ -862,7 +864,7 @@ class loader_SXR(loader):
                 else:
                     sxr = np.zeros(imax-imin, dtype='single')
                 output.append([tvec[ind], sxr]) 
-
+            
             outputs += self.hardcoded_corrections(output, g, channels, True)
 
         if len(output) == 1:
@@ -877,7 +879,7 @@ class loader_SXR(loader):
         channels = list(channels)
         
         if self.shot < 166887 and camera == '90RP1' and 16 in channels:
-            output[channels.index(16)] *= 1.1
+            output[channels.index(16)][1] *= 1.1
             
             
         if self.shot < 166887 and not fast_data and camera == '90RM1' and 10 in channels and 11 in channels:
@@ -983,12 +985,12 @@ def main():
     from map_equ import equ_map
     eqm = equ_map(MDSconn,debug=False)
     eqm.Open(175860,diag='EFIT01' )
-    sxr = loader_SXR(175860,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
+    sxr = loader_SXR(166572,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
     #from ECE import loader_ECE
     #ece = loader_ECE(175900,exp='DIII-D',eqm=eqm,rho_lbl='rho_pol',MDSconn=MDSconn)
   
     t = T()
-    out = sxr.get_signal( 'all',[], tmin=4.8, tmax = 4.9,calib=True)
+    out = sxr.get_signal( 'all',[], tmin=1.8, tmax = 4.9,calib=True)
     print(T()-t)
     embed()
     
