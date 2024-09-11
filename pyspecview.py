@@ -2665,7 +2665,7 @@ class MainGUI(QMainWindow):
             pass
         
         try:
-            if hasattr(self, Te2Dmap) and self.Te2Dmap.initialized:
+            if hasattr(self, 'Te2Dmap') and self.Te2Dmap.initialized:
                 out['Te2Dmap_R'] = self.Te2Dmap.Rmag_ece
                 out['Te2Dmap_Z'] = self.Te2Dmap.Zmag_ece
                 out['Te2DmapTe'] = self.Te2Dmap.shiftTe()
@@ -2675,6 +2675,23 @@ class MainGUI(QMainWindow):
         except Exception as e:
             print( 'save_data3:', e)
             pass
+            
+
+        if hasattr(self,  'roto_tomo'):  
+            try:          
+                out['time_sxr'] = self.roto_tomo.t0
+                time = self.roto_tomo.t0+np.linspace(-1/self.roto_tomo.F1, 1/self.roto_tomo.F1)/2
+                out['tvec_period'] = time
+                out['retrofit'] = np.complex64(self.roto_tomo.retro)
+                out['gamma'] = np.complex64(self.roto_tomo.gamma)
+                out['chi2'] = np.complex64(self.roto_tomo.chi2)
+                out['complex_solution'] = np.complex64(self.roto_tomo.G)
+                w = 2*np.pi*self.roto_tomo.F1
+                t = (time-self.roto_tomo.t0)[:,None,None]
+                G_t = [np.real(g*np.exp(i*1j*w*t)) for i,g in enumerate(self.roto_tomo.G)]
+                out['time_solution'] = np.complex64(G_t)
+            except Exception as e:
+                print(e)
         
         if hasattr(SpecWin, 'data_plot'):
             x = SpecWin.data_plot.x
@@ -2684,7 +2701,7 @@ class MainGUI(QMainWindow):
             istart, iend  = x.searchsorted((xmin, xmax))
             out['signal'] = y[istart:iend].astype('single', copy=False)
             out['signal_tvec'] = x[istart:iend].astype('single', copy=False)
-            
+           
         x, y = SpecWin.plt_trace.get_data()
         out['mode_time'] = x 
         out['mode_freq'] = y
@@ -3335,12 +3352,14 @@ class MainGUI(QMainWindow):
                                                tmin=t_range[0],tmax=t_range[1])
        
 
-        #calculate harminics of the mode signal
+        #calculate harmonics of the mode signal
         _, _, _, _, harm, _, offset, error, corrupted, f0, t0 = extract_harmonics(data, 
 			t_range, f_range, self.rtomo_n_harm, cross_tvec_signal=cross_tvec_signal)
-     
-        sxr_names = [(g,n) for g,names in self.data_loader_SXR.names.items() for n in names]
+
+        sxr_names = [(g,n) for g in self.data_loader_SXR.groups for n in self.data_loader_SXR.names[g]]     
+       # sxr_names = [(g,n) for g,names in self.data_loader_SXR.names.items() for n in names]
         harm_data =  {}
+       # embed()
         for i, n in enumerate(sxr_names):
             harm_data[n] = {'harm': [offset[i]]+list(harm[:,i]), 'error': error[i], 
                               'valid': ~corrupted[i]}
