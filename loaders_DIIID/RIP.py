@@ -63,13 +63,13 @@ class loader_RIP(loader):
             self.MDSconn.openTree(tree,self.shot)
 
             TDIcall ='_x= \\%s::%s'%(tree,tagname)
-            sig = self.MDSconn.get(TDIcall).data()
+            sig = self.MDSconn.get(TDIcall).data().astype('single', copy=False)
             if group == 'n_e':
                 sig *= 1.34e-3/2 #line-integral density in 10^19m^-2.
                 
  
             self.catch[tagname] = sig
-
+            #TODO use PTHEAD2!!
             if self.tvec is None:
                 self.tvec = self.MDSconn.get('dim_of(_x)').data()
                 self.tvec /= 1e3 #s
@@ -86,7 +86,12 @@ class loader_RIP(loader):
 
         R_start = array(2.6,ndmin=1)
         R_end = array(1,ndmin=1)
+
+        if len(names) > 1:
+           return np.array([self.get_rho(group,[n],time,dR=dR,dZ=dZ) for n in names]).T[0]
+
         name = names[0]
+        
         z = array(self.z[name-1],ndmin=1)
 
         rho_tg,theta_tg,R,Z = super(loader_RIP,self).get_rho(time,R_start,
