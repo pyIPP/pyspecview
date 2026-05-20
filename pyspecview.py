@@ -240,7 +240,7 @@ class SpectraViewer(object):
             label.set_fontsize(font_size) # Size here overrides font_prop
 
         self.methods = 'time', 'freq.', 'sparse'
-
+        self.description = ''
         self.sgamma = sgamma
         self.stau   = stau
         self.method = method
@@ -285,6 +285,7 @@ class SpectraViewer(object):
 
         if allow_selector:
             rectprops = dict(facecolor='gray', edgecolor='black', alpha=0.5, fill=True, zorder=1000)
+            """
             try: #BUG remove in future
                 self.RS1 = RectangleSelector(self.ax, self.line_select_callback, 
                                             #drawtype='box',
@@ -294,7 +295,8 @@ class SpectraViewer(object):
                                            rectprops=rectprops,
                                            spancoords='pixels')
             except:
-                self.RS1 = RectangleSelector(self.ax, self.line_select_callback, 
+            """
+            self.RS1 = RectangleSelector(self.ax, self.line_select_callback, 
                                             #drawtype='box',
                                             useblit=True, 
                                             button=[1, ], # don't use middle button
@@ -447,7 +449,12 @@ class SpectraViewer(object):
         self.t_range = np.sort((x1, x2))
         self.f_range = np.sort((y1, y2))
         
-        self.RS1.to_draw.set_visible(True)
+         
+        if hasattr(self.RS1, '_selection_artist'):
+            self.RS1._selection_artist.set_visible(True)  # Matplotlib >= 3.5
+        else:
+            self.RS1.to_draw.set_visible(True)
+            
         self.RS1.canvas.draw()
 
     def select_DFT_backend(self, label):
@@ -1724,7 +1731,7 @@ class Diag2DMapping(object):
                               self.remback_button, self.show_ecei)
 
             
-    def set_data(self,rho,R, Z, theta0,  Phi, data, mag_coord_diag, mag_coord_data,
+    def set_data(self,rho, R, Z, theta0,  Phi, data, mag_coord_diag, mag_coord_data,
                  units, n_harm,  shot, use_LFS_data, phase_locked):
           
           
@@ -2669,9 +2676,11 @@ class MainGUI(QMainWindow):
                 out['Te2Dmap_R'] = self.Te2Dmap.Rmag_ece
                 out['Te2Dmap_Z'] = self.Te2Dmap.Zmag_ece
                 out['Te2DmapTe'] = self.Te2Dmap.shiftTe()
-                out['Te2DmapECE_R'] = self.Te2Dmap.R
-                out['Te2DmapECE_z'] = self.Te2Dmap.Z
-         
+                try:
+                    out['Te2DmapECE_R'] = self.Te2Dmap.R
+                    out['Te2DmapECE_z'] = self.Te2Dmap.Z
+                except:
+                    pass
         except Exception as e:
             print( 'save_data3:', e)
             pass
@@ -2686,12 +2695,15 @@ class MainGUI(QMainWindow):
                 out['gamma'] = np.complex64(self.roto_tomo.gamma)
                 out['chi2'] = np.complex64(self.roto_tomo.chi2)
                 out['complex_solution'] = np.complex64(self.roto_tomo.G)
+                out['R'] = self.roto_tomo.tok.xgrid
+                out['Z'] = self.roto_tomo.tok.ygrid
+                
                 w = 2*np.pi*self.roto_tomo.F1
                 t = (time-self.roto_tomo.t0)[:,None,None]
                 G_t = [np.real(g*np.exp(i*1j*w*t)) for i,g in enumerate(self.roto_tomo.G)]
                 out['time_solution'] = np.complex64(G_t)
             except Exception as e:
-                print(e)
+                print( 'save_data4:', e)
         
         if hasattr(SpecWin, 'data_plot'):
             x = SpecWin.data_plot.x

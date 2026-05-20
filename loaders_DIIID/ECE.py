@@ -178,10 +178,10 @@ class loader_ECE(loader):
             time_header = self.MDSconn.get(f'PTHEAD2("{self.channels[0]}",{self.shot}); __real64').data()
             
             #new data format
-            if len(time_header) == 6:
-                tbeg, tend = time_header[2], time_header[-1]
-            else:
-                tbeg, tend = time_header[2], time_header[3]
+            #if len(time_header) == 6:
+            tbeg, tend = time_header[2], time_header[-1]
+            #else:
+            #   tbeg, tend = time_header[2], time_header[3]
       
             self.tvec = np.linspace(tbeg, tend, len(Te))
         
@@ -253,6 +253,9 @@ class loader_ECE(loader):
         
         #position including relativistic shift and diffraction
         try:
+            print(' do not include relativistic shift and diffraction')
+            skip
+            
             B = self.eqm.rz2brzt(r_in=Rmesh, z_in=Zmesh, t_in=time)
             Btot = squeeze(linalg.norm(B,axis=0)).T
             from ._ECE_chord import ece_los
@@ -434,6 +437,7 @@ def main():
     #data_ = ece.get_signal("", ece.get_names(ece.groups[0]), tmin=2, tmax = 2.1)
     TT =T()
     data = ece.get_signal("",ece.get_names(ece.groups[0]), tmin=1, tmax = 5)
+    embed()
     print(T()-TT)
     exit()
 

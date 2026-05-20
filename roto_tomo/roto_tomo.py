@@ -74,12 +74,12 @@ tomo_local_path = os.path.expanduser(os.path.expandvars(tomo_local_path))
 sys.path.append(tomo_code_path)
 
 #load some modules from pytomo 
-from mat_deriv_B import mat_deriv_B
-from shared_modules import  read_config
-from graph_derivation import graph_derivation
-from geom_mat_setting import geom_mat_setting,prune_geo_matrix
-from annulus import get_bd_mat, get_rho_field_mat
-import config
+from pytomo.mat_deriv_B import mat_deriv_B
+from pytomo.shared_modules import  read_config
+from pytomo.graph_derivation import graph_derivation
+from pytomo.geom_mat_setting import geom_mat_setting,prune_geo_matrix
+from pytomo.annulus import get_bd_mat, get_rho_field_mat
+import pytomo.config as config
  
 class NavigationToolbar2(NavigationToolbar2QT):
     # only display the buttons we need
@@ -391,7 +391,7 @@ class DataSettingWindow(QMainWindow):
         self.ax_data.set_xlabel('Channel',fontsize= self.fontsize)
         self.ax_data.xaxis.set_pickradius(2)
         self.ax_data.yaxis.set_pickradius(2)
-        from make_graphs import LogFormatterTeXExponent
+        from pytomo.make_graphs import LogFormatterTeXExponent
 
         cbar = self.fig_data.colorbar(self.data_im,format=LogFormatterTeXExponent('%.2e'))
         self.ax_data.axis((0.5, self.nch+.5,tvec[0],tvec[-1]))
@@ -1243,10 +1243,10 @@ class Roto_tomo:
        
 
         #Prepare tokamak object from original tomography code
-        input_parameters = read_config(tomo_code_path+"tomography_D3D.cfg")
+        input_parameters = read_config(tomo_code_path+"/pytomo/tomography_D3D.cfg")
         input_parameters['shot'] = shot
         input_parameters['local_path'] = tomo_local_path
-        input_parameters['program_path'] = tomo_code_path
+        input_parameters['program_path'] = tomo_code_path + '/pytomo/'
         input_parameters['nx'] = self.nx
         input_parameters['ny'] = self.ny
 
@@ -1255,7 +1255,7 @@ class Roto_tomo:
         
 
         if tok_lbl == 'DIIID':
-            import geometry.DIIID as Tok
+            import pytomo.geometry.DIIID as Tok
             #if self.sxr_harmonics is None:
             diag = 'SXR fast'
  
@@ -1265,7 +1265,7 @@ class Roto_tomo:
             #config.wrong_dets_pref = np.unique(list(config.wrong_dets_pref)+list(range(64,88)))
             
         elif tok_lbl == 'AUG':
-            import geometry.ASDEX as Tok
+            import pytomo.geometry.ASDEX as Tok
             diag = 'SXR_fast'
             diag_path = tomo_local_path+ 'geometry/ASDEX/SXR'
         else:
