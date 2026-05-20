@@ -63,7 +63,7 @@ if os.path.exists('$PYTOMO'):  #AUG
 elif os.path.exists('/fusion/projects/codes/pytomo/'): #DIII-D
      tomo_code_path = '/fusion/projects/codes/pytomo/'
 else:  #local instalation
-     tomo_code_path = tomo_local_path
+     tomo_code_path = tomo_local_path 
 
  
 
