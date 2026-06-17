@@ -114,14 +114,24 @@ class loader_ECE(loader):
             self.nchs = self.MDSconn.get(subnodes_nch).data()
         #BUG!!!1   which channels are turned off? 
         #self.nchs = 48
-        self.names = arange(1,self.nchs+1)
-        self.groups = ('ECE', ) 
 
         # get frequency settings
         self.freq = self.MDSconn.get(subnodes_freq).data()*1e9
-        
-        self.valid = bool_(self.MDSconn.get(subnodes_valid))
+
+        valid = bool_(self.MDSconn.get(subnodes_valid))        
+        self.valid = np.ones(self.nchs, dtype='bool')
+        self.valid[:len(valid)] = valid
         self.channels = self.MDSconn.get( subnodes_channels  )
+        
+
+        if self.shot > 207095:
+            self.valid[32:40] = False
+    
+        names = arange(1,self.nchs+1)[self.valid] 
+        self.groups = ('ECE', 'ECE_high_res') 
+        self.names = {'ECE': names[names < 40],
+                      'ECE_high_res': names[names > 40]}
+        
         
         #calibration factors
         self.cc1f = self.MDSconn.get(calid_cc1f)
@@ -149,7 +159,7 @@ class loader_ECE(loader):
         except:
             pass
     
-    def get_signal(self,group, names,calib=False,tmin=None,tmax=None):    
+    def get_signal(self, group, names,calib=False,tmin=None,tmax=None):    
       
         if tmin is None:    tmin = self.tmin
         if tmax is None:    tmax = self.tmax
@@ -231,10 +241,10 @@ class loader_ECE(loader):
  
         
     def get_names(self,group):
-        return self.names
+        return self.names[group]
     
     
-    def get_RZ_theta(self, time,names,dR=0,dZ=0):
+    def get_RZ_theta(self, time, names,dR=0,dZ=0):
 
         if self.tvec is not None:
             time = clip(time, *self.tvec[[0,-1]])
@@ -242,7 +252,7 @@ class loader_ECE(loader):
         B = self.eqm.rz2brzt(r_in=self.eqm.Rmesh, z_in=self.z, t_in=time)
         Btot = squeeze(linalg.norm(B,axis=0))
         
-        ch_ind = atleast_1d(in1d(self.names, int_(names)))
+        ch_ind = np.where(atleast_1d(in1d(self.names['ECE'], int_(names))))
         
         Zlos = .004
                     
@@ -318,7 +328,7 @@ class loader_ECE(loader):
             time = (tmin+tmax)/2
             
             if R is None and Z is None:
-                rho = self.get_rho('',self.names,time,dR=dR,dZ=dZ)[0]
+                rho = self.get_rho('',self.names['ECE'],time,dR=dR,dZ=dZ)[0]
             else:
                 rho = self.eqm.rz2rho(R[None],Z[None],time,self.rho_lbl)[0]
 

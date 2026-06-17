@@ -1007,9 +1007,9 @@ class HarmSolver(Process):
             F = cholesky(B, ordering_method='best',beta=1) 
         
         #first inversion of the geometry matrix - slowest step?
-        LPK = F.solve_L(F.apply_P(deepcopy(K.H.real)))
+        LPK = F.solve_L(F.apply_P(deepcopy(K.T.real)))
         if self.n > 0:#add complex parts, cholmod do not allow to applu solve_L on complex matrix if L is real!
-            LPK += 1j*F.solve_L(F.apply_P(deepcopy(K.H.imag)))
+            LPK += 1j*F.solve_L(F.apply_P(deepcopy(-K.T.imag)))
 
 
         LPK = LPK.toarray().T
@@ -1148,8 +1148,9 @@ class Roto_tomo:
         
         self.parent = parent
         self.fig = fig
-        self.fig.subplots_adjust(right=0.8,top=.95)
-        self.ax = self.fig.add_subplot(111)
+        # Fixed axes position so the layout engine never recalculates geometry.
+        # add_subplot+axis('equal') caused the colorbar to visually shrink on every redraw.
+        self.ax = self.fig.add_axes([0.08, 0.07, 0.74, 0.88])
         self.substract = not self.add_back.isChecked()
         self.dPhi = 0
 
@@ -1209,10 +1210,12 @@ class Roto_tomo:
         self.cbar_ax = self.fig.add_axes([0.85, 0.1, 0.04, 0.85])
         self.cbar_ax.xaxis.set_major_formatter(plt.NullFormatter())
         self.cbar_ax.yaxis.set_major_formatter(plt.NullFormatter())
-        self.cbar_ax.tick_params(labelsize=  self.fontsize) 
-        
-        self.update_colorbar()
-        #self.cbar = self.fig.colorbar(self.tomo_img, cax=self.cbar_ax)
+        self.cbar_ax.tick_params(labelsize=  self.fontsize)
+
+        # Create colorbar once and store it; update_colorbar() will reuse it
+        self.cbar = self.fig.colorbar(self.tomo_img, cax=self.cbar_ax)
+        self.cbar.locator = MaxNLocator(nbins=7)
+        self.cbar.update_ticks()
         self.ax.set_title('SXR emissivity [kW/m$^3$]',fontsize= self.fontsize)
         self.plot_description = self.ax.text(1.008,.05,'',rotation='vertical', 
                 transform=self.ax.transAxes,verticalalignment='bottom',
@@ -1239,22 +1242,13 @@ class Roto_tomo:
 
 
     def prepare_tok_object(self, tok_lbl, shot):
-
+        #Prepare tokamak object from original tomography code
        
 
-        #Prepare tokamak object from original tomography code
-        input_parameters = read_config(tomo_code_path+"/pytomo/tomography_D3D.cfg")
-        input_parameters['shot'] = shot
-        input_parameters['local_path'] = tomo_local_path
-        input_parameters['program_path'] = tomo_code_path + '/pytomo/'
-        input_parameters['nx'] = self.nx
-        input_parameters['ny'] = self.ny
-
-        if not hasattr(config, 'wrong_dets_pref'):
-            config.wrong_dets_pref = input_parameters['wrong_dets']
-        
-
         if tok_lbl == 'DIIID':
+            input_parameters = read_config(tomo_code_path+"pytomo/tomography_D3D.cfg")
+            input_parameters['mds_server'] = self.parent.MDSconn
+
             import pytomo.geometry.DIIID as Tok
             #if self.sxr_harmonics is None:
             diag = 'SXR fast'
@@ -1265,17 +1259,28 @@ class Roto_tomo:
             #config.wrong_dets_pref = np.unique(list(config.wrong_dets_pref)+list(range(64,88)))
             
         elif tok_lbl == 'AUG':
+            input_parameters = read_config(tomo_code_path+"pytomo/tomography_AUG.cfg")
+
             import pytomo.geometry.ASDEX as Tok
             diag = 'SXR_fast'
             diag_path = tomo_local_path+ 'geometry/ASDEX/SXR'
         else:
             raise Exception('Support of the tokamak %s was not implemented' %tok_lbl)
 
+        if not hasattr(config, 'wrong_dets_pref'):
+            config.wrong_dets_pref = input_parameters['wrong_dets']
+        
+        input_parameters['shot'] = shot
+        input_parameters['local_path'] = tomo_local_path+ '/pytomo/'
+        input_parameters['program_path'] = tomo_code_path + '/pytomo/'
+        input_parameters['nx'] = self.nx
+        input_parameters['ny'] = self.ny
+        
+        
         logger.debug('diag_path %s', diag_path)
         if not os.path.exists(diag_path):
             os.makedirs(diag_path)
         
-         
         try:
             self.tok = Tok(diag, input_parameters, load_data_only=True, only_prepare=True)#BUG 
         except:
@@ -1632,7 +1637,8 @@ class Roto_tomo:
         self.lam0 = -1 #guess regularization in the first step 
         self.eval_tomo()
         self.lam0 = int(100*self.gamma[1])/100.
-        self.slider_reg.setValue(int(100*self.lam0))
+        print(int(np.sqrt(100*self.lam0)))
+        self.slider_reg.setValue(int(np.sqrt(100*self.lam0)))
         self.update(update_cax=True)
         
     def set_plot_lim(self, val):
@@ -1641,9 +1647,10 @@ class Roto_tomo:
         self.update(update_cax=True)
 
     def set_reg(self, val):
-        if self.lam0*100 == val: return
-
-        self.lam0 = val/100.
+        if int(np.sqrt(100*self.lam0)) == val:
+            return
+        print(val, (val/100.)**2, self.lam0)
+        self.lam0 = (val/100.)**2
         self.eval_tomo()
         self.update(update_cax=True)
 
@@ -1662,12 +1669,12 @@ class Roto_tomo:
         self.update(update_cax=True)
         
     def update_colorbar(self):
-        #BUG update colorbar by creating a new one :( 
-        self.cbar_ax.cla()
-        cb = self.fig.colorbar(self.tomo_img, cax=self.cbar_ax)
-        tick_locator = MaxNLocator(nbins=7)
-        cb.locator = tick_locator
-        cb.update_ticks()     
+        # Always recreate into the fixed cax. Since both ax and cbar_ax use add_axes
+        # (fixed positions), fig.colorbar(cax=...) never touches the layout engine so
+        # positions stay stable regardless of cmap changes or how often this is called.
+        self.cbar = self.fig.colorbar(self.tomo_img, cax=self.cbar_ax)
+        self.cbar.locator = MaxNLocator(nbins=7)
+        self.cbar.update_ticks()
                     
     def TeOverplot(self):
         #show contours of Te
@@ -1802,6 +1809,25 @@ class Roto_tomo:
 
 
         
+    def stop_solvers(self):
+        #gracefully stop all running HarmSolver processes, falling back to a
+        #forced terminate() only if a process doesn't exit on its own.
+        #This is the single place process shutdown happens, called both
+        #before re-creating solvers and from __del__ / the window close handler.
+        for h in self.hsolvers:
+            if h.is_alive():
+                h.qin.put(None)   #ask the worker to exit its loop gracefully
+                h.join(0.5)       #give it a real chance to exit on its own
+                if h.is_alive():
+                    h.terminate() #only kill if it didn't exit gracefully in time
+                    h.join(1.0)
+            #don't let leftover buffered queue items hang process exit
+            h.qin.cancel_join_thread()
+            h.qout.cancel_join_thread()
+            h.qin.close()
+            h.qout.close()
+        self.hsolvers = []
+
     def set_mode_numbes(self):
    
         #do reconstruction assuming certain M and N mode number
@@ -1821,22 +1847,15 @@ class Roto_tomo:
         cmplxT = [self.T,]+[sparse.spdiags(cmplxA[:,i],0,ndet,ndet)*self.T for i in range(self.n_harm-1)]
         E = sparse.spdiags(np.exp(1j*self.theta_star_rz.flatten('F')*self.m),0, npix, npix)
         
-        #close threats from previous calculation
-        for h in self.hsolvers:
-            h.qin.put(None) #send kill signal
-            h.terminate()
-            h.join(1e-2)  #join process
-            h.qin.close()
-            h.qout.close()
-            del h  #release memory 
-            
-        self.hsolvers = []
+        #close down solvers from previous calculation before replacing them
+        self.stop_solvers()
 
         #precalculate decompositions - slow!!
         for n in range(self.n_harm):
             qin,qout = Queue(),Queue()
             h = HarmSolver(qin,qout,n,E,self.W,self.Ht,self.Hper, self.Hpar,
                            cmplxT[n],self.BdMat,self.bb[n],self.bb_err[n], ndet)
+            h.daemon = True  #don't let a lingering worker block interpreter exit
             h.start()
             self.hsolvers.append(h)
 
@@ -1995,15 +2014,7 @@ class Roto_tomo:
   
     def __del__(self, event=None):
         try:
-            for h in self.hsolvers:
-                h.qin.put(None) #send kill signal
-                h.terminate()
-                h.join(1e-2)  #join process
-                h.qin.close()
-                h.qout.close()
-                del h  #release memory 
-            #print('solvers are closed')
-            self.hsolvers = []
+            self.stop_solvers()
             self.initialized = False
             if plt.fignum_exists('Retrofit'):
                 plt.close(plt.figure('Retrofit'))
@@ -2012,4 +2023,3 @@ class Roto_tomo:
             gc.collect()
         except Exception as e:
             print('Error __del__', e)
-            

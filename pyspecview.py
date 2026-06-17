@@ -683,10 +683,10 @@ class SpectraViewer(object):
                     iy = int(round((y-ystart)/(yend-ystart)*(self.stft_img.z[1].shape[0]-1))) 
                     try:
                         f = self.stft_img.z[1].T[ix, iy]
-                        n = self.stft_img.N_mode[0][self.stft_img.N_mode[1]==f]
-                        print(x, y/1e3, n)
+                        n = self.stft_img.N_mode[0][self.stft_img.N_mode[1]==f][0]
                         self.message_out('t: %.5fs f: %.3gkHz, mode num.:%d'%(x, y/1e3, n), 1000)
                     except:
+                        raise
                         pass
                 else:
                     ix = min(max(0, (x-xstart)/(xend-xstart)), 1)
@@ -698,6 +698,7 @@ class SpectraViewer(object):
                         f = self.stft_img.z[iy, ix]
                         self.message_out('t: %.5fs f: %.3gkHz val:%.2e'%(x, y/1e3, f), 1000)
                     except:
+                        raise
                         pass
                     
             #select only a single mode number
@@ -1220,153 +1221,156 @@ def calculate_cmplx_phase(tvec, cross_signal,  f_range):
     return t0,f0, cmplx_sig
  
  
-def extract_harmonics(tvec_data,t_range, f_range,n_harm_max, cross_tvec_signal=None):
+def extract_harmonics(tvec_data, t_range, f_range,n_harm_max, cross_tvec_signal=None):
     
-    from scipy.signal import get_window
-    
-    T = time.time()
-    
-    #not all signal must have teh same length and time vector
-    fastest = np.argmax([(len(t)-1)/(t[-1]-t[0]) for t, s in tvec_data])
- 
-    nfft = next_fast_len(tvec_data[fastest][0].size)
-    tvec = tvec_data[fastest][0]
-    
-    tvec = np.linspace(tvec[0], tvec[-1], tvec.size) #equally spaced vector!!
-
-    
-    cross_signal = None
-    
-    if cross_tvec_signal is not None:     
-        cross_signal = np.interp(tvec, *cross_tvec_signal)
-        win = get_window('hann', len(cross_signal), fftbins=False)   
-        fdata0 = np.fft.rfft(cross_signal*win, nfft)[1:]
-    
-    #=================   use a stupid and robust method to get the amplitudes
-    fvec = np.linspace(0, .5*nfft/np.diff(t_range)[0], nfft//2+1, endpoint=False)
-    
-    f0 = np.mean(f_range)
-    df = np.diff(f_range)[0]
- 
-    if0 = fvec[1:].searchsorted(f0)
-    idf  = fvec[1:].searchsorted(df)
-    #Nyquist frequency
-    fnq = (len(tvec)-1)/(tvec[-1]-tvec[0])/2
-
-
-    ind_f = [slice(*(if0*(n+1)+np.r_[-idf//2, idf//2+1])) for n in range(n_harm_max)]
-    ind_f = [ind for ind in ind_f if np.size(fvec[ind])>0]
-    n_harm = len(ind_f)
-    
-    fft_sig_n = [[] for n in range(n_harm)]
-    fft_signoise = []
-    
-    
-
-    data = []
-    win = get_window('hann', len(tvec), fftbins=False)   
-    for i, (t, sig) in enumerate(tvec_data):
-        if t.size!= len(tvec):
-            sig = np.interp(tvec, t, sig)
+    try:
+        from scipy.signal import get_window
         
-        data.append(sig)
-        try:
-            fdata = np.fft.rfft(sig*win, nfft)[1:]
-        except Exception as e:
-            print('fft error',e, sig.shape, win.shape, len(t), len(tvec))
+        T = time.time()
+        
+        #not all signal must have teh same length and time vector
+        fastest = np.argmax([(len(t)-1)/(t[-1]-t[0]) for t, s in tvec_data])
+    
+        nfft = next_fast_len(tvec_data[fastest][0].size)
+        tvec = tvec_data[fastest][0]
+        
+        tvec = np.linspace(tvec[0], tvec[-1], tvec.size) #equally spaced vector!!
+
+        
+        cross_signal = None
+        
+        if cross_tvec_signal is not None:     
+            cross_signal = np.interp(tvec, *cross_tvec_signal)
+            win = get_window('hann', len(cross_signal), fftbins=False)   
+            fdata0 = np.fft.rfft(cross_signal*win, nfft)[1:]
+        
+        #=================   use a stupid and robust method to get the amplitudes
+        fvec = np.linspace(0, .5*nfft/np.diff(t_range)[0], nfft//2+1, endpoint=False)
+        
+        f0 = np.mean(f_range)
+        df = np.diff(f_range)[0]
+    
+        if0 = fvec[1:].searchsorted(f0)
+        idf  = fvec[1:].searchsorted(df)
+        #Nyquist frequency
+        fnq = (len(tvec)-1)/(tvec[-1]-tvec[0])/2
+
+
+        ind_f = [slice(*(if0*(n+1)+np.r_[-idf//2, idf//2+1])) for n in range(n_harm_max)]
+        ind_f = [ind for ind in ind_f if np.size(fvec[ind])>0]
+        n_harm = len(ind_f)
+        
+        fft_sig_n = [[] for n in range(n_harm)]
+        fft_signoise = []
+        
+        
+
+        data = []
+        win = get_window('hann', len(tvec), fftbins=False)   
+        for i, (t, sig) in enumerate(tvec_data):
+            if t.size!= len(tvec):
+                sig = np.interp(tvec, t, sig)
             
+            data.append(sig)
+            try:
+                fdata = np.fft.rfft(sig*win, nfft)[1:]
+            except Exception as e:
+                print('fft error',e, sig.shape, win.shape, len(t), len(tvec))
+                
+            for n in range(n_harm):
+                fft_sig_n[n].append(fdata[ind_f[n]])
+
+            try:
+                normalization = 1/np.mean(win)/len(win)*np.sqrt(ind_f[0].stop-ind_f[0].start)*4/3.
+            except:
+                print( 'normalization', ind_f, n_harm, if0, df, [slice(*(if0*(n+1)+np.r_[-df//2, (df+1)//2])) for n in range(n_harm)])
+                raise
+
+            fft_signoise.append(np.median(np.abs(fdata))*normalization)
+    
+        #absolute value of the perturbation 
+        fft_signoise = np.array(fft_signoise)
+
+        amplitude = []
         for n in range(n_harm):
-            fft_sig_n[n].append(fdata[ind_f[n]])
-
-        try:
-            normalization = 1/np.mean(win)/len(win)*np.sqrt(ind_f[0].stop-ind_f[0].start)*4/3.
-        except:
-            print( 'normalization', ind_f, n_harm, if0, df, [slice(*(if0*(n+1)+np.r_[-df//2, (df+1)//2])) for n in range(n_harm)])
-            raise
-
-        fft_signoise.append(np.median(np.abs(fdata))*normalization)
- 
-    #absolute value of the perturbation 
-    fft_signoise = np.array(fft_signoise)
-
-    amplitude = []
-    for n in range(n_harm):
-        if cross_signal is None:
-            A = np.array([np.linalg.norm(fs)/np.sum(win) for fs in fft_sig_n[n]])
-            #substract contribution of the background random noise 
-            A = np.sqrt(np.maximum(0, A**2-fft_signoise**2))
-        else:
-            X = fdata0[ind_f[n]]/np.linalg.norm(fdata0[ind_f[n]])
-            A = np.array([np.abs(np.vdot(X, fs))/np.sum(win) for fs in fft_sig_n[n]])
-            
-        amplitude.append(A*3./2.)
+            if cross_signal is None:
+                A = np.array([np.linalg.norm(fs)/np.sum(win) for fs in fft_sig_n[n]])
+                #substract contribution of the background random noise 
+                A = np.sqrt(np.maximum(0, A**2-fft_signoise**2))
+            else:
+                X = fdata0[ind_f[n]]/np.linalg.norm(fdata0[ind_f[n]])
+                A = np.array([np.abs(np.vdot(X, fs))/np.sum(win) for fs in fft_sig_n[n]])
+                
+            amplitude.append(A*3./2.)
 
 
-    offset = np.array([np.asarray(sig).mean() for sig in data])
-    corrupted = (fft_signoise == 0)#|(amplitude[0] < np.median(amplitude[0])/1e3)
+        offset = np.array([np.asarray(sig).mean() for sig in data])
+        corrupted = (fft_signoise == 0)#|(amplitude[0] < np.median(amplitude[0])/1e3)
 
 
-    
-    # use a advaced and more sensitive method. But only well coherent modes can be analyzed 
-
-    cross_sig_num = None
-    if cross_signal is None:
-        #TODO use SVD to dinf the dominant component in the requested frequency rage? 
-        #measure a cross phase with respect to the strongest signal
-        cross_sig_num = np.argmax(amplitude[0]/(fft_signoise+np.nanmean(fft_signoise)*1e-6+corrupted))      
-        cross_signal = data[cross_sig_num]
- 
-    #demodulation signal from the measured signal 
-    t0,f0,cmplx_sig = calculate_cmplx_phase(tvec, cross_signal,  f_range)
- 
-    #BUG how is this possible?
-    tvec = tvec[:cmplx_sig.size]
-
-    from scipy.signal import butter, sosfiltfilt
-    sosbutter = butter(5,f0/5, btype='low',  output='sos', fs=fnq)
-
-    #demodulate signal and find the first component
-    complex_harm = np.zeros((n_harm, cmplx_sig.size), dtype='complex')
-    complex_harm[0] = cmplx_sig
-    for i in range(1, n_harm):
-        complex_harm[i] = complex_harm[i-1]*cmplx_sig
-    #make it more othogonal
-    complex_harm, r = np.linalg.qr(complex_harm.T)
-    complex_harm *= np.diag(r)
-            
-    retro = np.zeros((tvec.size, len(data)))
-    error = np.zeros(len(data))
-    harm  = np.zeros((n_harm, len(data)), dtype='complex')
-
-    #remove issues with boundary effects
-    win = get_window('hann', tvec.size, fftbins=False).astype('single')   
-    win /= np.sum(win)#/np.sqrt(len(win))
-
-    for j, sig in enumerate(data):
-        mask = np.ma.getmask(sig)
-        #skip if more than 20% is corrupted
-        if np.any(mask) and np.sum(mask)/len(mask) > 0.2:
-           continue
-  
-        #perform a least squares fit of the orthonormal complex prototype to the measured signal
-        sig_ = win*(sig-offset[j])
-        harm[:,j] = 2*np.dot(win*(sig-offset[j]), np.conj(complex_harm))   
-
-        #retrofit of the measured signal 
-        retro[:, j] = np.dot(complex_harm, harm[:,j]).real
-        #this might be wrong if there is another non-random signal
-        error[j] = np.std(sosfiltfilt(sosbutter, sig-retro[:, j], padtype='even')) #sqrt(chi2/n)
-    
-    retro += offset
-    error *= np.sum(win**2)*np.sqrt(len(tvec)) #first term accounts for window weights, should be one for rectangular? , secomd term is just for averaging of normally distributed noise
         
-    corrupted |= np.abs(harm[0]) == 0   
-    #print('BUG')
-    #retro1 = np.outer(harm[0], np.exp(1j*2*np.pi*f0*(tvec-t0))).real
-    #retro2 = (harm[[0]]*complex_harm[:,[0]]).real*np.sqrt(len(win))
-    #embed()
-    #np.savez('harm', retro_ = retro_, harm=harm,tvec=tvec,data=data, f0=f0, t0=t0,cmplx_sig=cmplx_sig, retro1=retro1,complex_harm=complex_harm,  retro2=retro2, exps = np.exp(1j*2*np.pi*f0*(tvec-t0)))
+        # use a advaced and more sensitive method. But only well coherent modes can be analyzed 
 
+        cross_sig_num = None
+        if cross_signal is None:
+            #TODO use SVD to dinf the dominant component in the requested frequency rage? 
+            #measure a cross phase with respect to the strongest signal
+            cross_sig_num = np.argmax(amplitude[0]/(fft_signoise+np.nanmean(fft_signoise)*1e-6+corrupted))      
+            cross_signal = data[cross_sig_num]
+    
+        #demodulation signal from the measured signal 
+        t0,f0,cmplx_sig = calculate_cmplx_phase(tvec, cross_signal,  f_range)
+    
+        #BUG how is this possible?
+        tvec = tvec[:cmplx_sig.size]
+
+        from scipy.signal import butter, sosfiltfilt
+        sosbutter = butter(5,f0/5, btype='low',  output='sos', fs=fnq)
+
+        #demodulate signal and find the first component
+        complex_harm = np.zeros((n_harm, cmplx_sig.size), dtype='complex')
+        complex_harm[0] = cmplx_sig
+        for i in range(1, n_harm):
+            complex_harm[i] = complex_harm[i-1]*cmplx_sig
+        #make it more othogonal
+        complex_harm, r = np.linalg.qr(complex_harm.T)
+        complex_harm *= np.diag(r)
+                
+        retro = np.zeros((tvec.size, len(data)))
+        error = np.zeros(len(data))
+        harm  = np.zeros((n_harm, len(data)), dtype='complex')
+
+        #remove issues with boundary effects
+        win = get_window('hann', tvec.size, fftbins=False).astype('single')   
+        win /= np.sum(win)#/np.sqrt(len(win))
+
+        for j, sig in enumerate(data):
+            mask = np.ma.getmask(sig)
+            #skip if more than 20% is corrupted
+            if np.any(mask) and np.sum(mask)/len(mask) > 0.2:
+                continue
+    
+            #perform a least squares fit of the orthonormal complex prototype to the measured signal
+            sig_ = win*(sig-offset[j])
+            harm[:,j] = 2*np.dot(win*(sig-offset[j]), np.conj(complex_harm))   
+
+            #retrofit of the measured signal 
+            retro[:, j] = np.dot(complex_harm, harm[:,j]).real
+            #this might be wrong if there is another non-random signal
+            error[j] = np.std(sosfiltfilt(sosbutter, sig-retro[:, j], padtype='even')) #sqrt(chi2/n)
+        
+        retro += offset
+        error *= np.sum(win**2)*np.sqrt(len(tvec)) #first term accounts for window weights, should be one for rectangular? , secomd term is just for averaging of normally distributed noise
+            
+        corrupted |= np.abs(harm[0]) == 0   
+        #print('BUG')
+        #retro1 = np.outer(harm[0], np.exp(1j*2*np.pi*f0*(tvec-t0))).real
+        #retro2 = (harm[[0]]*complex_harm[:,[0]]).real*np.sqrt(len(win))
+        #embed()
+        #np.savez('harm', retro_ = retro_, harm=harm,tvec=tvec,data=data, f0=f0, t0=t0,cmplx_sig=cmplx_sig, retro1=retro1,complex_harm=complex_harm,  retro2=retro2, exps = np.exp(1j*2*np.pi*f0*(tvec-t0)))
+    except Exception as e:
+        traceback.format_exc()
+        embed()
 
     return n_harm, amplitude, tvec, cross_signal, harm, retro, offset, error, corrupted, f0, t0
 
@@ -1652,8 +1656,10 @@ class Diag2DMapping(object):
 
         self.parent = parent
         self.fig = fig
-        self.fig.subplots_adjust(right=0.82, top=.95)
-        self.ax = self.fig.add_subplot(111, label='2Dmap')
+        # Fixed axes positions so the layout engine never recalculates geometry.
+        # add_subplot+equal aspect caused the colorbar to visually shrink on every redraw
+        # because the subplot engine kept adjusting the axes bbox to satisfy the aspect ratio.
+        self.ax = self.fig.add_axes([0.08, 0.07, 0.74, 0.88], label='2Dmap')
         self.plot_ece_active, = self.ax.plot([], [], 'wo', zorder=100, markeredgecolor='k')
         self.plot_ece_ignored, = self.ax.plot([], [], 'o' , zorder=100, mfc='none', markeredgecolor='k')
         self.ech_location, = self.ax.plot([], [], 'xk', zorder=100)
@@ -1695,7 +1701,8 @@ class Diag2DMapping(object):
         self.cbar_ax = self.fig.add_axes([0.85, 0.1, 0.04, 0.85], label='cbar')
         self.cbar_ax.xaxis.set_major_formatter(NullFormatter())
         self.cbar_ax.yaxis.set_major_formatter(NullFormatter())
-        self.cbar_ax.tick_params(labelsize=font_size) 
+        self.cbar_ax.tick_params(labelsize=font_size)
+        self.cbar = None  # created on first update, then reused in-place
 
         self.plot_description = self.ax.text(1.008, .05, '', rotation='vertical', 
                 transform=self.ax.transAxes, verticalalignment='bottom', 
@@ -2063,13 +2070,25 @@ class Diag2DMapping(object):
                 collections += (ax.Te_contour.collections, )
 
             if update_cax:
-                #BUG update colorbar by creating a new one :( 
-                self.cbar_ax.cla()
-                cb = self.fig.colorbar(ax.Te_contourf, cax=self.cbar_ax )
-                tick_locator = MaxNLocator(nbins=7)
-                cb.locator = tick_locator
-                cb.update_ticks()
-                cb.set_label('T$_e$ ['+self.prefix+self.units+']', labelpad=4, fontsize=font_size)
+                new_cmap = ax.Te_contourf.cmap
+                if self.cbar is None:
+                    # First call: create and store
+                    self.cbar = self.fig.colorbar(ax.Te_contourf, cax=self.cbar_ax)
+                    self.cbar._current_cmap = new_cmap
+                elif getattr(self.cbar, '_current_cmap', None) != new_cmap:
+                    # Cmap changed (e.g. toggling Remove background): recreate into fixed cax
+                    self.cbar_ax.cla()
+                    self.cbar = self.fig.colorbar(ax.Te_contourf, cax=self.cbar_ax)
+                    self.cbar._current_cmap = new_cmap
+                else:
+                    # Only norm/range changed (slider): update in-place, no recreation
+                    self.cbar.mappable = ax.Te_contourf
+                    self.cbar.norm = ax.Te_contourf.norm
+                    self.cbar.update_normal(ax.Te_contourf)
+                # Always sync label, locator and ticks
+                self.cbar.set_label('T$_e$ ['+self.prefix+self.units+']', labelpad=4, fontsize=font_size)
+                self.cbar.locator = MaxNLocator(nbins=7)
+                self.cbar.update_ticks()
 
 
         #plot ECEI data
@@ -2192,12 +2211,12 @@ class Diag2DMapping(object):
         self.levels = np.linspace(self.vmin, self.vmax, n_contour)
         
         
-        self.update()
+        self.update(update_cax=False)
     
     def UpdatePlotType(self, ind):
         self.substract = self.remback_button.isChecked()
         self.prepare()
-        self.update()
+        self.update(update_cax=True)
 
         
 class GetInfoThread(QThread):
@@ -2332,6 +2351,7 @@ class MainGUI(QMainWindow):
     
     def __del__(self, event=None):
         if hasattr(self, 'roto_tomo'):
+            self.roto_tomo.stop_solvers()   #explicit, deterministic process cleanup
             del self.roto_tomo
       
  
@@ -2630,8 +2650,8 @@ class MainGUI(QMainWindow):
 
         file_choices =  "NPZ (*.npz)"
         
-        prew_panel = self.tables_names[self.curr_tab]
-        if self.tables_names[self.curr_tab] == 'Cross-phaseogram':
+        panel_name = self.tables_names[self.curr_tab]
+        if panel_name == 'Cross-phaseogram':
             SpecWin = self.SpecWin_phase
             data_loader = self.data_loader_phase
             diag_group = self.diag_phase
@@ -2647,7 +2667,11 @@ class MainGUI(QMainWindow):
         except Exception as e:
             print( 'save_data:', e)
             description = ''
-            
+        if panel_name == '2D Te':
+            description = 'ECE'
+        elif panel_name == '2D SXR':
+            description = 'SXR'
+         
         name = description.replace(' ', '_')            
         path = QFileDialog.getSaveFileName(self, 'Save file', name+'.npz', file_choices)
         
@@ -2697,11 +2721,12 @@ class MainGUI(QMainWindow):
                 out['complex_solution'] = np.complex64(self.roto_tomo.G)
                 out['R'] = self.roto_tomo.tok.xgrid
                 out['Z'] = self.roto_tomo.tok.ygrid
-                
+                out['frequency'] = self.roto_tomo.F1
+
                 w = 2*np.pi*self.roto_tomo.F1
                 t = (time-self.roto_tomo.t0)[:,None,None]
                 G_t = [np.real(g*np.exp(i*1j*w*t)) for i,g in enumerate(self.roto_tomo.G)]
-                out['time_solution'] = np.complex64(G_t)
+                out['time_solution'] = np.single(G_t)
             except Exception as e:
                 print( 'save_data4:', e)
         
@@ -3117,10 +3142,8 @@ class MainGUI(QMainWindow):
 
             #load data and if diag_group is "all" it will load everything 
             group = self.diag_group
-            if self.diag in ['ECE']:
-                names = self.data_loader.names  #load all channels 
-            else:
-                names = self.data_loader.get_names(group)
+ 
+            names = self.data_loader.get_names(group)
 
             data = self.data_loader.get_signal(group, names, calib=True, tmin=tmin, tmax=tmax)
             
@@ -3281,7 +3304,7 @@ class MainGUI(QMainWindow):
 
         if update:
             #load all ECE channels 
-            names = self.data_loader_2Dmap.names 
+            names = self.data_loader_2Dmap.names['ECE'] 
 
             units = self.data_loader_2Dmap.units
 

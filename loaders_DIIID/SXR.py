@@ -800,6 +800,7 @@ class loader_SXR(loader):
 
 
         if len(TDI) > 0:
+            print(TDI)
             out = mds_par_load(self.MDSconn, TDI)
             for [g,ch,i], o in zip(idx, out):
                 self.cache[g][f'{ch:02d}_{i}'] = o
@@ -826,21 +827,25 @@ class loader_SXR(loader):
                 
             #collect all data
             data = []
+            nt = 0
             for ch in channels:
                 sig = [self.cache[g][f'{ch:02d}_{i}'] for i in np.arange(indmin,indmax)]
                 if  any([len(s) <= 1  for s in sig]):
-                    print('data for SXR {g}{ch} are not availible')
+                    print(f'data for SXR {g}_{ch} are not availible')
                     sig = None
                 elif len(sig) == 1:
                     sig = sig[0]
                 else:
                     sig = np.hstack(sig)
+                    
+                if sig is not None:   
+                    nt = max(nt, len(sig))
+
                 data.append(sig)
-   
-            #prepare time vectors
-            nt = max([len(o) for o in data])
+            
+            #avoid fetching entire time vector
             tvec = np.linspace(self.time_header[g][0,indmin], 
-                              self.time_header[g][1,indmax-1], nt)
+                               self.time_header[g][1,indmax-1], nt)
             imin,imax = tvec.searchsorted([tmin,tmax])
             ind = slice(imin,imax+1)
             
@@ -866,7 +871,8 @@ class loader_SXR(loader):
                 output.append([tvec[ind], sxr]) 
             
             outputs += self.hardcoded_corrections(output, g, channels, True)
-
+        
+        
         if len(output) == 1:
             return outputs[0]
         else:
