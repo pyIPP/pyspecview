@@ -134,8 +134,8 @@ class loader_Magnetics(loader):
         
        
         self.tor_num_phi = {\
-            'Toroidal':  (67,97,137, 157,277,307,322,340),\
-            'Lower div.':(7,37,52,67,157,217,232,322)}
+            'Toroidal':  360 - np.array((67,97,137, 157,277,307,322,340)),\
+            'Lower div.':360 - np.array((7,37,52,67,157,217,232,322))}
         
         #poloidal coils with the best SNR 
         self.pol_num_names = {'Poloidal':('MPI11M322D','MPI1A322D','MPI2A322D','MPI3A322D','MPI67A322D',
@@ -149,11 +149,11 @@ class loader_Magnetics(loader):
    
         
         self.Phi = {
-             'hi-freq': [135,]*2+[150]*6+[135,],
-             'Midplane': (67,97,137,157,277,307,322,322,322,322,340),\
-             'Below mdpl':(322,327,333,342,3,12,67,157),\
-             'Lower div.':(7,37,52,67,157,187,187,187,217,232,322),\
-             'Poloidal' : [322,]*31,\
+             'hi-freq': 360 - np.array([135,]*2+[150]*6+[135,]),
+             'Midplane': (360 - np.array(67,97,137,157,277,307,322,322,322,322,340)),\
+             'Below mdpl':(360 - np.array(322,327,333,342,3,12,67,157)),\
+             'Lower div.':360 - np.array((7,37,52,67,157,187,187,187,217,232,322)),\
+             'Poloidal' : 360 - np.array([322,]*31),\
             }
         
   
