@@ -22,6 +22,9 @@ NSTX
     4) Method menu gives you the option to switch between various versions 
        of short time fourier transformation.  The Sparse option is excellent
        for a coherent MHD modes with sufficient signal level.     
+    5) Enhance button hides the spectrogram where TokEye neural network
+       (https://github.com/PlasmaControl/TokEye) finds no coherent mode.
+       Download the network from https://huggingface.co/nc1/big_tf_unet/resolve/main/tokeye.onnx
     extra)  double clicking will trace a mode, still in the development phase 
     
  <img src="https://user-images.githubusercontent.com/32073690/197647117-ffd1acea-816e-40d7-b762-6c959dfd6f57.png"   height="800"  align="middle">

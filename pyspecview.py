@@ -69,6 +69,7 @@ except:
 from stft import stft
 from sfft import sfft
 from sstft import sstft
+from tokeye import tokeye, tokeye_model
 
 random_seed = 10
 font_size = 10
@@ -186,7 +187,8 @@ class SpectraViewer(object):
     #class for the spectrum and data plot handling 
     
     def __init__(self, sgamma, stau, method, message_out, show_raw=True, show_colorbar=False, 
-                 allow_selector=True, fig_name=None, fig=None, phase_analysis=False, cmap= 'gnuplot2'):
+                 allow_selector=True, fig_name=None, fig=None, phase_analysis=False, cmap= 'gnuplot2',
+                 enhance_button=None):
         """
         
         
@@ -303,6 +305,12 @@ class SpectraViewer(object):
                                            minspanx=5, minspany=5,
                                            props=rectprops,
                                            spancoords='pixels')
+
+        self.enhance_button = enhance_button
+        if enhance_button is not None:
+            self.fig.canvas.mpl_connect('draw_event', self.update_enhance_button)
+            self.update_enhance_button()
+
     def __del__(self):
        pass
 
@@ -512,6 +520,31 @@ class SpectraViewer(object):
         self.stft_img.update_image(xstart, xend, ystart, yend, self.stft_img.z)     
 
         self.stft_disp.ax_update(self.stft_img.ax)
+
+
+    def enhance(self):
+        #hide the spectrogram where TokEye neural network finds no coherent mode
+        if not self.initialized: return
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            mask = tokeye(self.stft_img.z) > 0.5
+        except Exception:
+            logger.error( traceback.format_exc())
+            QApplication.restoreOverrideCursor()
+            return
+
+        if mask.any():
+            self.stft_img.set_mask(mask)
+            self.update_enhance_button()
+        QApplication.restoreOverrideCursor()
+
+
+    def update_enhance_button(self, event=None):
+        z = getattr(self.stft_img, 'z', None) if self.initialized else None
+        enhanced = z is not None and z is self.stft_img.mask_z
+        self.enhance_button.setText('TokEye' if enhanced else 'Enhance')
+        self.enhance_button.setEnabled(z is not None and not enhanced)
 
 
     def calc_sig_power(self, tvec_f, fvec, df):
@@ -777,6 +810,7 @@ class STFTImage():
         self.mode_num_lbl = mode_num_lbl
 
         self.mode_range = mrange
+        self.mask_z = None  #spectrogram masked by TokEye
         
         if self.phase_analysis: 
             self.init_mode_shuffle()
@@ -842,6 +876,13 @@ class STFTImage():
             return z**self.gamma
 
         
+    def set_mask(self, mask):
+        #show only the masked part of the spectrogram until it is replaced by a new one
+        self.mask_z = self.z
+        self.im.set_alpha(np.single(mask))
+        self.ax.figure.canvas.draw_idle()
+
+
     def update_image(self, xstart, xend, ystart, yend, z):
         #update spectrogram image
         self.z = z
@@ -860,6 +901,10 @@ class STFTImage():
             self.im.set_data(z)
         except:
             logger.error(  'error self.im.set_data(z)')
+
+        if self.z is not self.mask_z:  #the mask belongs to the previous spectrogram
+            self.mask_z = None
+            self.im.set_alpha(None)
   
         self.im.set_extent((xstart, xend, ystart, yend))
  
@@ -2532,7 +2577,7 @@ class MainGUI(QMainWindow):
         if self.curr_tab == 0:
             #increase the resolution before saving
             self.SpecWin.stft_disp.ax_update(self.SpecWin.stft_disp.im_ax, \
-                            fine_resolution=fine_resolution, force_update=True)
+                            fine_resolution=fine_resolution, force_update=self.SpecWin.stft_img.mask_z is None)
  
             canvas = self.canvas
             canvas.draw_idle()
@@ -3638,10 +3683,11 @@ class MainGUI(QMainWindow):
         self.stau = QSlider(Qt.Horizontal)
         self.sgamma = QSlider(Qt.Horizontal)
         self.method  = QComboBox(self.cWidget)
+        self.enhance_button = QPushButton('Enhance', self.cWidget)
         
         self.SpecWin =  SpectraViewer( self.sgamma, self.stau, self.method, 
                     self.statusBar().showMessage, show_raw=self.show_raw, allow_selector=True, 
-                        fig= self.fig_spec, cmap=self.spect_cmap)
+                        fig= self.fig_spec, cmap=self.spect_cmap, enhance_button=self.enhance_button)
 
         # Bind the 'pick' event for clicking on one of the bars
 
@@ -3681,10 +3727,17 @@ class MainGUI(QMainWindow):
         self.method.setFixedWidth(70)
 
         self.method.currentIndexChanged.connect(self.SpecWin.select_DFT_backend)
+        self.enhance_button.clicked.connect(self.SpecWin.enhance)
 
         self.method.setToolTip('Choose algorithm')
         self.stau.setToolTip('Set width of window for FFT')
         self.sgamma.setToolTip('Set contrast')
+        self.enhance_button.setToolTip('Keep only the coherent modes found by TokEye neural network')
+
+        #only if TokEye network and onnxruntime are installed
+        from importlib.util import find_spec
+        if not os.path.isfile(tokeye_model) or find_spec('onnxruntime') is None:
+            self.enhance_button.hide()
 
         slider_label2 = QLabel('TAU:')
         slider_label1 = QLabel('GAMMA:')
@@ -3713,6 +3766,7 @@ class MainGUI(QMainWindow):
             hbox.setAlignment(l, Qt.AlignRight)
             hbox.setAlignment(w, Qt.AlignLeft)
             hboxUpR.addLayout(hbox)
+        hboxUpR.addWidget(self.enhance_button)
             
         hboxUp.addLayout(hboxUpL)
         hboxUp.addLayout(hboxUpR)
