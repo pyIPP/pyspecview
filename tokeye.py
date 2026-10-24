@@ -32,7 +32,7 @@ def tokeye(spect, size=512):
             raise Exception('TokEye needs onnxruntime: pip install onnxruntime')
         options = onnxruntime.SessionOptions()
         options.intra_op_num_threads = max(1, cpu_count()//2)
-        options.enable_cpu_mem_arena = False  #release the memory after each call
+        options.enable_cpu_mem_arena = False
         session = onnxruntime.InferenceSession(tokeye_model, options, providers=['CPUExecutionProvider'])
 
     nf, nt = spect.shape
@@ -41,7 +41,6 @@ def tokeye(spect, size=512):
     if min(x.shape) < 64:
         raise Exception('TokEye needs at least 64x64 pixels, the spectrogram has %dx%d'%x.shape)
 
-    #the same preprocessing as in the training: log, removal of outliers, standardization
     x = np.log1p(np.maximum(np.nan_to_num(x), 0))
     x = np.clip(x, *np.percentile(x, (1, 99)))
     x = (x-x.mean())/(x.std()+1e-6)

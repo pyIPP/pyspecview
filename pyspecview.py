@@ -306,7 +306,6 @@ class SpectraViewer(object):
                                            props=rectprops,
                                            spancoords='pixels')
 
-        #button to keep only the coherent modes found by TokEye
         self.enhance_button = enhance_button
         if enhance_button is not None:
             self.fig.canvas.mpl_connect('draw_event', self.update_enhance_button)
@@ -542,7 +541,6 @@ class SpectraViewer(object):
 
 
     def update_enhance_button(self, event=None):
-        #available again when the masked spectrogram is replaced by a new one (zoom, pan, TAU, ...)
         z = getattr(self.stft_img, 'z', None) if self.initialized else None
         enhanced = z is not None and z is self.stft_img.mask_z
         self.enhance_button.setText('TokEye' if enhanced else 'Enhance')
